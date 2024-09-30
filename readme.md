@@ -23,7 +23,7 @@
 - get_sim_time.py: Shows a draggable status bar that shows the real world zulu time and sim zulu time.  Double-click to program the count-down timer.
 
   ![image](https://github.com/user-attachments/assets/be003852-16e7-493b-907d-fcba4e586893)
-- msfs-turn-off-fenix-efb: Example script that shows how LVARS can be automated.  This script will hide the EFBs.  This script requires a mobiflight installation.
+- msfs-turn-off-fenix-efb: Example script that shows how LVARS can be automated.  This script will hide the EFBs on the Fenix A32x.  This script requires a mobiflight installation.
   
 # Technical Notes
 - The provided launcher exe is provided for ease of use.  It is also possible to launch the script "/Launcher/Launcher.py" from "WinPython/WinPython Command Prompt.exe" if you prefer to not launch from the EXE.  The exe can be built by launching "Build.bat" in "\Launcher\LauncherApp" as the "TCC" C-Compiler is included.
