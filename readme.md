@@ -10,7 +10,7 @@
 - Download zip from releases
 - Extract to location of your convenience
 - Launch MSFS-PyScriptManager.exe
-- Click "Select and Run Script" button to open a script. Scripts are shown in individual tabs.  Right click the tab header to close a script. 
+- Click "Select and Run Script" button to open a script. Running scripts are each shown in individual tabs.  Right click the tab header for a given script to close it. 
 
 # Scripts Included
 - virtual_pos_printer.py: Allows print jobs from the Fenix A32x to show as popups on the screen.
