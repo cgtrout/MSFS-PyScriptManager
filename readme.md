@@ -13,7 +13,7 @@
 - Click "Select and Run Script" button to open a script. Running scripts are each shown in individual tabs.  Right click the tab header for a given script to close it. 
 
 # Scripts Included
-- virtual_pos_printer.py: Allows print jobs from the Fenix A32x to show as popups on the screen.
+- virtual_pos_printer.py: Allows print jobs from the Fenix A32x to show as popup 'notes' on the screen.
 ![image](https://github.com/user-attachments/assets/5b0aac05-f1da-417e-a97b-be8261a4f1ba)
   - Notes can be dragged with left mouse click.  Right-click to close note.
   - Use Ctrl+MouseWheel up/down to resize the note.
