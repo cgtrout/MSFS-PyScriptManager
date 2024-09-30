@@ -1,0 +1,22 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Compile with build.bat",      // Name of the task
+            "type": "shell",                        // Use shell to execute
+            "command": "./build.bat",               // Path to your batch file (relative to the workspace folder)
+            "group": {
+                "kind": "build",
+                "isDefault": true                   // Marks this as the default build task
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",                 // Show the terminal when the task is run
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        }
+       
+    ]
+}

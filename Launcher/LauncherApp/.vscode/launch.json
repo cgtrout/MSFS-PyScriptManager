@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run MSFS-Python",
+            "type": "cppvsdbg",                       // Windows C++ Debugger
+            "request": "launch",                      // Launch mode
+            "program": "${workspaceFolder}/../../MSFS-Python.exe",  // Path to your compiled .exe
+            "cwd": "${workspaceFolder}/../../",              // Set working directory to the root (MSFS-Python)
+            "args": [],                               // No arguments
+            "stopAtEntry": false,                     // Do not stop at entry
+            "environment": [],
+            "console": "integratedTerminal"           // Use the VS Code integrated terminal
+        }
+    ]
+}

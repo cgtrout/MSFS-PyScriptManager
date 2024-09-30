@@ -1,0 +1,31 @@
+# Byte-compiled Python files
+__pycache__/
+
+# Logs
+*.log
+
+# Ignore all .exe files
+*.exe
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Virtual environments
+venv/
+env/
+
+# Ignore compiled executables
+*.exe
+
+# Temporary files
+*.tmp
+*.temp
+
+# Ignore everything in the WinPython directory except README.md
+WinPython/*
+!WinPython/README.md
+
+# Ignore everything in the Launcher/LauncherApp/tcc directory except README.md
+Launcher/LauncherApp/tcc/*
+!Launcher/LauncherApp/tcc/README.md
