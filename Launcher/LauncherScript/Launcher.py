@@ -222,7 +222,13 @@ class ScriptLauncherApp:
     def reload_script(self, tab_id):
         """Reload the selected script by re-running it."""
         if tab_id in self.processes:
+            # Get the current script path
             script_path = Path(self.processes[tab_id]['script_path'])
+            
+            # Close the existing tab if it exists
+            self.close_tab(tab_id)
+            
+            # Run the script again in a new tab
             self.run_script_with_tab(script_path, tab_id)
 
     def close_tab(self, tab_id):
