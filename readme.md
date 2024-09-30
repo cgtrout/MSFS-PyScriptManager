@@ -2,6 +2,10 @@
 
 **MSFS-PyScriptManager** is a tool designed for managing and executing custom Python scripts tailored for Microsoft Flight Simulator (MSFS). This tool leverages the **WinPython** portable Python environment for ease of installation.  Simply download the release and extract it - no further installation required to run scripts!
 
+# Download
+- [Download MSFS-PyScriptManager](https://github.com/cgtrout/MSFS-PyScriptManager/releases/tag/ReleaseTag)
+- [Virus Check](https://www.virustotal.com/gui/url/e4572bbe507a9f493abbf92fa37d84712df10b7a8b70ca1b396026e776b99f86?nocache=1)
+  
 # Installation Instructions
 - Download zip from releases
 - Extract to location of your convenience
