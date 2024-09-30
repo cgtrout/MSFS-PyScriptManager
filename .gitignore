@@ -29,3 +29,6 @@ WinPython/*
 # Ignore everything in the Launcher/LauncherApp/tcc directory except README.md
 Launcher/LauncherApp/tcc/*
 !Launcher/LauncherApp/tcc/README.md
+
+# Ignore settings dir
+Settings/*
