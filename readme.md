@@ -13,10 +13,9 @@
 ![image](https://github.com/user-attachments/assets/5b0aac05-f1da-417e-a97b-be8261a4f1ba)
   - Notes can be dragged with left mouse click.  Right-click to close note.
   - Use Ctrl+MouseWheel up/down to resize the note.
-  
+  - This will automatically create a "Fake" network Windows printer called "VirtualTextPrinter"
   - Set the virtual printer in the Fenix EFB settings to use the "VirtualTextPrinter" created by the script.
   ![image](https://github.com/user-attachments/assets/13a472df-3aa1-4977-8001-cc7ec6170d92)
- 
 - get_sim_time.py: Shows a draggable status bar that shows the real world zulu time and sim zulu time.  Double-click to program the count-down timer.
 
   ![image](https://github.com/user-attachments/assets/be003852-16e7-493b-907d-fcba4e586893)
