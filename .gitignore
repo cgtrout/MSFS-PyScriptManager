@@ -32,3 +32,6 @@ Launcher/LauncherApp/tcc/*
 
 # Ignore settings dir
 Settings/*
+
+# Ignore script_group files
+*.script_group
