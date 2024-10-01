@@ -249,6 +249,9 @@ root.withdraw()
 # Create a queue for inter-thread communication
 q = queue.Queue()
 
+# Check and install the printer if necessary
+setup_printer()
+
 # Start a thread for the fake printer server
 printer_thread = threading.Thread(target=start_virtual_printer_server, args=(q,))
 printer_thread.daemon = True
@@ -256,9 +259,6 @@ printer_thread.start()
 
 # Default font for the pop-up windows
 default_font = font.Font(family="Consolas", size=12)
-
-# Check and install the printer if necessary
-setup_printer()
 
 # Start processing the queue
 root.after(100, process_queue, default_font)
