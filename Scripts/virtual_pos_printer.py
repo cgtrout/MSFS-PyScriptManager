@@ -45,6 +45,7 @@ OFFSET_STEP = 10     # Step size for offset
 # Function to detect and install the printer
 def setup_printer():
     printer_name = "VirtualTextPrinter"
+    driver_name = "Generic / Text Only"
 
     # PowerShell command to check if the printer exists
     check_printer_cmd = f"Get-Printer -Name '{printer_name}'"
@@ -63,9 +64,17 @@ def setup_printer():
         
         # If the printer doesn't exist, install it
         print(f"Printer '{printer_name}' not found. Installing printer...")
+
         powershell_script = f"""
         $portName = "{SERVER_ADDRESS}_{SERVER_PORT}"
         $printerName = "{printer_name}"
+
+        # Check if the 'Generic / Text Only' printer driver is installed
+        $driverName = "{driver_name}"
+        if (!(Get-PrinterDriver -Name $driverName -ErrorAction SilentlyContinue)) {{
+            Write-Host "Installing printer driver: {driver_name}"
+            Add-PrinterDriver -Name $driverName
+        }}
 
         # Add a new TCP/IP Port that points to the loopback address
         if (!(Get-PrinterPort -Name $portName -ErrorAction SilentlyContinue)) {{
@@ -74,7 +83,7 @@ def setup_printer():
 
         # Install the printer using the Generic / Text Only driver
         if (!(Get-Printer -Name $printerName -ErrorAction SilentlyContinue)) {{
-            Add-Printer -Name $printerName -DriverName "Generic / Text Only" -PortName $portName
+            Add-Printer -Name $printerName -DriverName $driverName -PortName $portName
             Write-Host "Printer successfully added."
         }} else {{
             Write-Host "Printer already exists."
