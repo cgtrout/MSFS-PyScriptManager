@@ -64,10 +64,15 @@ class ScriptLauncherApp:
         self.processes = {}
         self.stop_events = {}
         self.tab_frames = {}
-        self.selected_tab_id = None  # Store the selected tab's id
+        self.current_tab_id = 0  # Initialize the unique tab ID counter
 
         # Override close window behavior to ensure all processes are killed
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def generate_tab_id(self):
+        """Generates a unique tab ID by incrementing the counter."""
+        self.current_tab_id += 1
+        return self.current_tab_id
 
     def create_output_text_widget(self, parent):
         """Create a scrollable text widget to display script output."""
@@ -145,7 +150,10 @@ class ScriptLauncherApp:
         if not file_path:
             return
 
-        tab_id = len(self.processes) + 1
+        # Generate a new, unique tab ID 
+        tab_id = self.generate_tab_id()
+
+        # Run the script in a new tab...
         self.run_script_with_tab(Path(file_path), tab_id)
 
     def run_script_with_tab(self, script_path, tab_id):
