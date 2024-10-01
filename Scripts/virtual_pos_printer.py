@@ -66,27 +66,32 @@ def setup_printer():
         print(f"Printer '{printer_name}' not found. Installing printer...")
 
         powershell_script = f"""
-        $portName = "{SERVER_ADDRESS}_{SERVER_PORT}"
-        $printerName = "{printer_name}"
+        try {{
+            $portName = "{SERVER_ADDRESS}_{SERVER_PORT}"
+            $printerName = "{printer_name}"
+          
+            # Check if the 'Generic / Text Only' printer driver is installed
+            $driverName = "{driver_name}"
+            if (!(Get-PrinterDriver -Name $driverName -ErrorAction SilentlyContinue)) {{
+                Write-Host "Installing printer driver: {driver_name}"
+                Add-PrinterDriver -Name $driverName
+            }}
+            
+            # Add a new TCP/IP Port that points to the loopback address
+            if (!(Get-PrinterPort -Name $portName -ErrorAction SilentlyContinue)) {{
+                Add-PrinterPort -Name $portName -PrinterHostAddress "{SERVER_ADDRESS}" -PortNumber {SERVER_PORT}
+            }}
 
-        # Check if the 'Generic / Text Only' printer driver is installed
-        $driverName = "{driver_name}"
-        if (!(Get-PrinterDriver -Name $driverName -ErrorAction SilentlyContinue)) {{
-            Write-Host "Installing printer driver: {driver_name}"
-            Add-PrinterDriver -Name $driverName
-        }}
-
-        # Add a new TCP/IP Port that points to the loopback address
-        if (!(Get-PrinterPort -Name $portName -ErrorAction SilentlyContinue)) {{
-            Add-PrinterPort -Name $portName -PrinterHostAddress "{SERVER_ADDRESS}" -PortNumber {SERVER_PORT}
-        }}
-
-        # Install the printer using the Generic / Text Only driver
-        if (!(Get-Printer -Name $printerName -ErrorAction SilentlyContinue)) {{
-            Add-Printer -Name $printerName -DriverName $driverName -PortName $portName
-            Write-Host "Printer successfully added."
-        }} else {{
-            Write-Host "Printer already exists."
+            # Install the printer using the Generic / Text Only driver
+            if (!(Get-Printer -Name $printerName -ErrorAction SilentlyContinue)) {{
+                Add-Printer -Name $printerName -DriverName $driverName -PortName $portName
+                Write-Host "Printer successfully added."
+            }} else {{
+                Write-Host "Printer already exists."
+            }}
+        }} catch {{
+            Write-Error "An error occurred: $_"
+            exit 1  # Exit with a non-zero code so Python knows there was an issue
         }}
         """
 
