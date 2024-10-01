@@ -1,3 +1,5 @@
+# msfs-turn-off-fenix-efb.py: example script to show how to modify LVAR with mobiflight lib
+
 from time import sleep
 import sys
 import os
