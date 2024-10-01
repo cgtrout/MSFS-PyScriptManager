@@ -1,5 +1,3 @@
-# MAIN Launcher Script - Allows user to load and run multiple scripts while showing outputs of each
-
 import tkinter as tk
 from tkinter import filedialog
 from tkinter import ttk
@@ -18,32 +16,43 @@ vscode_path = project_root / "WinPython" / "VS Code.exe"  # Dynamically calculat
 print(f"Python path: {pythonw_path.resolve()}")
 print(f"VS Code path: {vscode_path.resolve()}")
 
+# Define color constants
+DARK_BG_COLOR = "#2E2E2E"
+BUTTON_BG_COLOR = "#444444"
+BUTTON_FG_COLOR = "#FFFFFF"
+BUTTON_ACTIVE_BG_COLOR = "#666666"
+BUTTON_ACTIVE_FG_COLOR = "#FFFFFF"
+TEXT_WIDGET_BG_COLOR = "#1E1E1E"
+TEXT_WIDGET_FG_COLOR = "#FFFFFF"
+TEXT_WIDGET_INSERT_COLOR = "#FFFFFF"
+FRAME_BG_COLOR = "#2E2E2E"
+
 class ScriptLauncherApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Python Script Launcher")
         self.root.geometry("800x600")
-        self.root.configure(bg="#2E2E2E")  # Dark background
+        self.root.configure(bg=DARK_BG_COLOR)  # Dark background
 
         # Create a toolbar frame to hold buttons at the top, with flat relief
-        self.toolbar = tk.Frame(self.root, bg="#2E2E2E")
+        self.toolbar = tk.Frame(self.root, bg=DARK_BG_COLOR)
         self.toolbar.pack(side="top", fill="x", padx=5, pady=5)
 
         # Add a button to the toolbar for selecting and running scripts
         self.run_button = tk.Button(self.toolbar, text="Select and Run Script", command=self.select_and_run_script,
-                                    bg="#444444", fg="#FFFFFF", activebackground="#666666", activeforeground="#FFFFFF",
-                                    relief="flat", highlightthickness=0)
+                                    bg=BUTTON_BG_COLOR, fg=BUTTON_FG_COLOR, activebackground=BUTTON_ACTIVE_BG_COLOR,
+                                    activeforeground=BUTTON_ACTIVE_FG_COLOR, relief="flat", highlightthickness=0)
         self.run_button.pack(side="left", padx=5, pady=2)
 
         # Add buttons for saving and loading script groups
         self.save_group_button = tk.Button(self.toolbar, text="Save Script Group", command=self.save_script_group,
-                                           bg="#444444", fg="#FFFFFF", activebackground="#666666", activeforeground="#FFFFFF",
-                                           relief="flat", highlightthickness=0)
+                                           bg=BUTTON_BG_COLOR, fg=BUTTON_FG_COLOR, activebackground=BUTTON_ACTIVE_BG_COLOR,
+                                           activeforeground=BUTTON_ACTIVE_FG_COLOR, relief="flat", highlightthickness=0)
         self.save_group_button.pack(side="left", padx=5, pady=2)
 
         self.load_group_button = tk.Button(self.toolbar, text="Load Script Group", command=self.load_script_group,
-                                           bg="#444444", fg="#FFFFFF", activebackground="#666666", activeforeground="#FFFFFF",
-                                           relief="flat", highlightthickness=0)
+                                           bg=BUTTON_BG_COLOR, fg=BUTTON_FG_COLOR, activebackground=BUTTON_ACTIVE_BG_COLOR,
+                                           activeforeground=BUTTON_ACTIVE_FG_COLOR, relief="flat", highlightthickness=0)
         self.load_group_button.pack(side="left", padx=5, pady=2)
 
         # Create a notebook to show multiple tabs (for script output)
@@ -53,7 +62,7 @@ class ScriptLauncherApp:
         style = ttk.Style()
         style.configure('TNotebook', padding=[0, 0])
         style.configure('TNotebook.Tab', padding=[5, 2])
-        style.configure('TFrame', background="#2E2E2E")
+        style.configure('TFrame', background=DARK_BG_COLOR)
 
         self.notebook.pack(expand=True, fill="both", padx=5, pady=5)
 
@@ -76,7 +85,8 @@ class ScriptLauncherApp:
 
     def create_output_text_widget(self, parent):
         """Create a scrollable text widget to display script output."""
-        text_widget = tk.Text(parent, wrap="word", bg="#1E1E1E", fg="#FFFFFF", insertbackground="#FFFFFF")
+        text_widget = tk.Text(parent, wrap="word", bg=TEXT_WIDGET_BG_COLOR, fg=TEXT_WIDGET_FG_COLOR, 
+                              insertbackground=TEXT_WIDGET_INSERT_COLOR)
         text_widget.pack(expand=True, fill="both")
         return text_widget
 
@@ -166,18 +176,18 @@ class ScriptLauncherApp:
         output_text = self.create_output_text_widget(new_tab)
 
         # Add a frame at the bottom for buttons
-        button_frame = tk.Frame(new_tab, bg="#2E2E2E")
+        button_frame = tk.Frame(new_tab, bg=FRAME_BG_COLOR)
         button_frame.pack(side="bottom", fill="x", padx=5, pady=5)
 
         # Add "Edit" and "Reload" buttons to the button frame
         edit_button = tk.Button(button_frame, text="Edit Script", command=lambda: self.edit_script(tab_id),
-                                bg="#444444", fg="#FFFFFF", activebackground="#666666", activeforeground="#FFFFFF",
-                                relief="flat", highlightthickness=0)
+                                bg=BUTTON_BG_COLOR, fg=BUTTON_FG_COLOR, activebackground=BUTTON_ACTIVE_BG_COLOR,
+                                activeforeground=BUTTON_ACTIVE_FG_COLOR, relief="flat", highlightthickness=0)
         edit_button.pack(side="left", padx=5, pady=2)
 
         reload_button = tk.Button(button_frame, text="Reload Script", command=lambda: self.reload_script(tab_id),
-                                  bg="#444444", fg="#FFFFFF", activebackground="#666666", activeforeground="#FFFFFF",
-                                  relief="flat", highlightthickness=0)
+                                  bg=BUTTON_BG_COLOR, fg=BUTTON_FG_COLOR, activebackground=BUTTON_ACTIVE_BG_COLOR,
+                                  activeforeground=BUTTON_ACTIVE_FG_COLOR, relief="flat", highlightthickness=0)
         reload_button.pack(side="left", padx=5, pady=2)
 
         # Track the process, stop event, and tab frame
