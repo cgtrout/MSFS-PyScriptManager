@@ -16,12 +16,9 @@ try:
     
     # For some reason it seems we need to 'prime' the lib or it doesn't work otherwise?
     altitude = mf_requests.get("(A:PLANE ALTITUDE,Feet)")
-    #autopilot_active = mf_requests.get("(L:A32NX_AUTOPILOT_1_ACTIVE)")
-    #print(f"Altitude: {altitude}, Autopilot Active: {autopilot_active}")
 
     # Set the LVAR
     mf_requests.set("0 (>L:S_EFB_VISIBLE_CAPT)")
-    sleep(0.1)  # Add a small delay to ensure the command processes
 
     # Fetch the LVAR value
     efb_visible = mf_requests.get("(L:S_EFB_VISIBLE_CAPT)")
@@ -34,7 +31,6 @@ try:
     # Set the LVARs for the First Officer's EFB visibility and charging cable
     mf_requests.set("0 (>L:S_EFB_VISIBLE_FO)")
     mf_requests.set("0 (>L:S_EFB_CHARGING_CABLE_FO)")
-    sleep(0.1)  # Add a small delay to ensure the command processes
 
     # Fetch the LVAR values to confirm
     efb_visible_fo = mf_requests.get("(L:S_EFB_VISIBLE_FO)")
