@@ -7,22 +7,22 @@
 - [Virus Check](https://www.virustotal.com/gui/url/07c3071df3896db39018a70d2dd4946097df7f061c13e9477237b6bd57bc8189?nocache=1)
   
 # Installation Instructions
-- Download zip file from releases
+- Download zip file from releases.
 - Extract the downloaded file to a location of your choice.
-- Launch MSFS-PyScriptManager.exe
+- Launch MSFS-PyScriptManager.exe.
 - Click "Select and Run Script" button to open a script. Running scripts are each shown in their own individual tabs.  Right click the tab header for a given script to close it.
 - Feel free to post an 'issue' here on Github if you have any issues with the launcher or the scripts.
 
 # Scripts Included
 - virtual_pos_printer.py: Allows print jobs from the Fenix A32x to show as popup 'notes' on the screen.
 ![image](https://github.com/user-attachments/assets/5b0aac05-f1da-417e-a97b-be8261a4f1ba)
-  - Notes can be dragged with left mouse click.  Right-click to close note.
-  - Use Ctrl+MouseWheel up/down to resize the note.
-  - Use Ctrl+Shift+P shortcut to define note spawning location (it will use current mouse position)
-  - This will automatically create a "Fake" network Windows printer called "VirtualTextPrinter"
+  - Notes can be dragged with left mouse click (hold).  Right-click to close a note.
+  - Use Ctrl+MouseWheel up/down to resize a note (with mouse cursor on top of note).
+  - Use Ctrl+Shift+P shortcut to define a new note spawning location (it will use the current mouse position).
+  - This will automatically create a "Fake" network Windows printer called "VirtualTextPrinter".
   - Set the virtual printer in the Fenix EFB settings to use the "VirtualTextPrinter" created by the script.
   ![image](https://github.com/user-attachments/assets/13a472df-3aa1-4977-8001-cc7ec6170d92)
-  - Note that this script must be running for the print functionality to work as it functions as a print server.
+  - Note that this script **must** be running for the print functionality to work as it functions as a print server.
   - There is a script called "virtual_pos_TEST.py" that can be run to test the printer.  If everything is working correctly you should see popups with a test message every five seconds.
 - get_sim_time.py: Shows a draggable status bar that shows the real world zulu time and sim zulu time.  Double-click to program the count-down timer.
 
@@ -31,4 +31,4 @@
   
 # Technical Notes
 - The provided launcher exe is provided for ease of use.  It is also possible to launch the script "/Launcher/Launcher.py" from "WinPython/WinPython Command Prompt.exe" if you prefer to not launch from the EXE.  The exe can be built by launching "Build.bat" in "\Launcher\LauncherApp" as the "TCC" C-Compiler is included.
-- You can easily create your own scripts and run them as well.  Note that if you need to add any libraries use the "WinPython/WinPython Command Prompt.exe" and run the "pip" command to add a lib.
+- You can easily create your own scripts and run them as well.  Note that if you need to add any libraries use the "WinPython/WinPython Command Prompt.exe" and run the "pip" command from here to add a library to the WinPython directory.
