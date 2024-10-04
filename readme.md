@@ -11,7 +11,7 @@
 - Extract the downloaded file to a location of your choice.
 - Launch MSFS-PyScriptManager.exe.
 - Click "Select and Run Script" button to open a script. Running scripts are each shown in their own individual tabs.  Right click the tab header for a given script to close it.
-- Further details on the provided scripts are incuded further down.
+- Further details on the provided scripts are included further down.
 - Feel free to post an 'issue' here on Github if you have any issues with the launcher or the scripts.
 
 # Scripts Included
