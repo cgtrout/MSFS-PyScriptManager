@@ -3,6 +3,8 @@ import socketserver
 from threading import Thread
 import time
 
+PORT = 40001
+
 # Global variable to hold the latest message
 acars_data = "This is the latest ACARS message."
 
@@ -35,7 +37,7 @@ message_thread = Thread(target=update_message, daemon=True)
 message_thread.start()
 
 # Starting the server
-PORT = 8080
+
 with socketserver.TCPServer(("", PORT), MyHandler) as httpd:
     print(f"Serving on port {PORT}")
     httpd.serve_forever()

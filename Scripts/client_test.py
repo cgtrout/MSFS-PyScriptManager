@@ -2,7 +2,7 @@ import requests
 import time
 
 # Endpoint URL
-url = "http://localhost:8080/latest"
+url = "http://localhost:40001/latest"
 
 # Variable to store the last received message
 last_message = None
