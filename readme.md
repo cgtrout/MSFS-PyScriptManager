@@ -7,7 +7,7 @@
 - [Virus Check](https://www.virustotal.com/gui/url/07c3071df3896db39018a70d2dd4946097df7f061c13e9477237b6bd57bc8189?nocache=1)
   
 # Installation Instructions
-- Download zip file from releases.
+- Download the zip file from the newest release (Releases).
 - Extract the downloaded file to a location of your choice.
 - Launch MSFS-PyScriptManager.exe.
 - Click "Select and Run Script" button to open a script. Running scripts are each shown in their own individual tabs.  Right click the tab header for a given script to close it.
