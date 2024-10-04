@@ -20,7 +20,7 @@
   - Use Ctrl+MouseWheel up/down to resize a note (with mouse cursor on top of note).
   - Use Ctrl+Shift+P shortcut to define a new note spawning location (it will use the current mouse position).
   - This will automatically create a "Fake" network Windows printer called "VirtualTextPrinter".
-  - Set the virtual printer in the Fenix EFB settings to use the "VirtualTextPrinter" created by the script.
+  - Set the printer in the Fenix EFB settings to use the "VirtualTextPrinter" created by the script.
   ![image](https://github.com/user-attachments/assets/13a472df-3aa1-4977-8001-cc7ec6170d92)
   - Note that this script **must** be running for the print functionality to work as it functions as a print server.
   - There is a script called "virtual_pos_TEST.py" that can be run to test the printer.  If everything is working correctly you should see popups with a test message every five seconds.
