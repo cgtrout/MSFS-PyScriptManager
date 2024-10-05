@@ -10,7 +10,6 @@ import psutil  # Import psutil for process management
 import os
 import time  # Import time for handling timeouts
 
-
 # Path to the WinPython Python executable and VS Code.exe
 current_dir = Path(__file__).resolve().parent
 project_root = current_dir.parents[1]
@@ -233,6 +232,9 @@ class ScriptLauncherApp:
         new_tab = ttk.Frame(self.notebook)
         self.notebook.add(new_tab, text=script_name)
 
+        # Add this line to make the newly created tab the active one
+        self.notebook.select(new_tab)
+
         # Create a text widget in the new tab to display script output
         output_text = self.create_output_text_widget(new_tab)
 
@@ -247,8 +249,8 @@ class ScriptLauncherApp:
         edit_button.pack(side="left", padx=5, pady=2)
 
         reload_button = tk.Button(button_frame, text="Reload Script", command=lambda: self.reload_script(tab_id),
-                                  bg=BUTTON_BG_COLOR, fg=BUTTON_FG_COLOR, activebackground=BUTTON_ACTIVE_BG_COLOR,
-                                  activeforeground=BUTTON_ACTIVE_FG_COLOR, relief="flat", highlightthickness=0)
+                                bg=BUTTON_BG_COLOR, fg=BUTTON_FG_COLOR, activebackground=BUTTON_ACTIVE_BG_COLOR,
+                                activeforeground=BUTTON_ACTIVE_FG_COLOR, relief="flat", highlightthickness=0)
         reload_button.pack(side="left", padx=5, pady=2)
 
         # Track the process, stop event, and tab frame
