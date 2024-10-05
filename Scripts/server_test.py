@@ -1,43 +1,52 @@
+import queue
+import threading
 import http.server
 import socketserver
-from threading import Thread
 import time
 
-PORT = 40001
+# Create a FIFO queue to store messages
+message_queue = queue.Queue()
 
-# Global variable to hold the latest message
-acars_data = "This is the latest ACARS message."
-
-# Function to update the message periodically (simulating new incoming data)
-def update_message():
-    global acars_data
-    count = 1
-    while True:
-        # Update message every 10 seconds (for testing purposes)
-        acars_data = f"ACARS message update #{count}"
-        count += 1
-        time.sleep(10)
-
-# Custom request handler
-class MyHandler(http.server.SimpleHTTPRequestHandler):
+# Custom HTTP request handler
+class HttpRequestHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/latest":
-            # Respond with the latest message
-            self.send_response(200)
-            self.send_header("Content-type", "text/plain")
-            self.end_headers()
-            self.wfile.write(acars_data.encode("utf-8"))
+            try:
+                # Get the next message from the queue (non-blocking)
+                message = message_queue.get_nowait()
+                self.send_response(200)
+                self.send_header("Content-type", "text/plain")
+                self.end_headers()
+                self.wfile.write(message.encode("utf-8"))
+            except queue.Empty:
+                # If no messages are available, return an empty response
+                self.send_response(204)  # No content
+                self.end_headers()
         else:
-            # Handle other paths with a 404 error
             self.send_response(404)
             self.end_headers()
 
-# Start the message update function in a separate thread
-message_thread = Thread(target=update_message, daemon=True)
-message_thread.start()
+# Function to simulate new print jobs being received
+def simulate_print_jobs():
+    count = 1
+    while True:
+        time.sleep(5)  # Simulate a new print job every 5 seconds
+        new_message = f"Print job #{count}: ACARS message or other data."
+        print(f"New message added: {new_message}")
+        # Put the new message in the queue
+        message_queue.put(new_message)
+        count += 1
 
-# Starting the server
+# Start the HTTP server
+def start_server():
+    with socketserver.TCPServer(("localhost", 40001), HttpRequestHandler) as httpd:
+        print("Server running on port 40001...")
+        httpd.serve_forever()
 
-with socketserver.TCPServer(("", PORT), MyHandler) as httpd:
-    print(f"Serving on port {PORT}")
-    httpd.serve_forever()
+# Start the server in one thread and simulate print jobs in another thread
+if __name__ == "__main__":
+    server_thread = threading.Thread(target=start_server)
+    server_thread.daemon = True
+    server_thread.start()
+
+    simulate_print_jobs()

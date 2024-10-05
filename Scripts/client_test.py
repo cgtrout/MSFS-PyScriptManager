@@ -4,29 +4,25 @@ import time
 # Endpoint URL
 url = "http://localhost:40001/latest"
 
-# Variable to store the last received message
-last_message = None
-
-while True:
-    try:
-        # Send GET request to the server
-        response = requests.get(url)
-        
-        # Check if the request was successful
-        if response.status_code == 200:
-            current_message = response.text
+# Polling to get the next message in the queue
+def poll_for_messages():
+    while True:
+        try:
+            # Send GET request to the server
+            response = requests.get(url)
             
-            # Check if the message has changed
-            if current_message != last_message:
-                print("New message received:", current_message)
-                last_message = current_message
+            if response.status_code == 200:
+                # Process the received message
+                print("New message received:", response.text)
+            elif response.status_code == 204:
+                print("No new messages.")
             else:
-                print("No new message.")
-        else:
-            print(f"Failed to retrieve data. Status code: {response.status_code}")
+                print(f"Failed to retrieve data. Status code: {response.status_code}")
+        except Exception as e:
+            print("An error occurred:", e)
+        
+        time.sleep(2)  # Poll every 2 seconds
 
-    except Exception as e:
-        print("An error occurred:", e)
-    
-    # Wait before polling again
-    time.sleep(5)  # Poll every 5 seconds
+# Start polling
+if __name__ == "__main__":
+    poll_for_messages()
