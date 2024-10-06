@@ -4,6 +4,8 @@ import http.server
 import socketserver
 import time
 
+SERVER_PORT = 40001
+
 # Create a FIFO queue to store messages
 message_queue = queue.Queue()
 
@@ -39,8 +41,8 @@ def simulate_print_jobs():
 
 # Start the HTTP server
 def start_server():
-    with socketserver.TCPServer(("localhost", 40001), HttpRequestHandler) as httpd:
-        print("Server running on port 40001...")
+    with socketserver.TCPServer(("localhost", SERVER_PORT), HttpRequestHandler) as httpd:
+        print("Server running on port {SERVER_PORT}...")
         httpd.serve_forever()
 
 # Start the server in one thread and simulate print jobs in another thread
