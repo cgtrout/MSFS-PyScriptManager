@@ -89,16 +89,16 @@ class ScriptLauncherApp:
                                     activeforeground=BUTTON_ACTIVE_FG_COLOR, relief="flat", highlightthickness=0)
         self.run_button.pack(side="left", padx=5, pady=2)
 
+        self.load_group_button = tk.Button(self.toolbar, text="Load Script Group", command=self.load_script_group,
+                                           bg=BUTTON_BG_COLOR, fg=BUTTON_FG_COLOR, activebackground=BUTTON_ACTIVE_BG_COLOR,
+                                           activeforeground=BUTTON_ACTIVE_FG_COLOR, relief="flat", highlightthickness=0)
+        self.load_group_button.pack(side="right", padx=5, pady=2)
+
         # Add buttons for saving and loading script groups
         self.save_group_button = tk.Button(self.toolbar, text="Save Script Group", command=self.save_script_group,
                                            bg=BUTTON_BG_COLOR, fg=BUTTON_FG_COLOR, activebackground=BUTTON_ACTIVE_BG_COLOR,
                                            activeforeground=BUTTON_ACTIVE_FG_COLOR, relief="flat", highlightthickness=0)
-        self.save_group_button.pack(side="left", padx=5, pady=2)
-
-        self.load_group_button = tk.Button(self.toolbar, text="Load Script Group", command=self.load_script_group,
-                                           bg=BUTTON_BG_COLOR, fg=BUTTON_FG_COLOR, activebackground=BUTTON_ACTIVE_BG_COLOR,
-                                           activeforeground=BUTTON_ACTIVE_FG_COLOR, relief="flat", highlightthickness=0)
-        self.load_group_button.pack(side="left", padx=5, pady=2)
+        self.save_group_button.pack(side="right", padx=5, pady=2)
 
         # Create a notebook to show multiple tabs (for script output)
         self.notebook = ttk.Notebook(self.root)
