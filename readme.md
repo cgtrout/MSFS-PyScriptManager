@@ -25,8 +25,9 @@
   - Notes can be dragged with left mouse click (hold).  Right-click to close a note.
   - Use Ctrl+MouseWheel up/down to resize a note (with mouse cursor on top of note).
   - Use Ctrl+Shift+P shortcut to define a new note spawning location (it will use the current mouse position).
-- get_sim_time.py: Shows a draggable status bar that shows the real world zulu time and sim zulu time.  Double-click to program the count-down timer.
-
+- custom_status_bar.py: Shows a draggable status bar that shows the real world zulu time and sim zulu time.  Double-click to program the count-down timer.
+  - Previously called "get_sim_time"
+  - Now uses more easily modifiable 'template' system to define variables that show on the bar.  See source for more details.
   ![image](https://github.com/user-attachments/assets/be003852-16e7-493b-907d-fcba4e586893)
 - msfs-turn-off-fenix-efb: Example script that shows how LVARS can be automated.  This script will hide the EFBs on the Fenix A32x.  This script requires a mobiflight installation.
   
