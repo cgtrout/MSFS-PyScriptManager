@@ -6,6 +6,7 @@ from threading import Thread, Event
 import subprocess
 from pathlib import Path
 from tkinter import TclError
+from tkinter import scrolledtext
 import psutil  # Import psutil for process management
 import os
 import time  # Import time for handling timeouts
@@ -83,7 +84,7 @@ class ScriptLauncherApp:
         self.toolbar.pack(side="top", fill="x", padx=5, pady=5)
 
         # Add a button to the toolbar for selecting and running scripts
-        self.run_button = tk.Button(self.toolbar, text="Select and Run Script", command=self.select_and_run_script,
+        self.run_button = tk.Button(self.toolbar, text="Run Script", command=self.select_and_run_script,
                                     bg=BUTTON_BG_COLOR, fg=BUTTON_FG_COLOR, activebackground=BUTTON_ACTIVE_BG_COLOR,
                                     activeforeground=BUTTON_ACTIVE_FG_COLOR, relief="flat", highlightthickness=0)
         self.run_button.pack(side="left", padx=5, pady=2)
@@ -129,10 +130,10 @@ class ScriptLauncherApp:
         return self.current_tab_id
 
     def create_output_text_widget(self, parent):
-        """Create a scrollable text widget to display script output."""
-        text_widget = tk.Text(parent, wrap="word", bg=TEXT_WIDGET_BG_COLOR, fg=TEXT_WIDGET_FG_COLOR, 
-                              insertbackground=TEXT_WIDGET_INSERT_COLOR)
+        text_widget = scrolledtext.ScrolledText(parent, wrap="word", bg=TEXT_WIDGET_BG_COLOR, fg=TEXT_WIDGET_FG_COLOR, 
+                                                insertbackground=TEXT_WIDGET_INSERT_COLOR)
         text_widget.pack(expand=True, fill="both")
+        
         return text_widget
 
     def insert_output(self, tab_id, text):
@@ -166,7 +167,6 @@ class ScriptLauncherApp:
         def run():
             process = None
             try:
-                self.insert_output(tab_id, f"Starting script: {script_path}\n")
                 process = subprocess.Popen(
                     [str(pythonw_path.resolve()), "-u", str(script_path.resolve())],
                     stdout=subprocess.PIPE,
