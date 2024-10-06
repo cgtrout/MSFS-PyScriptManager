@@ -178,7 +178,7 @@ def start_virtual_printer_server(printer_message_queue):
     
     while True:
         connection, client_address = server_socket.accept()
-        print(f'Connection from {client_address}', flush=True)
+        print(f'Connection from {client_address}')
 
         try:
             data = b""
@@ -230,7 +230,7 @@ def start_http_server():
         httpd.allow_reuse_address = True
         httpd.server_bind()
         httpd.server_activate()
-        print(f"HTTP Server serving on port {HTTP_SERVER_PORT}", flush=True)
+        print(f"HTTP Server serving on port {HTTP_SERVER_PORT}\n")
         httpd.serve_forever()
 
 # Setup printer using PowerShell
@@ -296,19 +296,19 @@ def setup_printer():
             ["powershell", "-ExecutionPolicy", "Bypass", "-File", script_path],
             capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
         )
-        print(f"PowerShell stdout: {result.stdout}", flush=True)
-        print(f"PowerShell stderr: {result.stderr}", flush=True)
+        print(f"PowerShell stdout: {result.stdout}")
+        print(f"PowerShell stderr: {result.stderr}")
         
         if "Printer successfully added." in result.stdout:
-            print("Printer installation completed.", flush=True)
+            print("Printer installation completed.")
         else:
-            print("Printer installation may have failed. Check PowerShell output.", flush=True)
+            print("Printer installation may have failed. Check PowerShell output.")
 
         # Clean up the temporary PowerShell script file
         os.remove(script_path)
 
     except subprocess.CalledProcessError as e:
-        print(f"Error checking or installing printer: {e}", flush=True)
+        print(f"Error checking or installing printer: {e}")
 
 # Initialize Tkinter
 root = tk.Tk()
