@@ -365,9 +365,11 @@ class ScriptLauncherApp:
         if stderr_thread is not None:
             stderr_thread.join()
 
-    def terminate_tracked_processes(self):
-        """Terminate any processes left in self.process_pids."""
-        for pid in self.process_pids[:]:
+    def terminate_tracked_processes(self, tab_id):
+        """Terminate the process associated with a specific tab_id."""
+        process_info = self.processes.get(tab_id)
+        if process_info and process_info.get('process'):
+            pid = process_info['process'].pid
             try:
                 proc = psutil.Process(pid)
                 if proc.is_running():
@@ -375,7 +377,6 @@ class ScriptLauncherApp:
                     graceful = attempt_graceful_shutdown(proc)
                     if not graceful:
                         print(f"Force terminating pythonw process with PID {pid}")
-                self.process_pids.remove(pid)  # Remove PID from tracking after termination
                 print(f"Removed PID {pid} from tracked process list.")
             except psutil.NoSuchProcess:
                 print(f"Process with PID {pid} not found (might already be terminated).")
@@ -402,10 +403,6 @@ class ScriptLauncherApp:
             # Immediately stop reading threads and close the tab
             self.stop_events[tab_id].set()  # Signal threads to stop reading output
 
-            if process and process.pid:
-                # Terminate the process associated with the tab and remove it from tracked PIDs
-                self.terminate_tracked_processes()
-
             # Perform process termination in the background, so the UI doesn't freeze
             cleanup_thread = Thread(target=self.terminate_and_cleanup, args=(tab_id, process, stdout_thread, stderr_thread))
             cleanup_thread.daemon = True  # Daemon thread to clean up in the background
@@ -425,6 +422,7 @@ class ScriptLauncherApp:
             del self.stop_events[tab_id]
             del self.tab_frames[tab_id]
 
+
     def on_tab_right_click(self, event):
         """Handle right-click event on notebook tabs for direct tab closing."""
         # Get the index of the clicked tab
@@ -435,19 +433,43 @@ class ScriptLauncherApp:
         except TclError:
             return
 
+    def terminate_tracked_processes_on_close(self):
+        """Terminate any remaining processes left in self.process_pids on app close."""
+        for pid in self.process_pids[:]:
+            try:
+                proc = psutil.Process(pid)
+                if proc.is_running():
+                    print(f"Attempting graceful shutdown for pythonw process with PID {pid}")
+                    graceful = attempt_graceful_shutdown(proc)
+                    if not graceful:
+                        print(f"Force terminating pythonw process with PID {pid}")
+                self.process_pids.remove(pid)  # Remove PID from tracking after termination
+                print(f"Removed PID {pid} from tracked process list.")
+            except psutil.NoSuchProcess:
+                print(f"Process with PID {pid} not found (might already be terminated).")
+            except Exception as e:
+                print(f"Error terminating process with PID {pid}: {e}")
+
     def on_close(self):
         """Handle window close event: terminate all running scripts and close the application."""
         tab_ids = list(self.processes.keys())
+        
+        # Try to close all tabs and terminate associated processes
         for tab_id in tab_ids:
             try:
                 self.close_tab(tab_id)  # This will invoke terminate_and_cleanup for each tab
             except Exception as e:
                 print(f"Error closing tab {tab_id}: {e}")
         
-        print("Ensuring all launched pythonw processes are terminated...")
-        # Terminate any remaining tracked processes
-        self.terminate_tracked_processes()
+        # Give some time to allow processes to terminate gracefully
+        time.sleep(0.5)  # Optional: give a short delay to ensure background threads finish
 
+        print("Ensuring all launched pythonw processes are terminated...")
+
+        # Terminate any remaining tracked processes (just in case some were missed)
+        self.terminate_tracked_processes_on_close()
+
+        # Finally, destroy the Tkinter root window
         self.root.destroy()
 
 # Create the main window (root) for the UI with a dark theme
