@@ -174,11 +174,11 @@ def start_virtual_printer_server(printer_message_queue):
     server_socket.bind(server_address)
     server_socket.listen(5)
 
-    print(f"Printer server is listening on {PRINTER_SERVER_ADDRESS}:{PRINTER_SERVER_PORT}")
+    print(f"Printer server is listening on {PRINTER_SERVER_ADDRESS}:{PRINTER_SERVER_PORT}\n")
     
     while True:
         connection, client_address = server_socket.accept()
-        print(f'Connection from {client_address}')
+        print(f'Printer connection from {client_address}')
 
         try:
             data = b""
@@ -236,82 +236,83 @@ def start_http_server():
         print(f"HTTP Server serving on port {HTTP_SERVER_PORT}\n")
         httpd.serve_forever()
 
-# Setup printer using PowerShell
 def setup_printer():
     printer_name = "VirtualTextPrinter"
     driver_name = "Generic / Text Only"
 
-    # PowerShell command to check if the printer exists
-    check_printer_cmd = f"Get-Printer -Name '{printer_name}'"
-    
-    try:
-        # Check if the printer exists by running the PowerShell command with no window
-        print(f"Checking if printer '{printer_name}' is installed...")
-        result = subprocess.run(
-            ["powershell", "-Command", check_printer_cmd],
-            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
-        )
-        
-        if printer_name in result.stdout:
-            print(f"Printer '{printer_name}' is already installed.")
-            return  # Printer exists, no need to install
-        
-        # If the printer doesn't exist, install it
-        print(f"Printer '{printer_name}' not found. Installing printer...")
+    print("---CHECKING PRINTER STATUS--------------------------------------")
 
-        powershell_script = f"""
-        try {{
-            $portName = "${PRINTER_SERVER_ADDRESS}_${PRINTER_SERVER_PORT}"
-            $printerName = "{printer_name}"
-          
-            # Check if the 'Generic / Text Only' printer driver is installed
-            $driverName = "{driver_name}"
-            if (!(Get-PrinterDriver -Name $driverName -ErrorAction SilentlyContinue)) {{
-                Write-Host "Installing printer driver: {driver_name}"
-                Add-PrinterDriver -Name $driverName
-            }}
-            
-            # Add a new TCP/IP Port that points to the loopback address
-            if (!(Get-PrinterPort -Name $portName -ErrorAction SilentlyContinue)) {{
-                Add-PrinterPort -Name $portName -PrinterHostAddress "${PRINTER_SERVER_ADDRESS}" -PortNumber ${PRINTER_SERVER_PORT}
-            }}
+    powershell_script = f"""
+    try {{
+        $portName = "{PRINTER_SERVER_ADDRESS}_{PRINTER_SERVER_PORT}"
+        $printerName = "{printer_name}"
+        $driverName = "{driver_name}"
 
-            # Install the printer using the Generic / Text Only driver
-            if (!(Get-Printer -Name $printerName -ErrorAction SilentlyContinue)) {{
-                Add-Printer -Name $printerName -DriverName $driverName -PortName $portName
-                Write-Host "Printer successfully added."
-            }} else {{
-                Write-Host "Printer already exists."
-            }}
-        }} catch {{
-            Write-Error "An error occurred: $_"
-            exit 1  # Exit with a non-zero code so Python knows there was an issue
+        # Check if the 'Generic / Text Only' printer driver is installed
+        Write-Host "Checking printer driver..."
+        if (!(Get-PrinterDriver -Name $driverName)) {{
+            Write-Host "Printer driver is missing. Installing driver..."
+            Add-PrinterDriver -Name $driverName
+            Write-Host "Printer driver installed successfully."
+        }} else {{
+            Write-Host "Printer driver is already installed."
         }}
-        """
 
-        # Save the PowerShell script to a temporary file
-        script_path = os.path.join(os.getcwd(), "setup_printer.ps1")
-        with open(script_path, "w") as script_file:
-            script_file.write(powershell_script)
+        # Check if the port exists; if not, create it
+        Write-Host "Checking printer port..."
+        if (!(Get-PrinterPort -Name $portName)) {{
+            Write-Host "Printer port is missing. Creating port..."
+            Add-PrinterPort -Name $portName -PrinterHostAddress "{PRINTER_SERVER_ADDRESS}" -PortNumber {PRINTER_SERVER_PORT}
+            Write-Host "Printer port created successfully."
+        }} else {{
+            Write-Host "Printer port is already configured."
+        }}
 
-        # Run the PowerShell script to install the printer with no window
+        # Check if the printer exists; if not, create it
+        Write-Host "Checking printer..."
+        if (!(Get-Printer -Name $printerName)) {{
+            Write-Host "Printer is missing. Installing printer..."
+            Add-Printer -Name $printerName -DriverName $driverName -PortName $portName
+            Write-Host "Printer installed successfully."
+        }} else {{
+            Write-Host "Printer is already installed."
+        }}
+
+        # Final sanity check: verify that the printer is assigned to the correct port
+        Write-Host "Performing final check to ensure correct port assignment..."
+        $assignedPort = (Get-Printer -Name $printerName).PortName
+        if ($assignedPort -eq $portName) {{
+            Write-Host "Check passed: Printer is assigned to the correct port."
+        }} else {{
+            Write-Host "Check failed: Printer is assigned to '$assignedPort' instead of '$portName'."
+            exit 1  # Exit with a non-zero code if the port assignment is incorrect
+        }}
+    }} catch {{
+        Write-Host "An error occurred during setup: $_"
+        exit 1  # Exit with a non-zero code if an error occurs
+    }}
+    """
+
+    try:
+        # Run the PowerShell script inline (no temp file)
         result = subprocess.run(
-            ["powershell", "-ExecutionPolicy", "Bypass", "-File", script_path],
+            ["powershell", "-ExecutionPolicy", "Bypass", "-Command", powershell_script],
             capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
         )
-        print(f"PowerShell stdout: {result.stdout}")
-        print(f"PowerShell stderr: {result.stderr}")
-        
-        if "Printer successfully added." in result.stdout:
-            print("Printer installation completed.")
+
+        # Output the result of the PowerShell script to the user (filtered)
+        if result.returncode == 0:
+            print(result.stdout.strip())
         else:
-            print("Printer installation may have failed. Check PowerShell output.")
+            print("An error occurred during setup. Please try again.")
+            print(f"Error details: {result.stderr}")
 
-        # Clean up the temporary PowerShell script file
-        os.remove(script_path)
+    except subprocess.CalledProcessError:
+        print("An error occurred during the process. Please try again.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
 
-    except subprocess.CalledProcessError as e:
-        print(f"Error checking or installing printer: {e}")
+    print("----------------------------------------------------------------")
 
 # Initialize Tkinter
 root = tk.Tk()
