@@ -150,6 +150,7 @@ class ScriptLauncherApp:
 
     def run_script(self, script_path, tab_id):
         """Run the selected script using the portable Python interpreter and display output."""
+        print(f"run_script: {script_path} tab_id: {tab_id}")
         self.processes[tab_id]['script_path'] = str(script_path)
 
         def read_output(pipe, insert_function, tab_id):
