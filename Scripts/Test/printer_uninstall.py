@@ -6,9 +6,9 @@ import time
 import sys
 
 # Define constants for printer and driver
-PRINTER_SERVER_PORT = 9101
-PRINTER_SERVER_ADDRESS = 'localhost'
-printer_port = f"{PRINTER_SERVER_ADDRESS}:{PRINTER_SERVER_PORT}"
+PRINTER_SERVER_PORT = 9102
+PRINTER_SERVER_ADDRESS = '127.0.0.1'
+printer_port = f"{PRINTER_SERVER_ADDRESS}_{PRINTER_SERVER_PORT}"
 driver_name = "Generic / Text Only"
 printer_name = "VirtualTextPrinter"  # Name of the printer to remove
 
@@ -70,6 +70,18 @@ def create_powershell_script(output_file):
 
     return script_path
 
+# Function to remove temporary files
+def cleanup_temp_files(script_path, output_file):
+    try:
+        if os.path.exists(script_path):
+            os.remove(script_path)
+            print(f"Temporary script file '{script_path}' deleted.")
+        if os.path.exists(output_file):
+            os.remove(output_file)
+            print(f"Temporary output file '{output_file}' deleted.")
+    except Exception as e:
+        print(f"Error cleaning up temporary files: {e}")
+
 # Main function to execute the PowerShell script and read output
 def main():
     # Define the output file for logging
@@ -109,6 +121,9 @@ def main():
             print("PowerShell output file was not created.")
     except Exception as e:
         print(f"Error reading PowerShell output file: {e}")
+    finally:
+        # Clean up temporary files
+        cleanup_temp_files(script_path, output_file)
 
 if __name__ == "__main__":
     main()
