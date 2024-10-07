@@ -7,22 +7,23 @@ import time
 SERVER_PORT = 40001
 
 # Create a FIFO queue to store messages
-message_queue = queue.Queue()
+http_message_queue = queue.Queue()
 
 # Custom HTTP request handler
 class HttpRequestHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/latest":
             try:
-                # Get the next message from the queue (non-blocking)
-                message = message_queue.get_nowait()
+                response = http_message_queue.get_nowait()  # Get the next message in the queue
                 self.send_response(200)
                 self.send_header("Content-type", "text/plain")
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
                 self.end_headers()
-                self.wfile.write(message.encode("utf-8"))
+                self.wfile.write(response.encode("utf-8"))
             except queue.Empty:
-                # If no messages are available, return an empty response
-                self.send_response(204)  # No content
+                self.send_response(204)  # No content available
                 self.end_headers()
         else:
             self.send_response(404)
@@ -36,13 +37,13 @@ def simulate_print_jobs():
         new_message = f"Print job #{count}: ACARS message or other data."
         print(f"New message added: {new_message}")
         # Put the new message in the queue
-        message_queue.put(new_message)
+        http_message_queue.put(new_message)
         count += 1
 
 # Start the HTTP server
 def start_server():
     with socketserver.TCPServer(("localhost", SERVER_PORT), HttpRequestHandler) as httpd:
-        print("Server running on port {SERVER_PORT}...")
+        print(f"Server running on port {SERVER_PORT}...")
         httpd.serve_forever()
 
 # Start the server in one thread and simulate print jobs in another thread
