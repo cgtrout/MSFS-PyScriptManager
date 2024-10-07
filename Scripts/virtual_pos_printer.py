@@ -215,6 +215,9 @@ class HttpRequestHandler(http.server.SimpleHTTPRequestHandler):
                 response = http_message_queue.get_nowait()  # Get the next message in the queue
                 self.send_response(200)
                 self.send_header("Content-type", "text/plain")
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
                 self.end_headers()
                 self.wfile.write(response.encode("utf-8"))
             except queue.Empty:
