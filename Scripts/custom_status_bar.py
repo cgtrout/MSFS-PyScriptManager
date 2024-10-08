@@ -88,7 +88,7 @@ def get_temp():
         tat = aq.get("TOTAL_AIR_TEMPERATURE")
         if sat is None or tat is None :
             return "No Data"
-        return f"SAT:{sat:.1f}°C TAT:{tat:.1f}°C"
+        return f"TAT {tat:.1f}°C   SAT {sat:.1f}°C"
     except Exception:
         return "Disconnected"
 
