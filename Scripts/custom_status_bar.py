@@ -19,7 +19,7 @@ print("Simulator Time Display: Close this window to close time display")
 # 'function_name' references a Python function used to fetch dynamic values,
 # 'color' determines the text rendering color for both the label and value.
 
-DISPLAY_TEMPLATE = "VAR(Sim:, get_sim_time, yellow)|VAR(Zulu:, get_real_world_time, white) | VAR(Altitude:, get_altitude, tomato) | VAR(Remaining:, get_time_to_future, red) | VAR(TAT:, get_tat, cyan) "
+DISPLAY_TEMPLATE = "VAR(Sim:, get_sim_time, yellow)|VAR(Zulu:, get_real_world_time, white) | VAR(Altitude:, get_altitude, tomato) | VAR(Remaining:, get_time_to_future, red) | VAR(, get_temp, cyan) "
 
 # Configurable Variables
 WINDOW_TITLE = "Simulator Time"
@@ -77,16 +77,17 @@ def get_altitude():
     except Exception:
         return "Disconnected"
 
-def get_tat():
-    """Fetch the Total Air Temperature (TAT) from SimConnect."""
+def get_temp():
+    """Fetch the Temperature from SimConnect."""
     if not sim_connected:
         return "Sim Not Running"
     
     try:
-        tat = aq.get("AMBIENT_TEMPERATURE")
-        if tat is None:
+        sat = aq.get("AMBIENT_TEMPERATURE")
+        tat = aq.get("TOTAL_AIR_TEMPERATURE")
+        if sat is None or tat is None :
             return "No Data"
-        return f"{tat:.1f}°C"
+        return f"SAT:{sat:.1f}°C TAT:{tat:.1f}°C"
     except Exception:
         return "Disconnected"
 
