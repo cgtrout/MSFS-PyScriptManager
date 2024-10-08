@@ -7,7 +7,7 @@ from SimConnect import SimConnect, AircraftRequests
 from datetime import datetime, timezone, timedelta
 
 # Print initial message
-print("Simulator Time Display: Close this window to close time display")
+print("custom_status_bar: Close this window to close time display")
 
 # DISPLAY_TEMPLATE
 # The DISPLAY_TEMPLATE defines the content and format of the data displayed in the application's window.
@@ -102,8 +102,6 @@ def get_time_to_future():
     if remaining_time_seconds <= 0:
         return "00:00:00"
     return str(timedelta(seconds=int(remaining_time_seconds)))
-
-
 
 def set_future_time():
     """Prompt the user to set a future countdown time based on Sim Time."""
