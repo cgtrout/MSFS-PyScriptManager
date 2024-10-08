@@ -149,15 +149,12 @@ def create_window(data, default_font):
 # Function to process messages from the queue
 def process_print_queue(default_font):
     try:
-        # Are popups enabled?
-        if not settings.get("enable_popups", True):
-            message = printer_message_queue.get_nowait()
-            return
-
-        # Pop-ups are enabled, process the message and create a window
         message = printer_message_queue.get_nowait()
-        print(f"Processing message: {message}")
-        create_window(message, default_font)
+
+        # Only show popup if enabled in settings
+        if settings.get("enable_popups", True):
+            create_window(message, default_font)
+            print(f"Processing message from printer queue: {message}")
         
     except queue.Empty:
         pass
