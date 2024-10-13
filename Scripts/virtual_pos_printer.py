@@ -15,6 +15,10 @@ import os
 import re
 import subprocess
 
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "1"
+import pygame
+import atexit
+
 # Define constants for server address and port
 PRINTER_SERVER_ADDRESS = '127.0.0.1'
 PRINTER_SERVER_PORT = 9102
@@ -27,6 +31,17 @@ SETTINGS_FILE = os.path.join(SETTINGS_DIR, 'settings.json')
 # Create the directory if it doesn't exist
 os.makedirs(SETTINGS_DIR, exist_ok=True)
 
+# Play printer sound
+def play_print_sound():
+    try:
+        pygame.mixer.music.load(play_sound_path)
+        pygame.mixer.music.set_volume(play_volume)
+        pygame.mixer.music.play()
+        print(f"Playing sound from: {play_sound_path} at volume: {play_volume}")
+    except pygame.error as e:
+        print(f"Error loading or playing sound: {e}")
+
+# Load sounds from file
 def load_settings():
     if os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE, 'r') as f:
@@ -42,6 +57,15 @@ def load_settings():
     if "enable_popups" not in settings:
         settings["enable_popups"] = True
         updated = True
+    if "play_sound" not in settings:
+        settings["play_sound"] = ""
+        updated = True
+    if "play_volume" not in settings:  
+        settings["play_volume"] = 0.5  
+        updated = True
+    else:
+        # Ensure play_volume is within the valid range (0.0 to 1.0)
+        settings["play_volume"] = max(0.0, min(1.0, settings["play_volume"]))
 
     # Save the updated settings if new keys were added
     if updated:
@@ -63,8 +87,24 @@ def save_settings(settings):
     with open(SETTINGS_FILE, 'w') as f:
         json.dump(settings, f, indent=4)  # Adds indentation for pretty formatting
 
+# Load settings from file
 settings = load_settings()
 spawn_position = tuple(settings.get("spawn_position", (100, 100)))
+play_sound_path = os.path.abspath(os.path.join(SETTINGS_DIR, settings.get("play_sound", "")))
+play_volume = settings.get("play_volume", 0.5)  # Use the play_volume setting
+
+# pygame sound init for sound playback
+#
+# Initialize pygame mixer
+
+pygame.mixer.init()
+atexit.register(pygame.mixer.quit)
+
+# Check if the MP3 file exists
+if not os.path.isfile(play_sound_path):
+    print(f"Error: The sound file '{play_sound_path}' does not exist.  Sound playback will not work. Please check the path in settings.json.")
+else:
+    print("MP3 sound file found.")
 
 # Variables for cascading windows
 active_windows = []
@@ -155,6 +195,8 @@ def process_print_queue(default_font):
         if settings.get("enable_popups", True):
             create_window(message, default_font)
             print(f"Processing message from printer queue: {message}")
+            if play_sound:
+                playsound(play_sound)
         
     except queue.Empty:
         pass
@@ -210,6 +252,8 @@ class HttpRequestHandler(http.server.SimpleHTTPRequestHandler):
         if self.path == "/latest":
             try:
                 response = http_message_queue.get_nowait()  # Get the next message in the queue
+                if playsound:
+                    playsound(play_sound)
                 self.send_response(200)
                 self.send_header("Content-type", "text/plain")
                 self.send_header('Access-Control-Allow-Origin', '*')
