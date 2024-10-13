@@ -195,8 +195,8 @@ def process_print_queue(default_font):
         if settings.get("enable_popups", True):
             create_window(message, default_font)
             print(f"Processing message from printer queue: {message}")
-            if play_sound:
-                playsound(play_sound)
+            if play_sound_path:
+                play_print_sound()
         
     except queue.Empty:
         pass
@@ -252,8 +252,8 @@ class HttpRequestHandler(http.server.SimpleHTTPRequestHandler):
         if self.path == "/latest":
             try:
                 response = http_message_queue.get_nowait()  # Get the next message in the queue
-                if playsound:
-                    playsound(play_sound)
+                if play_sound_path:
+                    play_print_sound()
                 self.send_response(200)
                 self.send_header("Content-type", "text/plain")
                 self.send_header('Access-Control-Allow-Origin', '*')
