@@ -36,7 +36,7 @@ def play_print_sound():
     try:
         pygame.mixer.music.load(play_sound_path)
         pygame.mixer.music.set_volume(play_volume)
-        pygame.mixer.music.play()
+        pygame.mixer.music.play(start=1.75) # Trim start for quicker playback
         # print(f"Playing sound from: {play_sound_path} at volume: {play_volume}")
     except pygame.error as e:
         print(f"Error loading or playing sound: {e}")
