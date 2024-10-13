@@ -325,7 +325,7 @@ def setup_printer():
         if ($assignedPort -eq $portName) {{
             Write-Host "Check passed: Printer is assigned to the correct port."
         }} else {{
-            Write-Host "Check failed: Printer is assigned to '$assignedPort' instead of '$portName'."
+            Write-Host "!!  Check FAILED: Printer is assigned to '$assignedPort' instead of '$portName'."
             exit 1  # Exit with a non-zero code if the port assignment is incorrect
         }}
     }} catch {{
