@@ -58,7 +58,7 @@ def load_settings():
         settings["enable_popups"] = True
         updated = True
     if "play_sound" not in settings:
-        settings["play_sound"] = ""
+        settings["play_sound"] = "../Data/receipt-printer-01-43872.mp3"
         updated = True
     if "play_volume" not in settings:  
         settings["play_volume"] = 0.5  
