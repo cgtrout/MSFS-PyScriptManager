@@ -360,16 +360,17 @@ class ScriptLauncherApp:
             subprocess.Popen([str(vscode_path.resolve()), script_path])
 
     def reload_script(self, tab_id):
-        """Reload the selected script by re-running it."""
         if tab_id in self.processes:
-            # Get the current script path
             script_path = Path(self.processes[tab_id]['script_path'])
             
-            # Close the existing tab
+            # Close the existing tab and cleanup
             self.close_tab(tab_id)
             
-            # Run the script again in a new tab with the same tab_id
-            self.run_script_with_tab(script_path, tab_id)
+            # Generate a new, unique tab ID for the reload
+            new_tab_id = self.generate_tab_id()
+            
+            # Run the script in a new tab with the new tab ID
+            self.run_script_with_tab(script_path, new_tab_id)
 
     def terminate_and_cleanup(self, tab_id, process, stdout_thread, stderr_thread):
         """Terminate the process, and clean up stdout and stderr threads."""
