@@ -1,6 +1,6 @@
 **MSFS-PyScriptManager** is a tool designed for managing and executing custom Python scripts tailored for Microsoft Flight Simulator (MSFS). This tool leverages the **WinPython** portable Python environment for ease of installation.  Simply download the release and extract it - no further installation required to run scripts!  Comes with some useful scripts, such as "virtual_pos_printer.py" that can print popup notes on the screen from the Fenix A32x printer.
 
-# NEW - POS printer functionality toolbar added (for VR).
+# **NEW** - POS printer functionality toolbar added (for VR).
   - See: [Community Addon Guide](https://github.com/cgtrout/MSFS-PyScriptManager/blob/community-connection/Docs/Community_Addon_Guide.md) for instructions on how to set this up.
   - Many thanks to chrisaut for the collaboration on this toolbar addon!
 
@@ -41,7 +41,7 @@
   
   ![image](https://github.com/user-attachments/assets/05786688-b542-4050-95eb-1e85bf8d673d)
 
-- **msfs-turn-off-fenix-efb:** Example script that shows how LVARS can be automated.  This script will hide the EFBs on the Fenix A32x.  This script requires a mobiflight installation.
+- **fenix_disable_efb.py:** Example script that shows how LVARS can be automated.  This script will hide the EFBs on the Fenix A32x.  This script requires a Mobiflight "Wasm" module installation.
   
 # Technical Notes
 - The launcher exe is provided for ease of use.  It is also possible to launch the script "/Launcher/Launcher.py" from "WinPython/WinPython Command Prompt.exe" if you prefer to not launch from the EXE.  The exe can be built by launching "Build.bat" in "\Launcher\LauncherApp" as the "TCC" C-Compiler is included.
