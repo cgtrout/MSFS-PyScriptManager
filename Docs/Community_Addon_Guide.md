@@ -10,6 +10,7 @@ Built in collaboration with chrisut - thank-you Chris for the assistance!
 - {TODO}
 
 # Usage Guide
-- Note that this must remain open for messages to be received.  Double click the "Printouts" header if you want to minimize it.
-- Arrows on left/right will move through messages.  Trash-can will delete current message.
 - It is critical that the "virtual_pos_printer" script remains running as this handles the communication between the virtual printer and the MSFS addon.
+- Note that the toolbar must remain open for messages to be received.  Double click the "Printouts" header if you want to minimize the toolbar.
+- Arrows on left/right will move through messages.  Trash-can will delete current message. + / - buttons will resize the text.
+
