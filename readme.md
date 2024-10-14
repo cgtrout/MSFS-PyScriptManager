@@ -1,6 +1,7 @@
 **MSFS-PyScriptManager** is a tool designed for managing and executing custom Python scripts tailored for Microsoft Flight Simulator (MSFS). This tool leverages the **WinPython** portable Python environment for ease of installation.  Simply download the release and extract it - no further installation required to run scripts!  Comes with some useful scripts, such as "virtual_pos_printer.py" that can print popup notes on the screen from the Fenix A32x printer.
 
-# **NEW** - POS printer functionality toolbar added (for VR).
+# **NEW** - MSFS toolbar added for 'virtual printer'
+  - Allows print jobs to show on a MSFS toolbar (for VR users).
   - See: [Community Addon Guide](https://github.com/cgtrout/MSFS-PyScriptManager/blob/community-connection/Docs/Community_Addon_Guide.md) for instructions on how to set this up.
   - Many thanks to chrisaut for the collaboration on this toolbar addon!
 
@@ -13,11 +14,11 @@
 - Extract the downloaded file to a location of your choice.
 - Feel free to post an 'issue' here on Github if you have any issues with the launcher or the scripts.
 
-# How to use the launcher
+# How to use the Launcher
 - Launch MSFS-PyScriptManager.exe.
 - Click the "Run Script" button to open a script. Running scripts are each shown in their own individual tabs.  Right click the tab header for a given script to close it.
-- Further details on the provided scripts are included further down.
 - Right click an open script tab to close
+- Further details on the provided scripts are included further down.
 
   <img src="https://github.com/user-attachments/assets/6dbde597-67e0-453b-8478-b096e44edd1d" alt="Description of image" width="500">
 
