@@ -8,7 +8,7 @@ from SimConnect import SimConnect, AircraftRequests
 from datetime import datetime, timezone, timedelta
 
 # Print initial message
-print("custom_status_bar: Close this window to close time display")
+print("custom_status_bar: Close this window to close status bar")
 
 # DISPLAY_TEMPLATE
 # The DISPLAY_TEMPLATE defines the content and format of the data displayed in the application's window.
