@@ -328,6 +328,8 @@ def setup_printer():
             Write-Host "Printer is already installed."
         }}
 
+        Write-Host " "
+        
         # Final sanity check: verify that the printer is assigned to the correct port
         Write-Host "Performing final check to ensure correct port assignment..."
         $assignedPort = (Get-Printer -Name $printerName).PortName
