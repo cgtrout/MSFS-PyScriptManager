@@ -1,9 +1,8 @@
-# MSFS-PyScriptManager
-
 **MSFS-PyScriptManager** is a tool designed for managing and executing custom Python scripts tailored for Microsoft Flight Simulator (MSFS). This tool leverages the **WinPython** portable Python environment for ease of installation.  Simply download the release and extract it - no further installation required to run scripts!  Comes with some useful scripts, such as "virtual_pos_printer.py" that can print popup notes on the screen from the Fenix A32x printer.
 
-# NEW {TODO: date} - POS printer functionality can now be sent optionally to MSFS to show up as a toolbar window. SEE (TODO PROVIDE LINK? )
-  - Many thanks to {TODO: appropriate credits for this}
+# NEW - POS printer functionality toolbar added (for VR).
+  - See: [Community Addon Guide](https://github.com/cgtrout/MSFS-PyScriptManager/blob/community-connection/Docs/Community_Addon_Guide.md) for instructions on how to set this up.
+  - Many thanks to chrisaut for the collaboration on this toolbar addon!
 
 # Download
 - [Download MSFS-PyScriptManager(Release Page)](https://github.com/cgtrout/MSFS-PyScriptManager/releases/)
@@ -22,9 +21,9 @@
 ![image](https://github.com/user-attachments/assets/5b0aac05-f1da-417e-a97b-be8261a4f1ba)
   - This will automatically create a "Fake" network Windows printer called "VirtualTextPrinter".
   - Set the printer in the Fenix EFB settings to use the "VirtualTextPrinter" created by the script.
-  - {TODO: CONSIDER FULL SPLIT OFF TUTORIAL?}
-
+  
      ![image](https://github.com/user-attachments/assets/13a472df-3aa1-4977-8001-cc7ec6170d92)
+  - NEW: Now has an optional community toolbar addon for those in VR see: [Community Addon Guide](https://github.com/cgtrout/MSFS-PyScriptManager/blob/community-connection/Docs/Community_Addon_Guide.md)
   - Note that this script **must** be running for the print functionality to work as it functions as a print server.
   - There is a script called "virtual_pos_TEST.py" that can be run to test the printer.  If everything is working correctly you should see popups with a test message every five seconds.
   - Notes can be dragged with left mouse click (hold).  Right-click to close a note.
