@@ -18,7 +18,6 @@ python_path = project_root / "WinPython" / "python-3.13.0rc1.amd64" / "python.ex
 pythonw_path = python_path.with_name("pythonw.exe")  # Use pythonw.exe to prevent console window
 vscode_path = project_root / "WinPython" / "VS Code.exe"  # Dynamically calculated path to VS Code.exe
 scripts_path = project_root / "Scripts"
-print(f"Scripts Path: {scripts_path}")
 
 # Define color constants
 DARK_BG_COLOR = "#2E2E2E"
