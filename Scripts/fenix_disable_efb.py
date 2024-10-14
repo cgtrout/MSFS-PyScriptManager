@@ -1,48 +1,48 @@
-# msfs-turn-off-fenix-efb.py: example script to show how to modify LVAR with mobiflight lib
+# fenix_disable_efb.py: Shows an example of how you can disable the Fenix A32x EFBs using a script
 
 from time import sleep
-import sys
-import os
-
 from simconnect_mobiflight.mobiflight_variable_requests import MobiFlightVariableRequests
 from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
 
-import logging
+# Constants for LVARs
+EFB_VISIBLE_CAPT = "(L:S_EFB_VISIBLE_CAPT)"
+EFB_CHARGING_CAPT = "(L:S_EFB_CHARGING_CABLE_CAPT)"
+EFB_VISIBLE_FO = "(L:S_EFB_VISIBLE_FO)"
+EFB_CHARGING_FO = "(L:S_EFB_CHARGING_CABLE_FO)"
 
-logging.basicConfig(level=logging.DEBUG)
+def set_and_get_lvar(mf_requests, lvar, value):
+    """Sets an LVAR to a specified value and retrieves the updated value."""
+    mf_requests.set(f"{value} (> {lvar})")
+    result = mf_requests.get(f"{lvar}")
+    print(f"{lvar} set to {value}. Current value: {result}")
+    return result
 
-try:
-    # Initialize the SimConnect connection
-    sm = SimConnectMobiFlight()
-    mf_requests = MobiFlightVariableRequests(sm)
-    
-    # For some reason it seems we need to 'prime' the lib or it doesn't work otherwise?
-    altitude = mf_requests.get("(A:PLANE ALTITUDE,Feet)")
+def main():
+    try:
+        # Initialize the SimConnect connection
+        sm = SimConnectMobiFlight()
+        mf_requests = MobiFlightVariableRequests(sm)
 
-    # Set the LVAR
-    mf_requests.set("0 (>L:S_EFB_VISIBLE_CAPT)")
+        # Prime the library - possibly necessary to ensure the connection works properly?
+        # TODO determine what causes this
+        altitude = mf_requests.get("(A:PLANE ALTITUDE,Feet)")
+        print(f"Primed with altitude: {altitude}")
 
-    # Fetch the LVAR value
-    efb_visible = mf_requests.get("(L:S_EFB_VISIBLE_CAPT)")
-    print(f"EFB Visibility is now set to: {efb_visible}")
+        # Set values for Captain's EFB visibility and charging cable
+        # Setting to 0 hides these in this case
+        set_and_get_lvar(mf_requests, EFB_VISIBLE_CAPT, 0)
+        set_and_get_lvar(mf_requests, EFB_CHARGING_CAPT, 0)
 
-    mf_requests.set("0 (>L:S_EFB_CHARGING_CABLE_CAPT)")
-    charging_cable = mf_requests.get("(L:S_EFB_CHARGING_CABLE_CAPT)")
-    print(f"EFB Charging Cable is now set to: {charging_cable}")
+        # Set values for First Officer's EFB visibility and charging cable
+        # Setting to 0 hides
+        set_and_get_lvar(mf_requests, EFB_VISIBLE_FO, 0)
+        set_and_get_lvar(mf_requests, EFB_CHARGING_FO, 0)
 
-    # Set the LVARs for the First Officer's EFB visibility and charging cable
-    mf_requests.set("0 (>L:S_EFB_VISIBLE_FO)")
-    mf_requests.set("0 (>L:S_EFB_CHARGING_CABLE_FO)")
+    except ConnectionError as e:
+        print(f"Could not connect to Flight Simulator: {e}")
+        print("Make sure MSFS is running and try again.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
 
-    # Fetch the LVAR values to confirm
-    efb_visible_fo = mf_requests.get("(L:S_EFB_VISIBLE_FO)")
-    charging_cable_fo = mf_requests.get("(L:S_EFB_CHARGING_CABLE_FO)")
-    print(f"FO EFB Visibility: {efb_visible_fo}, FO Charging Cable: {charging_cable_fo}")
-    
-except ConnectionError as e:
-    logging.error("Could not connect to Flight Simulator: %s", e)
-    logging.info("Make sure MSFS is running and try again.")
-except Exception as e:
-    logging.error("An unexpected error occurred: %s", e)
-
-
+if __name__ == "__main__":
+    main()
