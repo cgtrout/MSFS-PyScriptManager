@@ -1,6 +1,6 @@
-# Virtual Printer Community Guide Addon Guide
+# Virtual Printer Community Toolbar Addon Guide
 
-This document will explain how to install and use the optional community addon.  This community addon will allow printouts from the "virtual_pos_printer" script to show in a MSFS toolbar for those in VR.  I'd only recommend this for those in VR as there are limitations to what can be done with a MSFS toolbar.
+This document will explain how to install and use the optional community addon.  This community toolbar addon will allow printouts from the "virtual_pos_printer" script to show in a MSFS toolbar for those in VR.  I'd only recommend this for those in VR as there are limitations to what can be done with a MSFS toolbar.
 
 Built in collaboration with chrisut - thank-you Chris for the assistance!
 
@@ -12,5 +12,6 @@ Built in collaboration with chrisut - thank-you Chris for the assistance!
 # Usage Guide
 - It is critical that the "virtual_pos_printer" script remains running as this handles the communication between the virtual printer and the MSFS addon.
 - Note that the toolbar must remain open for messages to be received.  Double click the "Printouts" header if you want to minimize the toolbar.
+- When a new print message appears it will make a sound, although again note that the toolbar must be open.
 - Arrows on left/right will move through messages.  Trash-can will delete current message. + / - buttons will resize the text.
 
