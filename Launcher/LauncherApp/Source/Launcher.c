@@ -57,11 +57,6 @@ int run_script(const char *pythonPath, const char *scriptPath) {
         return -1;
     }
 
-    // Bring the console window to the foreground and minimize it.
-    setForegroundWindow(hConsole);
-    Sleep(100);
-    showWindow(hConsole, SW_MINIMIZE);
-
     // Set up pipes for redirecting the output from the Python process back to the console.
     HANDLE hReadPipe, hWritePipe;
     SECURITY_ATTRIBUTES sa = { sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
@@ -83,6 +78,11 @@ int run_script(const char *pythonPath, const char *scriptPath) {
         CloseHandle(hWritePipe);
         return -1;
     }
+
+    // Bring the console window to the foreground and minimize it.
+    setForegroundWindow(hConsole);
+    Sleep(100);
+    showWindow(hConsole, SW_MINIMIZE);
 
     // Close the write end of the pipe as it's no longer needed.
     CloseHandle(hWritePipe);
