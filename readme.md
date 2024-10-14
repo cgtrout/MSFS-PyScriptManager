@@ -11,10 +11,15 @@
 # Installation Instructions
 - Download the zip file from the newest release (Releases).
 - Extract the downloaded file to a location of your choice.
+- Feel free to post an 'issue' here on Github if you have any issues with the launcher or the scripts.
+
+# How to use the launcher
 - Launch MSFS-PyScriptManager.exe.
 - Click the "Run Script" button to open a script. Running scripts are each shown in their own individual tabs.  Right click the tab header for a given script to close it.
 - Further details on the provided scripts are included further down.
-- Feel free to post an 'issue' here on Github if you have any issues with the launcher or the scripts.
+- Right click an open script tab to close
+
+  <img src="https://github.com/user-attachments/assets/6dbde597-67e0-453b-8478-b096e44edd1d" alt="Description of image" width="500">
 
 # Scripts Included
 - **virtual_pos_printer.py:** Allows print jobs from the Fenix A32x to show as popup 'notes' on the screen.
