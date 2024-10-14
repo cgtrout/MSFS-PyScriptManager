@@ -4,10 +4,16 @@ This document will explain how to install and use the optional community addon. 
 
 Built in collaboration with chrisut - thank-you Chris for the assistance!
 
-![image](https://github.com/user-attachments/assets/ab4973c7-11b2-48b4-bd11-053128d64856)
+  <img src="https://github.com/user-attachments/assets/ab4973c7-11b2-48b4-bd11-053128d64856" alt="Description of image" width="300">
 
 # Install Guide
-- {TODO}
+- Please ensure that you have read the main readme.md and set everything up as shown for the "virtual_pos_printer" script.
+- Run the toolbar installer by opening the script "msfs_toolbar_installer.py" in "/Scripts/Installer" using the launcher exe.
+  
+    <div style="display: flex;">
+        <img src="https://github.com/user-attachments/assets/8001a4b0-e311-43d1-bec0-61f15ac1f147" alt="First image" width="200">
+        <img src="https://github.com/user-attachments/assets/a877b0f6-c327-4b72-9f5f-8646a062b50e" alt="Second image" width="200">
+    </div>
 
 # Usage Guide
 - It is critical that the "virtual_pos_printer" script remains running as this handles the communication between the virtual printer and the MSFS addon.
