@@ -17,8 +17,8 @@ project_root = current_dir.parents[1]
 python_path = project_root / "WinPython" / "python-3.13.0rc1.amd64" / "python.exe"
 pythonw_path = python_path.with_name("pythonw.exe")  # Use pythonw.exe to prevent console window
 vscode_path = project_root / "WinPython" / "VS Code.exe"  # Dynamically calculated path to VS Code.exe
-print(f"Python path: {pythonw_path.resolve()}")
-print(f"VS Code path: {vscode_path.resolve()}")
+scripts_path = project_root / "Scripts"
+print(f"Scripts Path: {scripts_path}")
 
 # Define color constants
 DARK_BG_COLOR = "#2E2E2E"
@@ -123,6 +123,21 @@ class ScriptLauncherApp:
 
         # Override close window behavior to ensure all processes are killed
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        # Call autoplay_script_group to automatically load the script _auto group file at startup
+        self.autoplay_script_group()
+
+    def autoplay_script_group(self):
+        """Automatically load a script group file named '_autoplay.script_group' located in the Scripts directory."""
+        # Set path to '_autoplay.script_group' within the Scripts directory
+        autoplay_path = scripts_path / "_autoplay.script_group"
+        
+        # Check if the file exists and load it if it does
+        if autoplay_path.exists():
+            print(f"Autoplay: Loading script group from {autoplay_path}")
+            self.load_script_group_from_path(autoplay_path)
+        else:
+            print("Autoplay: No '_autoplay.script_group' file found at startup. Skipping autoplay.")
 
     def generate_tab_id(self):
         """Generates a unique tab ID by incrementing the counter."""
@@ -288,48 +303,55 @@ class ScriptLauncherApp:
         with open(file_path, 'w') as f:
             f.writelines(f"{path}\n" for path in script_paths)
 
+    def load_script_from_path(self, script_path_str):
+        """Load and run a script from a specified file path."""
+        script_path = Path(script_path_str)
+
+        # Check if the file exists
+        if not script_path.exists():
+            print(f"Error: Script '{script_path}' not found.")
+            return
+
+        # Generate a unique tab ID for the script
+        tab_id = self.generate_tab_id()
+
+        # Load and run the script in a new tab
+        self.run_script_with_tab(script_path, tab_id)
+
     def load_script_group(self):
-        """Load scripts from a .script_group file and launch them in new tabs, resolving relative paths."""
+        """Prompt the user to select a .script_group file and load scripts from it."""
         file_path = filedialog.askopenfilename(
             title="Select Script Group",
             filetypes=[("Script Group Files", "*.script_group")]
         )
 
-        if not file_path:
+        if file_path:
+            self.load_script_group_from_path(Path(file_path))
+
+    def load_script_group_from_path(self, file_path):
+        """Load scripts from the specified .script_group file and launch them in new tabs."""
+        group_dir = file_path.parent
+
+        # Ensure the file exists before attempting to read
+        if not file_path.exists():
+            print(f"Error: Script group file '{file_path}' not found.")
             return
 
-        # Get the directory of the .script_group file to resolve relative paths
-        group_dir = Path(file_path).parent
-
-        # Read the relative paths from the file and resolve them to absolute paths
+        # Read the script paths from the file and resolve them relative to the group file's directory
         with open(file_path, 'r') as f:
             script_paths = [group_dir / Path(line.strip()) for line in f.readlines() if line.strip()]
 
-        # Use a set to track the scripts that have already been loaded to avoid duplicates
+        # Use a set to avoid loading duplicate scripts
         loaded_scripts = set()
 
-        # Iterate over script paths, resolving to absolute and checking if they exist
+        # Load each script in the script group file
         for script_path in script_paths:
             absolute_path = script_path.resolve()
 
-            # Check if the script has already been loaded
-            if str(absolute_path) in loaded_scripts:
-                continue  # Skip duplicate script loading
+            if str(absolute_path) not in loaded_scripts:
+                loaded_scripts.add(str(absolute_path))
+                self.load_script_from_path(absolute_path)
 
-            # Add the script to the set of loaded scripts
-            loaded_scripts.add(str(absolute_path))
-
-            # Generate a new tab ID for each script to ensure each script gets its own tab
-            tab_id = self.generate_tab_id()
-
-            # Create a tab for the script, which will also run the script inside it
-            self.run_script_with_tab(absolute_path, tab_id)
-
-            # Check if the script file exists
-            if not absolute_path.exists():
-                error_message = f"Error: Script '{absolute_path}' not found. Skipping...\n"
-                self.insert_output(tab_id, error_message)
-                continue  # Skip loading this script if the file doesn't exist
 
     def edit_script(self, tab_id):
         """Open the selected script in VSCode for editing."""
