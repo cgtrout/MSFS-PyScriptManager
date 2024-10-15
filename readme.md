@@ -38,7 +38,7 @@
 
 - **custom_status_bar.py:** Shows a draggable status bar that shows the real world zulu time and sim zulu time.  Double-click to program the count-down timer.
   - Previously called "get_sim_time"
-  - Now uses more easily modifiable 'template' system to define variables that show on the bar to make it easier to modify.  See source file for more details.
+  - Now uses more easily modifiable 'template' system to define variables that show on the bar.  See source file for more details.
   
   ![image](https://github.com/user-attachments/assets/05786688-b542-4050-95eb-1e85bf8d673d)
 
