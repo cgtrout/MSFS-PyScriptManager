@@ -2,16 +2,16 @@
 
 This document will show how to manually set up the printer incase the automated printer installation does not work.
 
-I only recommend this guide as a last resort.  In most cases the automated hopefully will work, but I wanted to give a fallback plan if that fails.
+I only recommend this guide as a **last resort**.  In most cases the automated hopefully will work, but I wanted to give a fallback plan if that fails.
 
 If the printer setup was correct it should look like this:
 ![image](https://github.com/user-attachments/assets/7853865d-4742-4af1-8bfe-4fc08f931e10)
 
 If it doesn't look like this follow this guide to get the VirtualTextPrinter working on your Windows installation.
 
-First thing to try is to open properties for port, to see if it is set up like follows.  If changing this does not work than proceed to the next section
+First thing to try is to open properties for port, to see if it is set up like follows in the Windows settings page "Printers & Scanners".  If changing this does not work than proceed to the next section
 
-![image](https://github.com/user-attachments/assets/03f328b3-5280-46de-adbb-082497a242f8)
+![image](https://github.com/user-attachments/assets/6f40caee-2b30-4077-92d6-dd7b13b98172)
 
 
 # Remove any existing instances of printer and relevant ports
@@ -60,5 +60,11 @@ First thing to try is to open properties for port, to see if it is set up like f
   ![image](https://github.com/user-attachments/assets/eec46ce6-a6e2-4f06-a7c3-148d1650c48f)
 
 8. Click next - "Do not share this printer"
+9. Unfortunately there seems to be a Windows bug where port is not correctly assigned to 9102.  Open the settings page to manually configure it to be correct since the script uses port 9102
+
+  ![image](https://github.com/user-attachments/assets/b4bab1a6-fe4f-4039-9aea-8a96dc5a729d)
+
+
+If the port is configured correctly, then the "virtual_pos_printer" script should run correctly.
 
 As a final step ensure that the printer "VirtualTextPrinter" is set as the printer in the "ACAS PRINTER" section of the Fenix EFB settings.
