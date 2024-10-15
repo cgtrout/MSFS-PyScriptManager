@@ -50,3 +50,4 @@
 - The launcher exe is provided for ease of use.  It is also possible to launch the script "/Launcher/Launcher.py" from "WinPython/WinPython Command Prompt.exe" if you prefer to not launch from the EXE.  The exe can be built by launching "Build.bat" in "\Launcher\LauncherApp" as the "TCC" C-Compiler is included.
 - You can easily create your own scripts and run them as well.  Note that if you need to add any libraries use the "WinPython/WinPython Command Prompt.exe" and run the "pip" command from here to add a library to the WinPython directory.
 - Uses the 7zip lib for extracting WinPython on first load - https://github.com/ip7z/7zip
+- Uses WinPython to allow standalone installation - https://github.com/winpython
