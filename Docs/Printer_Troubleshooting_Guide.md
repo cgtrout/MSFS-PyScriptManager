@@ -2,7 +2,7 @@
 
 This document will show how to manually set up the printer incase the automated printer installation does not work.
 
-I only recommend this guide as a **last resort**.  In most cases the automated hopefully will work, but I wanted to give a fallback plan if that fails.
+I only recommend this guide as a **last resort**.  In most cases the automated printer installation of 'virtual_pos_printer' should hopefully work, but I wanted to give a fallback plan if that fails.
 
 If the printer setup was correct it should look like this:
 ![image](https://github.com/user-attachments/assets/7853865d-4742-4af1-8bfe-4fc08f931e10)
