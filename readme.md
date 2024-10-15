@@ -11,11 +11,12 @@
   
 # Installation Instructions
 - Download the zip file from the newest release (Releases).
-- Extract the downloaded file to a location of your choice.
+- Extract the downloaded zip to a location of your choice.
 - Feel free to post an 'issue' here on Github if you have any issues with the launcher or the scripts.
 
 # How to use the Launcher
 - Run MSFS-PyScriptManager.exe - this will open the python script manager/launcher.
+  - Note that the first time this is run it will need to extract WinPython automatically from a 7zip file.  This was done to improve extraction time as it was very slow with a normal zip file extraction.
 - Click the "Run Script" button to open a script. Running scripts are each shown in their own individual tabs.  Right click the tab header for a given script to close it.
 - Right click an open script tab to close
 - Further details on the provided scripts are included further down.
