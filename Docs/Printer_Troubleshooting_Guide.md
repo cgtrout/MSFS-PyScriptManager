@@ -5,11 +5,12 @@ This document will show how to manually set up the printer in the case that the 
 I only recommend this guide as a **last resort**.  In most cases the automated printer installation of 'virtual_pos_printer' should hopefully work, but I wanted to give a fallback plan if that fails.
 
 If the printer setup was correct it should look like this:
+
 ![image](https://github.com/user-attachments/assets/7853865d-4742-4af1-8bfe-4fc08f931e10)
 
 If it doesn't look like this follow this guide to get the VirtualTextPrinter working on your Windows installation.
 
-First thing to try is to open properties for port, to see if it is set up like follows in the Windows settings page "Printers & Scanners".  If changing this does not work than proceed to the next section
+First thing to try is to open properties for the netowrk port, to see if it is set up like follows in the Windows settings page "Printers & Scanners".  If changing this does not work than proceed to the next section.
 
 ![image](https://github.com/user-attachments/assets/6f40caee-2b30-4077-92d6-dd7b13b98172)
 
