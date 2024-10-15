@@ -15,7 +15,7 @@ Built in collaboration with chrisut - thank-you Chris for the assistance!
         <img src="https://github.com/user-attachments/assets/a877b0f6-c327-4b72-9f5f-8646a062b50e" alt="Second image" width="200">
     </div>
 
-- If you prefer not to use the automated installer script (or have issues running it) you can manually copy the "chrisaut-toolbar-printouts" directory from /Data/Community_Install to your community addon on directory.
+- If you prefer not to use the automated installer script (or have issues running it) you can manually copy the "chrisaut-toolbar-printouts" directory from /Data/Community_Install to your community addon on directory.  If you manually install also set "enable_popups" to false in the /Settings/settings.json file.
 
 # Usage Guide
 - It is critical that the "virtual_pos_printer" script remains running as this handles the communication between the virtual printer and the MSFS toolbar.
