@@ -2,7 +2,7 @@
 
 # **NEW** - MSFS toolbar added for 'virtual printer'
   - Allows print jobs to show on a MSFS toolbar (for VR users).
-  - See: [Community Addon Guide](https://github.com/cgtrout/MSFS-PyScriptManager/blob/community-connection/Docs/Community_Addon_Guide.md) for instructions on how to set this up.
+  - See: [Community Addon Guide](https://github.com/cgtrout/MSFS-PyScriptManager/blob/main/Docs/Community_Addon_Guide.md) for instructions on how to set this up.
   - Many thanks to chrisaut for the collaboration on this toolbar addon!
 
 # Download
@@ -35,7 +35,7 @@
   - Notes can be dragged with left mouse click (hold).  Right-click to close a note.
   - Use Ctrl+MouseWheel up/down to resize a note (with mouse cursor on top of note).
   - Use Ctrl+Shift+P shortcut to define a new note spawning location (it will use the current mouse position).
-  - If you have any issues with the automated printer installation see this guide: [Printer Troubleshooting Guide](https://github.com/cgtrout/MSFS-PyScriptManager/blob/community-connection/Docs/Printer_Troubleshooting_Guide.md)
+  - If you have any issues with the automated printer installation see this guide: [Printer Troubleshooting Guide](https://github.com/cgtrout/MSFS-PyScriptManager/blob/main/Docs/Printer_Troubleshooting_Guide.md)
 
 - **custom_status_bar.py:** Shows a draggable status bar that shows the real world zulu time and sim zulu time.  Double-click to program the count-down timer.
   - Previously called "get_sim_time"
