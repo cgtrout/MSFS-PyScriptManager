@@ -23,6 +23,7 @@ print("custom_status_bar: Close this window to close status bar")
 DISPLAY_TEMPLATE = "VAR(Sim:, get_sim_time, yellow)|VAR(Zulu:, get_real_world_time, white) | VAR(Altitude:, get_altitude, tomato) | VAR(Remaining:, get_time_to_future, red) | VAR(, get_temp, cyan) "
 
 # Configurable Variables
+alpha_transparency_level = 0.95  # Set transparency (0.0 = fully transparent, 1.0 = fully opaque)
 WINDOW_TITLE = "Simulator Time"
 DARK_BG = "#000000"
 FONT = ("Helvetica", 16)
@@ -259,6 +260,7 @@ root = tk.Tk()
 root.title(WINDOW_TITLE)
 root.overrideredirect(True)
 root.attributes("-topmost", True)
+root.attributes("-alpha", alpha_transparency_level)  # Set window transparency
 root.configure(bg=DARK_BG)
 
 # Bind mouse events to enable dragging of the window
