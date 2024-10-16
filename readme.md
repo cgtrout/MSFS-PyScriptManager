@@ -1,4 +1,4 @@
-**MSFS-PyScriptManager** is a tool designed for managing and executing custom Python scripts tailored for Microsoft Flight Simulator (MSFS). This tool leverages the **WinPython** portable Python environment for ease of installation.  Simply download the release and extract it - no further installation required to run scripts!  Comes with some useful scripts, such as "virtual_pos_printer.py" that can print popup notes on the screen from the Fenix A32x printer.
+**MSFS-PyScriptManager** is a tool designed for managing and executing custom Python scripts tailored for Microsoft Flight Simulator (MSFS). This tool leverages the [WinPython](https://github.com/winpython) portable Python environment for ease of installation.  Simply download the release and extract it - no further installation required to run scripts!  Comes with some useful scripts, such as "virtual_pos_printer.py" that can print popup notes on the screen from the Fenix A32x printer.
 
 # **NEW** - MSFS toolbar added for 'virtual printer'
   - Allows print jobs to show on a MSFS toolbar (for VR users).
@@ -7,18 +7,17 @@
 
 # Download
 - [Download MSFS-PyScriptManager(Release Page)](https://github.com/cgtrout/MSFS-PyScriptManager/releases/)
-- [Virus Check](https://www.virustotal.com/gui/url/6f18094ec665dc2b008bf0e225b96c318a6e9ebe1d8cef80066ce37fd1f7c624?nocache=1)
+- [Virus Total Malware Check](https://www.virustotal.com/gui/url/9f2aab0754a63dc92903b3c99db9cf5dde639241368af9c33f51053997d20333?nocache=1)
   
 # Installation Instructions
 - Download the zip file from the newest release (Releases).
-- Extract the downloaded zip to a location of your choice.
+- Extract the downloaded zip to a location of your choice. I recommend using a fast unzip tool such as [7-zip](https://www.7-zip.org/download.html) as the default Windows unzip tool is very slow at extracting the WinPython directory.
 - Feel free to post an 'issue' here on Github if you have any issues with the launcher or the scripts.
 
 # How to use the Launcher
 - Run MSFS-PyScriptManager.exe - this will open the python script manager/launcher.
-  - Note that the first time this is run it will need to extract WinPython automatically from a 7zip file.  This was done to improve extraction time as it was very slow with a normal zip file extraction.
-- Click the "Run Script" button to open a script. Running scripts are each shown in their own individual tabs.  Right click the tab header for a given script to close it.
-- Right click an open script tab to close
+- Click the "Run Script" button to open a script. Running scripts are each shown in their own individual tabs.
+- Right click the tab header for a given script to close it.
 - Further details on the provided scripts are included further down.
 
   <img src="https://github.com/user-attachments/assets/6dbde597-67e0-453b-8478-b096e44edd1d" alt="Description of image" width="500">
@@ -47,7 +46,6 @@
 - **fenix_disable_efb.py:** Example script that shows how LVARS can be automated.  This script will hide the EFBs on the Fenix A32x.  This script requires a Mobiflight "Wasm" module installation.
   
 # Technical Notes
-- The launcher exe is provided for ease of use.  It is also possible to launch the script "/Launcher/Launcher.py" from "WinPython/WinPython Command Prompt.exe" if you prefer to not launch from the EXE.  The exe can be built by launching "Build.bat" in "\Launcher\LauncherApp" as the "TCC" C-Compiler is included.
+- The launcher exe is provided for ease of use.  It is also possible to launch the script "/Launcher/Launcher.py" from "WinPython/WinPython Command Prompt.exe" if you prefer to not launch from the EXE.  The exe can be built by launching "Build.bat" in "\Launcher\LauncherApp" as the "TCC" C-Compiler is included(https://bellard.org/tcc/).
 - You can easily create your own scripts and run them as well.  Note that if you need to add any libraries use the "WinPython/WinPython Command Prompt.exe" and run the "pip" command from here to add a library to the WinPython directory.
-- Uses the 7zip lib for extracting WinPython on first load - https://github.com/ip7z/7zip
 - Uses WinPython to allow standalone installation - https://github.com/winpython
