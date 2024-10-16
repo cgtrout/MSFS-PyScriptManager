@@ -136,91 +136,10 @@ int run_script(const char *pythonPath, const char *scriptPath) {
     return exitCode;
 }
 
-int ExtractWith7zExe(const char* archivePath, const char* outputPath) {
-    char commandLine[512];
-    snprintf(commandLine, sizeof(commandLine), "\"%s\\7za.exe\" x \"%s\" -o\"%s\" -y", 
-         ".\\Launcher\\LauncherApp\\Lib\\7z", 
-         archivePath, 
-         outputPath);
-
-    STARTUPINFO si = { sizeof(si) };
-    PROCESS_INFORMATION pi;
-
-    printf("Running: %s\n", commandLine);
-    
-    // Create the process to run 7z.exe with extraction parameters
-    if (!CreateProcess(NULL, commandLine, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-        printf("Failed to start 7z.exe. Error: %lu\n", GetLastError());
-        return 1;
-    }
-
-    // Wait for the extraction process to complete
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    
-    DWORD exitCode;
-    GetExitCodeProcess(pi.hProcess, &exitCode);
-
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-
-    return exitCode;
-}
-
-// Function to check if the archive file exists at the specified path
-int ArchiveExists(const char* archivePath) {
-    DWORD fileAttributes = GetFileAttributesA(archivePath);
-
-    if (fileAttributes == INVALID_FILE_ATTRIBUTES) {
-        // File not found or inaccessible
-        return 0; // false
-    }
-
-    // Check if the path is a directory
-    if (fileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-        return 0; // false
-    }
-
-    // The file exists and is not a directory
-    return 1; // true
-}
-
-int DeleteArchive(const char* archivePath) {
-    if (DeleteFileA(archivePath)) {
-        printf("Successfully deleted the archive: %s\n", archivePath);
-        return 1; // Success
-    } else {
-        DWORD error = GetLastError();
-        printf("Failed to delete the archive: %s. Error code: %lu\n", archivePath, error);
-        return 0; // Failure
-    }
-}
-
 int main() {
     // Specify the path to the Python interpreter and the script to be executed.
     const char* pythonPath = ".\\WinPython\\python-3.13.0rc1.amd64\\pythonw.exe";
     const char* scriptPath = ".\\Launcher\\LauncherScript\\launcher.py";
-
-    const char* archivePath = "WinPython.7z";
-    const char* outputPath = "WinPython";
-
-    if (ArchiveExists(archivePath)) {
-        printf("---INSTALLING WINPYTHON (extracting)------------------------------\n\n");
-
-        int result = ExtractWith7zExe(archivePath, outputPath);
-        if (result == 0) {
-            printf("Extraction completed successfully.\n");
-            if (DeleteArchive(archivePath)) {
-                printf("Archive deletion completed successfully.\n");
-            } else {
-                printf("Archive deletion failed.\n");
-            }
-        } else {
-            printf("Extraction failed with code: %d\n", result);
-            printf("You may need to extract WinPython Lib");
-        }
-
-        printf("---INSTALLING WINPYTHON -DONE--------------------------------------\n\n");
-    }
 
     // Run the Python script and retrieve the exit code.
     int result = run_script(pythonPath, scriptPath);
