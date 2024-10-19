@@ -3,7 +3,7 @@
 # **NEW** - MSFS toolbar added for 'virtual printer'
   - Allows print jobs to show on a MSFS toolbar (for VR users).
   - See: [Community Addon Guide](https://github.com/cgtrout/MSFS-PyScriptManager/blob/main/Docs/Community_Addon_Guide.md) for instructions on how to set this up.
-  - Many thanks to chrisaut for the collaboration on this toolbar addon!
+  - Many thanks to [chrisaut](https://github.com/chrisaut) for the collaboration on this toolbar addon!
 
 # Download
 - [Download MSFS-PyScriptManager(Release Page)](https://github.com/cgtrout/MSFS-PyScriptManager/releases/)
