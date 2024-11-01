@@ -1,8 +1,9 @@
 # Virtual Printer Community Toolbar Addon Guide
 
-This document will explain how to install and use the optional community addon toolbar.  This toolbar will allow printouts from the "virtual_pos_printer" script to show in a MSFS toolbar for those in VR. 
+This document will explain how to install and use the optional community addon toolbar.  This toolbar will allow printouts from the "virtual_pos_printer" script to show in a MSFS toolbar for those in VR. Installation instructions are provided further below.
 
-Built in collaboration with chrisaut - thank-you Chris for the assistance!
+Built in collaboration with chrisaut - thank-you Chris for the assistance!  
+Github Repo: [chrisaut-toolbar-printouts](https://github.com/chrisaut/chrisaut-toolbar-printouts)
 
   <img src="https://github.com/user-attachments/assets/ab4973c7-11b2-48b4-bd11-053128d64856" alt="Description of image" width="300">
 
