@@ -57,7 +57,7 @@ def get_altitude():
 
 def get_temp():
     """Fetch both TAT and SAT temperatures from SimConnect, formatted with labels."""
-    return get_formatted_value(["AMBIENT_TEMPERATURE", "TOTAL_AIR_TEMPERATURE"], "TAT {1:.1f}°C   SAT {0:.1f}°C")
+    return get_formatted_value(["AMBIENT_TEMPERATURE", "TOTAL_AIR_TEMPERATURE"], "TAT {1:.0f}°C  SAT {0:.0f}°C")
 
 def get_time_to_future():
     """Calculate remaining time to a future event or goal."""
