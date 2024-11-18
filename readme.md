@@ -47,7 +47,7 @@
 
 # Script Groups
 - "Script Groups" can be used to automate loading groups of scripts at once. 
-- Save your script group as "_autoplay.script_group" to load your script group at startup.
+- Save your script group as "_autoplay.script_group" to automate loading your script group at startup.
   
 # Technical Notes
 - The launcher exe is provided for ease of use.  It is also possible to launch the script "/Launcher/Launcher.py" from "WinPython/WinPython Command Prompt.exe" if you prefer to not launch from the EXE.  The exe can be built by launching "Build.bat" in "\Launcher\LauncherApp" as the "TCC" C-Compiler is included(https://bellard.org/tcc/).
