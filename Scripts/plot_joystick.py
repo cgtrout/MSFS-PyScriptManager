@@ -11,6 +11,8 @@ alpha_transparency_level = 0.8 # Window transparency
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from SimConnect import SimConnect, AircraftRequests
+import threading
 import tkinter as tk
 import pygame
 
@@ -41,6 +43,19 @@ else:
     print(f"No joystick found with the name '{desired_joystick_name}'. Exiting.")
     pygame.quit()
     exit()
+
+# Function to initialize SimConnect and AircraftRequests
+def initialize_simconnect():
+    try:
+        sm = SimConnect()
+        aq = AircraftRequests(sm)
+        print("Connected to SimConnect.")
+        return sm, aq
+    except Exception as e:
+        print(f"SimConnect initialization failed: {e}")
+        return None, None
+
+sm, aq = initialize_simconnect()
 
 # Calculate the size in inches for matplotlib (assuming 100 DPI)
 graph_size_inches = graph_size_pixels / 100
@@ -89,17 +104,108 @@ ax.axis('off')  # Remove all ticks, labels, and spines
 ax.axhline(0, color='darkgray', lw=0.7)
 ax.axvline(0, color='darkgray', lw=0.7)
 
-# Update function for the scatter plot to follow joystick movements
+# Add trim markers with custom colors and transparency
+elevator_trim_marker = ax.axhline(0, color=(0.1, 0.5, 0.9, 0.6) , lw=0.8, linestyle='--', label="Pitch Trim (Elevator)")
+aileron_trim_marker = ax.axvline(0, color=(0.5, 0.1, 0.3, 0.8), lw=0.8, linestyle='--', label="Roll Trim (Aileron)")
+
+# Global variable for reconnection cooldown
+reconnect_cooldown = 0  # Number of frames to wait before retrying
+
+threshold = 0.01
+query_interval = 20  # Query SimConnect every n frames
+frame_counter = 0  # Frame counter to track updates
+
+cached_trim_values = {
+    "elevator_trim": 0,
+    "aileron_trim": 0,
+    "rotor_lateral_trim": 0,
+    "rotor_longitudinal_trim": 0,
+}
+
+# Lock for thread safety
+cache_lock = threading.Lock()
+
+def fetch_trim_data():
+    """Fetch trim data asynchronously from SimConnect."""
+    global sm, aq, cached_trim_values
+    if sm and aq:
+        try:
+            # Fetch data
+            elevator_trim = aq.find("ELEVATOR_TRIM_PCT").value
+            aileron_trim = aq.find("AILERON_TRIM_PCT").value
+            rotor_lateral_trim = aq.find("ROTOR_LATERAL_TRIM_PCT").value
+            rotor_longitudinal_trim = aq.find("ROTOR_LONGITUDINAL_TRIM_PCT").value
+
+            # Safely update the cache
+            with cache_lock:
+                cached_trim_values["elevator_trim"] = elevator_trim
+                cached_trim_values["aileron_trim"] = aileron_trim
+                cached_trim_values["rotor_lateral_trim"] = rotor_lateral_trim
+                cached_trim_values["rotor_longitudinal_trim"] = rotor_longitudinal_trim
+        except Exception as e:
+            print(f"[ERROR] SimConnect query failed: {e}")
+            sm, aq = None, None  # Reset connection on failure
+
+
 def update(frame):
+    global sm, aq, reconnect_cooldown, cached_trim_values
+
+    # Ensure joystick input is processed
     pygame.event.pump()
-    x = selected_joystick.get_axis(0)
-    y = selected_joystick.get_axis(1)
-    scat.set_offsets([[x, y]])
-    
-    # Update the text with the new coordinates
-    coord_text.set_text(f"X: {x:>5.2f} Y: {y:>5.2f}")
-    
-    return scat, coord_text
+
+    # Initialize joystick variables
+    try:
+        x = selected_joystick.get_axis(0)
+        y = selected_joystick.get_axis(1)
+    except Exception as e:
+        print(f"[ERROR] Failed to read joystick axes: {e}")
+        x, y = 0, 0  # Default to zero if joystick input fails
+
+    scat.set_offsets([[x, y]])  # Update the scatter plot position
+
+    # Start a new thread every 10 frames to fetch data
+    if frame % 10 == 0:
+        threading.Thread(target=fetch_trim_data).start()
+
+    # Use cached values for graph and text display
+    with cache_lock:
+        elevator_trim = cached_trim_values.get("elevator_trim", 0)
+        aileron_trim = cached_trim_values.get("aileron_trim", 0)
+        rotor_lateral_trim = cached_trim_values.get("rotor_lateral_trim", 0)
+        rotor_longitudinal_trim = cached_trim_values.get("rotor_longitudinal_trim", 0)
+
+    # Determine mode (helicopter or airplane) based on trim values
+    is_helicopter = (
+        abs(rotor_lateral_trim) > threshold or abs(rotor_longitudinal_trim) > threshold
+    )
+
+    # Update visualization based on detected mode
+    if is_helicopter:
+        # Helicopter mode: Show rotor trim
+        elevator_trim_marker.set_ydata([rotor_longitudinal_trim] * 2)
+        elevator_trim_marker.set_xdata([-1.01, 1.01])  # Full graph width
+        elevator_trim_marker.set_visible(abs(rotor_longitudinal_trim) > threshold)
+
+        aileron_trim_marker.set_xdata([rotor_lateral_trim] * 2)
+        aileron_trim_marker.set_ydata([-1.01, 1.01])  # Full graph height
+        aileron_trim_marker.set_visible(abs(rotor_lateral_trim) > threshold)
+
+    else:
+        # Airplane mode: Show elevator and aileron trim
+        elevator_trim_marker.set_ydata([elevator_trim] * 2)
+        elevator_trim_marker.set_xdata([-1.01, 1.01])  # Full graph width
+        elevator_trim_marker.set_visible(abs(elevator_trim) > threshold)
+
+        aileron_trim_marker.set_xdata([aileron_trim] * 2)
+        aileron_trim_marker.set_ydata([-1.01, 1.01])  # Full graph height
+        aileron_trim_marker.set_visible(abs(aileron_trim) > threshold)
+
+    # Update text display
+    coord_text.set_text(
+        f"X: {x:>5.2f} Y: {y:>5.2f}"
+    )
+
+    return scat, coord_text, elevator_trim_marker, aileron_trim_marker
 
 # Embed the plot in the tkinter window and ensure it draws correctly
 canvas = FigureCanvasTkAgg(fig, master=root)
@@ -110,7 +216,7 @@ coord_text = ax.text(0.9, -0.9, '', ha='right', va='bottom',
                      fontsize=8, color='darkgray', transform=ax.transData)
 
 # Run the animation with the update function
-ani = animation.FuncAnimation(fig, update, interval=50, blit=False)
+ani = animation.FuncAnimation(fig, update, interval=50, blit=True, cache_frame_data=False)
 
 # Run the tkinter main loop to show the window
 root.mainloop()
