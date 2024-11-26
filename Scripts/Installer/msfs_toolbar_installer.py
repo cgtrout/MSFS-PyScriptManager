@@ -5,24 +5,30 @@ import tkinter as tk
 import json
 from tkinter import messagebox
 
-def find_usercfg_file():
-    print("Detecting operating system...")
-    if platform.system() != "Windows":
-        print("This script is intended for Windows only.")
-        raise EnvironmentError("Non-Windows OS detected.")
-    
-    print("Locating UserCfg.opt file...")
-    possible_usercfg_paths = [
-        os.path.join("C:\\", "Users", os.environ['USERNAME'], "AppData", "Local", "Packages", "Microsoft.FlightSimulator_8wekyb3d8bbwe", "LocalCache", "UserCfg.opt"),  # MS Store
-        os.path.join("C:\\", "Users", os.environ['USERNAME'], "AppData", "Roaming", "Microsoft Flight Simulator", "UserCfg.opt"),  # Steam or custom install
-    ]
-    
+def find_usercfg_file(version):
+    print(f"Locating UserCfg.opt file for MSFS {version}...")
+    username = os.environ['USERNAME']
+
+    if version == "2024":
+        # MSFS 2024 paths
+        possible_usercfg_paths = [
+            os.path.join("C:\\", "Users", username, "AppData", "Roaming", "Microsoft Flight Simulator 2024", "UserCfg.opt"),  # Steam
+            os.path.join("C:\\", "Users", username, "AppData", "Local", "Packages", "Microsoft.Limitless_8wekyb3d8bbwe", "LocalCache", "UserCfg.opt"),  # MS Store
+        ]
+    else:
+        # MSFS 2020 paths
+        possible_usercfg_paths = [
+            os.path.join("C:\\", "Users", username, "AppData", "Roaming", "Microsoft Flight Simulator", "UserCfg.opt"),  # Steam
+            os.path.join("C:\\", "Users", username, "AppData", "Local", "Packages", "Microsoft.FlightSimulator_8wekyb3d8bbwe", "LocalCache", "UserCfg.opt"),  # MS Store
+        ]
+
     for path in possible_usercfg_paths:
         if os.path.exists(path):
             print(f"UserCfg.opt found at {path}")
             return path
 
-    raise FileNotFoundError("UserCfg.opt file not found. Please check for a custom installation path.")
+    raise FileNotFoundError(f"UserCfg.opt file not found for MSFS {version}. Please check for a custom installation path.")
+
 
 def parse_installed_packages_path(usercfg_path):
     print("Reading the InstalledPackagesPath from UserCfg.opt...")
@@ -39,6 +45,7 @@ def parse_installed_packages_path(usercfg_path):
 
     raise ValueError("InstalledPackagesPath not found in UserCfg.opt file.")
 
+
 def find_community_path(installed_packages_path):
     print("Locating the Community folder...")
     community_path = os.path.join(installed_packages_path, "Community")
@@ -47,6 +54,7 @@ def find_community_path(installed_packages_path):
         return community_path
     else:
         raise FileNotFoundError("Community folder not found. Check the InstalledPackagesPath.")
+
 
 def locate_mod_source_path():
     # Start from the script directory and navigate to the root directory
@@ -63,6 +71,7 @@ def locate_mod_source_path():
     print(f"Mod directory located at: {mod_relative_path}")
     return mod_relative_path
 
+
 def show_files_to_copy(mod_source_path, destination_path):
     mod_name = os.path.basename(mod_source_path)
     final_destination = os.path.join(destination_path, mod_name)
@@ -77,6 +86,7 @@ def show_files_to_copy(mod_source_path, destination_path):
             source_file = os.path.join(root, file)
             dest_file = os.path.join(dest_dir, file)
             print(f"Would copy: {source_file} to {dest_file}")
+
 
 def validate_copy(mod_source_path, destination_path):
     print("Validating copied files...")
@@ -119,6 +129,7 @@ def validate_copy(mod_source_path, destination_path):
         print("Validation failed: Some files were not copied correctly.")
         return False
 
+
 def copy_files_to_community(mod_source_path, destination_path):
     mod_name = os.path.basename(mod_source_path)
     final_destination = os.path.join(destination_path, mod_name)
@@ -144,6 +155,7 @@ def copy_files_to_community(mod_source_path, destination_path):
     except Exception as e:
         print(f"Failed to copy the mod to the destination folder: {e}")
         return False
+
 
 def ensure_enable_popups_false():
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -183,21 +195,31 @@ def ensure_enable_popups_false():
     except Exception as e:
         print(f"An error occurred while saving settings.json: {e}")
 
+
 def main():
     print("Starting mod installation process...")
-    
+
     # Initialize tkinter and hide the main window
     root = tk.Tk()
     root.withdraw()  # Hide the root window
-    
+
+    # Ask user which version of MSFS they are using
+    version = None
+    if messagebox.askyesno("Select Version", "Are you installing this mod for Microsoft Flight Simulator 2024?"):
+        version = "2024"
+    else:
+        version = "2020"
+
+    print(f"Selected version: MSFS {version}")
+
     # Ask user if they want to proceed with the installation
-    proceed = messagebox.askyesno("Install Mod", "Do you want to proceed with the installation of the Virtual Printer MSFS toolbar addon?")
+    proceed = messagebox.askyesno("Install Mod", f"Do you want to proceed with the installation of the Virtual Printer MSFS toolbar addon for MSFS {version}?")
     if not proceed:
         print("Installation aborted by the user.")
         return  # Exit the script if the user does not want to proceed
 
     # Flag to control whether to use the test directory or actual Community folder
-    use_test_directory = False  # Change this flag to False to use the actual Community folder
+    use_test_directory = False  # Change this flag to True for testing
     test_directory = r"d:\_Community_install_test"
 
     try:
@@ -205,7 +227,7 @@ def main():
         mod_source_path = locate_mod_source_path()
         
         # Proceed with finding the community folder and showing files that would be copied
-        usercfg_path = find_usercfg_file()
+        usercfg_path = find_usercfg_file(version)
         installed_packages_path = parse_installed_packages_path(usercfg_path)
         community_path = find_community_path(installed_packages_path)
         
@@ -213,34 +235,35 @@ def main():
         destination_path = test_directory if use_test_directory else community_path
         print(f"Destination path set to: {destination_path}")
 
-        # Show print of files to copy if test dir present         
+        # Show files to copy if test directory is being used
         if use_test_directory:
             show_files_to_copy(mod_source_path, destination_path)
         
         # Perform the actual copy to the selected directory
         valid_copy = copy_files_to_community(mod_source_path, destination_path)
 
-        # Ensure settings popup set to false
+        # Ensure settings popup is set to false
         ensure_enable_popups_false()
 
-        if(validate_copy):
+        if valid_copy:
             print("\nCopy of community toolbar was successful!")
-            final_message = "Copy of community toolbar was successful!"
+            final_message = f"Copy of community toolbar for MSFS {version} was successful!"
             messagebox.showinfo("Installer", final_message)
         else:
-            final_message = "Copy of community toolbar failed validation. Please see log for details."
+            final_message = f"Copy of community toolbar for MSFS {version} failed validation. Please see log for details."
             messagebox.showerror("Installer: failed", final_message)
-            raise Exception("Installer", "Unsuccessful validation of copy")
+            raise Exception("Unsuccessful validation of copy")
         
     except Exception as e:
         print(f"An error occurred: {e}")
         print("\nManual Copy Instructions:")
         print(f"1. Locate the mod at: {mod_source_path if 'mod_source_path' in locals() else 'Unknown location'}")
-        print(f"2. Copy the folder manually to the MSFS Community folder at: {community_path if 'community_path' in locals() else 'Unknown location'}")
+        print(f"2. Copy the folder manually to the MSFS {version} Community folder at: {community_path if 'community_path' in locals() else 'Unknown location'}")
         print("Please make sure the mod folder structure is intact after copying.")
         
         final_message = f"Copy of community toolbar failed validation. Please see log for details.\n\n{e}"
         messagebox.showerror("Installer: failed", final_message)
-        
+
+
 if __name__ == "__main__":
     main()
