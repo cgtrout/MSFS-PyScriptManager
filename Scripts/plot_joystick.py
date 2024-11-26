@@ -131,10 +131,10 @@ def fetch_trim_data():
     if sm and aq:
         try:
             # Fetch data
-            elevator_trim = aq.find("ELEVATOR_TRIM_PCT").value
-            aileron_trim = aq.find("AILERON_TRIM_PCT").value
-            rotor_lateral_trim = aq.find("ROTOR_LATERAL_TRIM_PCT").value
-            rotor_longitudinal_trim = aq.find("ROTOR_LONGITUDINAL_TRIM_PCT").value
+            elevator_trim = aq.find("ELEVATOR_TRIM_PCT").value or 0
+            aileron_trim = aq.find("AILERON_TRIM_PCT").value or 0
+            rotor_lateral_trim = aq.find("ROTOR_LATERAL_TRIM_PCT").value or 0
+            rotor_longitudinal_trim = aq.find("ROTOR_LONGITUDINAL_TRIM_PCT").value or 0
 
             # Safely update the cache
             with cache_lock:
@@ -145,7 +145,6 @@ def fetch_trim_data():
         except Exception as e:
             print(f"[ERROR] SimConnect query failed: {e}")
             sm, aq = None, None  # Reset connection on failure
-
 
 def update(frame):
     global sm, aq, reconnect_cooldown, cached_trim_values
