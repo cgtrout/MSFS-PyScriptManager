@@ -19,15 +19,21 @@ print("custom_status_bar: Close this window to close status bar")
 # 'function_name' references a Python function used to fetch dynamic values,
 # 'color' determines the text rendering color for both the label and value.
 
-DISPLAY_TEMPLATE = "VAR(Sim:, get_sim_time, yellow)|VAR(Zulu:, get_real_world_time, white) | VAR(Altitude:, get_altitude, tomato) | VAR(Remaining:, get_time_to_future, red) | VAR(, get_temp, cyan) "
+DISPLAY_TEMPLATE = "VAR(Sim Rate:, get_sim_rate, white) | VAR(Remaining:, get_time_to_future, red) | VAR(, get_temp, cyan)"
+
+# Other Examples
+# VAR(Altitude:, get_altitude, tomato)
+# VAR(Sim:, get_sim_time, yellow) 
+# VAR(Zulu:, get_real_world_time, white) | 
+# 
 
 # Configurable Variables
 alpha_transparency_level = 0.95  # Set transparency (0.0 = fully transparent, 1.0 = fully opaque)
 WINDOW_TITLE = "Simulator Time"
 DARK_BG = "#000000"
 FONT = ("Helvetica", 16)
-UPDATE_INTERVAL = 1000  # in milliseconds (1 second)
-RECONNECT_INTERVAL = 5000  # in milliseconds (5 seconds)
+UPDATE_INTERVAL = 500  # in milliseconds (1 second)
+RECONNECT_INTERVAL = 1000  # in milliseconds (5 seconds)
 PADDING_X = 20  # Horizontal padding for each label
 PADDING_Y = 10  # Vertical padding for the window
 
@@ -54,6 +60,10 @@ def get_real_world_time():
 def get_altitude():
     """Fetch the altitude from SimConnect, formatted in feet."""
     return get_formatted_value("PLANE_ALTITUDE", "{:.0f} ft")
+
+def get_sim_rate():
+    """Fetch the sim rate from SimConnect, formatted in feet."""
+    return get_formatted_value("SIMULATION_RATE", "{:.1f}")
 
 def get_temp():
     """Fetch both TAT and SAT temperatures from SimConnect, formatted with labels."""
@@ -89,13 +99,10 @@ def get_simconnect_value(variable_name):
     if not sim_connected:
         raise ConnectionError("Sim Not Running")
     
-    try:
-        value = aq.get(variable_name)
-        if value is None:
-            raise ValueError("No Data")
-        return value
-    except Exception as e:
-        raise RuntimeError("Disconnected") from e
+    value = aq.get(variable_name)
+    if value is None:
+        raise ValueError("No Data")
+    return value
 
 def get_formatted_value(variable_names, format_string=None):
     """
