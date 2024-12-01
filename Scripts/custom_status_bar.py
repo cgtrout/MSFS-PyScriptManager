@@ -227,7 +227,6 @@ def set_future_time():
 
 # --- Template Parsing  ---
 def get_dynamic_value(function_name):
-    """Dynamically execute the function or handle empty/invalid cases."""
     try:
         if not function_name.strip():  # If function name is empty, return an empty string
             return ""
@@ -235,10 +234,10 @@ def get_dynamic_value(function_name):
             func = globals()[function_name]
             if callable(func):
                 return func()
-        return None  # Return None if the function doesn't exist
+        return ""  # Return an empty string if the function doesn't exist
     except Exception as e:
         print(f"Error executing function '{function_name}': {str(e)}")
-        return None
+        return ""
 
 # --- Display Update  ---
 def update_display():
@@ -277,6 +276,10 @@ def update_display():
                     label, func_name, color = map(str.strip, parts)
                 else:
                     continue  # Skip malformed blocks
+
+                # Process the label for ## functionality
+                if "##" in label:
+                    label = process_label_with_dynamic_functions(label)
 
                 # Handle empty functions gracefully (e.g., conditional |)
                 if not func_name:  # If function is empty, show the label only
@@ -317,6 +320,23 @@ def update_display():
 
     # Schedule next update
     root.after(UPDATE_INTERVAL, update_display)
+
+def process_label_with_dynamic_functions(label):
+    """
+    Replace occurrences of function_name## in the label with the evaluated result of the function.
+    """
+    while "##" in label:
+        # Find the position of the first ##
+        pos = label.find("##")
+        # Extract the text before ##
+        before = label[:pos].strip()
+        # Find the last "word" (function name) before ##
+        function_name = before.split()[-1]  # Last word in the preceding text
+        # Fetch the dynamic value
+        replacement_value = get_dynamic_value(function_name)
+        # Replace `function_name##` with the result of the function call
+        label = label.replace(f"{function_name}##", str(replacement_value) if replacement_value is not None else "", 1)
+    return label
 
 # --- Drag functionality ---
 is_moving = False
