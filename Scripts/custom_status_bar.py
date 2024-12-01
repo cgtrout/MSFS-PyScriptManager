@@ -19,12 +19,12 @@ print("custom_status_bar: Close this window to close status bar")
 # 'function_name' references a Python function used to fetch dynamic values,
 # 'color' determines the text rendering color for both the label and value.
 
-DISPLAY_TEMPLATE = "VAR(Sim Rate:, get_sim_rate, white) | VAR(Remaining:, get_time_to_future, red) | VAR(, get_temp, cyan)"
+DISPLAY_TEMPLATE = "VAR(Sim:, get_sim_time, yellow) | VAR(Zulu:, get_real_world_time, white) | VAR(Sim Rate:, get_sim_rate, white) | VAR(Remaining:, get_time_to_future, red) | VAR(, get_temp, cyan)"
 
-# Other Examples
+# Other examples that can be placed in template
 # VAR(Altitude:, get_altitude, tomato)
-# VAR(Sim:, get_sim_time, yellow) 
-# VAR(Zulu:, get_real_world_time, white) | 
+# 
+#  | 
 # 
 
 # Configurable Variables
@@ -70,16 +70,33 @@ def get_temp():
     return get_formatted_value(["AMBIENT_TEMPERATURE", "TOTAL_AIR_TEMPERATURE"], "TAT {1:.0f}°C  SAT {0:.0f}°C")
 
 def get_time_to_future():
-    """Calculate remaining time to a future event or goal."""
-    if future_time is None:
-        return "--:--:--"
-    
+    """
+    Calculate remaining time to the globally configured future event.
+    Returns '00:00:00' if the future time has not been set.
+    """
+    global future_time
     try:
-        current_sim_time_seconds = get_simconnect_value("ZULU_TIME")
-        remaining_time_seconds = future_time - current_sim_time_seconds
-        if remaining_time_seconds <= 0:
+        # If future_time is not set, return "00:00:00"
+        if future_time is None:
             return "00:00:00"
-        return str(timedelta(seconds=int(remaining_time_seconds)))
+
+        # Get the current simulator datetime
+        current_sim_time = get_simulator_datetime()
+
+        # Calculate remaining time
+        remaining_time = future_time - current_sim_time
+
+        # If the remaining time is zero or negative, return "00:00:00"
+        if remaining_time.total_seconds() <= 0:
+            return "00:00:00"
+
+        # Format the remaining time as HH:MM:SS
+        hours, remainder = divmod(remaining_time.total_seconds(), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        formatted_time = f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
+
+        return formatted_time
+
     except Exception as e:
         return str(e)
 
@@ -126,36 +143,60 @@ def get_formatted_value(variable_names, format_string=None):
     except Exception as e:
         return str(e)
 
+def get_simulator_datetime():
+    """
+    Fetch the current simulator date and time as a datetime object.
+    """
+    try:
+        # Fetch necessary SimConnect variables
+        zulu_year = int(get_simconnect_value("ZULU_YEAR"))
+        zulu_month = int(get_simconnect_value("ZULU_MONTH_OF_YEAR"))
+        zulu_day = int(get_simconnect_value("ZULU_DAY_OF_MONTH"))
+        zulu_time_seconds = float(get_simconnect_value("ZULU_TIME"))
+
+        # Convert ZULU_TIME (seconds since midnight) into hours, minutes, seconds
+        hours, remainder = divmod(int(zulu_time_seconds), 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        # Construct and return the current datetime object
+        simulator_datetime = datetime(zulu_year, zulu_month, zulu_day, hours, minutes, seconds)
+        return simulator_datetime
+
+    except Exception as e:
+        raise ValueError(f"Failed to retrieve simulator datetime: {str(e)}")
+
 def set_future_time():
     """Prompt the user to set a future countdown time based on Sim Time."""
     global future_time, last_entered_time
-    current_sim_time_seconds = get_simconnect_value("ZULU_TIME")
-    
-    if isinstance(current_sim_time_seconds, str):
-        messagebox.showerror("Sim Not Running", "Cannot set time because the simulator is not running.")
-        return
-    
-    current_sim_time = timedelta(seconds=int(current_sim_time_seconds))
-    current_sim_datetime = datetime.combine(datetime.utcnow().date(), datetime.min.time()) + current_sim_time
-    sim_time_str = current_sim_datetime.strftime("%H:%M:%S")
-    
-    prompt_message = f"Enter future time based on Sim Time (HHMM)\nCurrent Sim Time: {sim_time_str}"
-    future_time_input = simpledialog.askstring("Input", prompt_message, initialvalue=last_entered_time, parent=root)
-    
-    if future_time_input:
-        try:
-            if len(future_time_input) != 4 or not future_time_input.isdigit():
-                raise ValueError("Invalid format")
-            future_hours = int(future_time_input[:2])
-            future_minutes = int(future_time_input[2:])
-            future_datetime = current_sim_datetime.replace(hour=future_hours, minute=future_minutes, second=0, microsecond=0)
-            if future_datetime <= current_sim_datetime:
-                future_datetime += timedelta(days=1)
-            future_time_seconds = (future_datetime - current_sim_datetime.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds()
-            future_time = int(future_time_seconds)
-            last_entered_time = future_time_input
-        except ValueError:
-            messagebox.showerror("Invalid input", "Please enter the time in HHMM format (e.g., 1642 for 16:42)")
+    try:
+        # Get current simulator datetime
+        current_sim_time = get_simulator_datetime()
+        sim_time_str = current_sim_time.strftime("%H:%M:%S")
+
+        # Prompt the user to enter the future time in HHMM format
+        prompt_message = f"Enter future time based on Sim Time (HHMM)\nCurrent Sim Time: {sim_time_str}"
+        future_time_input = simpledialog.askstring("Input", prompt_message, initialvalue=last_entered_time, parent=root)
+
+        if future_time_input:
+            try:
+                if len(future_time_input) != 4 or not future_time_input.isdigit():
+                    raise ValueError("Invalid format")
+                future_hours = int(future_time_input[:2])
+                future_minutes = int(future_time_input[2:])
+                future_time_candidate = current_sim_time.replace(hour=future_hours, minute=future_minutes, second=0, microsecond=0)
+
+                # If the entered future time is earlier than the current time, assume it is the next day
+                if future_time_candidate <= current_sim_time:
+                    future_time_candidate += timedelta(days=1)
+
+                # Store the future time as a global datetime object
+                future_time = future_time_candidate
+                last_entered_time = future_time_input
+                print(f"DEBUG: Future time set to: {future_time}")
+            except ValueError:
+                messagebox.showerror("Invalid input", "Please enter the time in HHMM format (e.g., 1642 for 16:42)")
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to set future time: {str(e)}")
 
 def get_dynamic_value(function_name):
     """Dynamically execute the function by looking it up in the global scope."""
