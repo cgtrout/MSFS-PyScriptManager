@@ -13,15 +13,32 @@ import json
 print("custom_status_bar: Close this window to close status bar")
 
 # DISPLAY_TEMPLATE
-# The DISPLAY_TEMPLATE defines the content and format of the data displayed in the application's window.
-# It serves as a blueprint for what information should be shown (e.g., simulator time, altitude) and how it should be styled.
-# This template can include dynamic data elements, specified using 'VAR()' blocks, as well as static text.
-# Each 'VAR()' block is defined as VAR(label, function_name, color), where:
-# 'label' specifies the static text prefix,
-# 'function_name' references a Python function used to fetch dynamic values,
-# 'color' determines the text rendering color for both the label and value.
+# Defines the content and format of the data shown in the application's window, including dynamic data elements
+# ('VAR()' and 'VARIF()' blocks) and static text.
 
-DISPLAY_TEMPLATE = "VAR(Sim:, get_sim_time, yellow) | VAR(Zulu:, get_real_world_time, white) | VAR(Sim Rate:, get_sim_rate, white) | VAR(Remaining:, get_time_to_future, red) | VAR(, get_temp, cyan)"
+# Syntax:
+# VAR(label, function_name, color)
+# - 'label': Static text prefix.
+# - 'function_name': Python function to fetch dynamic values.
+# - 'color': Text color for label and value.
+
+# VARIF(label, function_name, color, condition_function_name)
+# - Same as VAR, but includes:
+#   - 'condition_function_name': A Python function that determines if the block should display (True/False).
+
+# Notes:
+# - Static text can be included directly in the template.
+# - Dynamic function calls in labels (e.g., ## suffix) are supported.
+# - VARIF blocks are only displayed if the condition evaluates to True.
+
+
+DISPLAY_TEMPLATE = (
+    "VAR(Sim:, get_sim_time, yellow) | "
+    "VAR(Zulu:, get_real_world_time, white) |" 
+    "VARIF(Sim Rate:, get_sim_rate, white, is_sim_rate_accelerated) VARIF(|, '', white, is_sim_rate_accelerated)  " # Use VARIF on | to show conditionally
+    "VAR(Remaining:, get_time_to_future, red) | "
+    "VAR(, get_temp, cyan)"
+)
 
 # Other examples that can be placed in template
 # VAR(Altitude:, get_altitude, tomato)
@@ -64,6 +81,16 @@ def get_altitude():
 def get_sim_rate():
     """Fetch the sim rate from SimConnect, formatted in feet."""
     return get_formatted_value("SIMULATION_RATE", "{:.1f}")
+
+def is_sim_rate_accelerated():
+    """Check if the simulator rate is accelerated (not 1.0)."""
+    try:
+        rate = get_simconnect_value("SIMULATION_RATE")
+        if rate is None:
+            return False
+        return float(rate) != 1.0  # True if the rate is not 1.0
+    except Exception:
+        return False  # Default to False in case of an error
 
 def get_temp():
     """Fetch both TAT and SAT temperatures from SimConnect, formatted with labels."""
@@ -200,75 +227,95 @@ def set_future_time():
 
 # --- Template Parsing  ---
 def get_dynamic_value(function_name):
-    """Dynamically execute the function by looking it up in the global scope."""
+    """Dynamically execute the function or handle empty/invalid cases."""
     try:
+        if not function_name.strip():  # If function name is empty, return an empty string
+            return ""
         if function_name in globals():
             func = globals()[function_name]
             if callable(func):
                 return func()
-        return None
+        return None  # Return None if the function doesn't exist
     except Exception as e:
         print(f"Error executing function '{function_name}': {str(e)}")
         return None
 
-def parse_template_part(part):
-    """Extract the label, function, and color from a template part without regex."""
-    if part.startswith("VAR(") and part.endswith(")"):
-        inner_content = part[4:-1]
-        parts = inner_content.split(",")
-        if len(parts) == 3:
-            label = parts[0].strip() + " "
-            func_name = parts[1].strip()
-            color = parts[2].strip()
-            return label, func_name, color
-    return None, None, None
-
 # --- Display Update  ---
 def update_display():
     """Update the display based on the user-defined template."""
+    global is_moving  # Ensure dragging doesn't interrupt updates
 
-    global is_moving  # Use the existing is_moving variable
-
-    # Skip updates if the window is being dragged
     if is_moving:
         root.after(UPDATE_INTERVAL, update_display)
         return
-    
+
     try:
+        # Clear the frame
         for widget in display_frame.winfo_children():
             widget.destroy()
+
         index = 0
         while index < len(DISPLAY_TEMPLATE):
-            if DISPLAY_TEMPLATE[index:index + 4] == "VAR(":
-                end_index = DISPLAY_TEMPLATE.find(')', index)
+            # Handle VAR or VARIF blocks
+            if DISPLAY_TEMPLATE[index:index + 4] == "VAR(" or DISPLAY_TEMPLATE[index:index + 6] == "VARIF(":
+                is_varif = DISPLAY_TEMPLATE[index:index + 6] == "VARIF("
+                block_type = "VARIF" if is_varif else "VAR"
+                end_index = DISPLAY_TEMPLATE.find(")", index)
                 if end_index == -1:
-                    break
-                var_content = DISPLAY_TEMPLATE[index + 4:end_index]
-                index = end_index + 1
-                parts = var_content.split(',')
-                if len(parts) == 3:
-                    label = parts[0].strip()
-                    func_name = parts[1].strip()
-                    color = parts[2].strip()
+                    break  # Malformed block, exit
+
+                content = DISPLAY_TEMPLATE[index + len(block_type) + 1:end_index]
+                index = end_index + 1  # Move to next block
+
+                parts = content.split(",")
+                if is_varif and len(parts) == 4:  # VARIF(label, function, color, condition)
+                    label, func_name, color, condition_func = map(str.strip, parts)
+                    condition = get_dynamic_value(condition_func)
+                    if not condition:  # Skip this block if the condition is False
+                        continue
+                elif not is_varif and len(parts) == 3:  # VAR(label, function, color)
+                    label, func_name, color = map(str.strip, parts)
+                else:
+                    continue  # Skip malformed blocks
+
+                # Handle empty functions gracefully (e.g., conditional |)
+                if not func_name:  # If function is empty, show the label only
+                    value_str = ""
+                else:
+                    # Fetch the value for the block
                     value = get_dynamic_value(func_name)
-                    value_str = str(value) if value is not None else "None"
-                    label_widget = tk.Label(display_frame, text=f"{label} {value_str}", fg=color, font=FONT, bg=DARK_BG)
-                    label_widget.pack(side=tk.LEFT, padx=0, pady=0)
+                    value_str = str(value) if value is not None else ""
+
+                # Skip empty dynamic values (but not labels)
+                if not label.strip() and value_str == "":
+                    continue
+
+                # Add the label and value
+                label_text = f"{label} {value_str}".strip()
+                label_widget = tk.Label(display_frame, text=label_text, fg=color, font=FONT, bg=DARK_BG)
+                label_widget.pack(side=tk.LEFT, padx=0, pady=0)
             else:
+                # Handle static text outside of VAR or VARIF blocks
                 next_var_index = DISPLAY_TEMPLATE.find("VAR(", index)
-                if next_var_index == -1:
-                    next_var_index = len(DISPLAY_TEMPLATE)
-                plain_text = DISPLAY_TEMPLATE[index:next_var_index]
-                index = next_var_index
-                if plain_text.strip():
-                    plain_text_widget = tk.Label(display_frame, text=plain_text.strip(), fg="white", font=FONT, bg=DARK_BG)
-                    plain_text_widget.pack(side=tk.LEFT, padx=0, pady=0)
+                next_varif_index = DISPLAY_TEMPLATE.find("VARIF(", index)
+                next_index = min(next_var_index if next_var_index != -1 else len(DISPLAY_TEMPLATE),
+                                 next_varif_index if next_varif_index != -1 else len(DISPLAY_TEMPLATE))
+
+                static_text = DISPLAY_TEMPLATE[index:next_index].strip()
+                index = next_index
+
+                # Display the static text as-is
+                if static_text:
+                    static_text_widget = tk.Label(display_frame, text=static_text, fg="white", font=FONT, bg=DARK_BG)
+                    static_text_widget.pack(side=tk.LEFT, padx=0, pady=0)
+
+        # Adjust window size
         root.update_idletasks()
-        width = display_frame.winfo_reqwidth() + PADDING_X
-        height = display_frame.winfo_reqheight() + PADDING_Y
-        root.geometry(f"{width}x{height}")
+        root.geometry(f"{display_frame.winfo_reqwidth() + PADDING_X}x{display_frame.winfo_reqheight() + PADDING_Y}")
     except Exception as e:
-        print(f"Unexpected error in display update: {e}")
+        print(f"Error in update_display: {e}")
+
+    # Schedule next update
     root.after(UPDATE_INTERVAL, update_display)
 
 # --- Drag functionality ---
