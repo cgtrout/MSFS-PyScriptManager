@@ -183,6 +183,14 @@ def parse_template_part(part):
 
 def update_display():
     """Update the display based on the user-defined template."""
+
+    global is_moving  # Use the existing is_moving variable
+
+    # Skip updates if the window is being dragged
+    if is_moving:
+        root.after(UPDATE_INTERVAL, update_display)
+        return
+    
     try:
         for widget in display_frame.winfo_children():
             widget.destroy()
