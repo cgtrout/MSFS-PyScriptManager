@@ -6,6 +6,8 @@ import tkinter as tk
 from tkinter import simpledialog, messagebox
 from SimConnect import SimConnect, AircraftRequests
 from datetime import datetime, timezone, timedelta
+import os
+import json
 
 # Print initial message
 print("custom_status_bar: Close this window to close status bar")
@@ -23,9 +25,6 @@ DISPLAY_TEMPLATE = "VAR(Sim:, get_sim_time, yellow) | VAR(Zulu:, get_real_world_
 
 # Other examples that can be placed in template
 # VAR(Altitude:, get_altitude, tomato)
-# 
-#  | 
-# 
 
 # Configurable Variables
 alpha_transparency_level = 0.95  # Set transparency (0.0 = fully transparent, 1.0 = fully opaque)
@@ -43,6 +42,7 @@ sim_connected = False
 future_time = None  # Time for countdown in seconds
 last_entered_time = None  # Last entered future time in HHMM format
 
+# --- SimConnect Lookup  ---
 def get_sim_time():
     """Fetch the simulator time from SimConnect, formatted as HH:MM:SS."""
     try:
@@ -198,6 +198,7 @@ def set_future_time():
     except Exception as e:
         messagebox.showerror("Error", f"Failed to set future time: {str(e)}")
 
+# --- Template Parsing  ---
 def get_dynamic_value(function_name):
     """Dynamically execute the function by looking it up in the global scope."""
     try:
@@ -222,6 +223,7 @@ def parse_template_part(part):
             return label, func_name, color
     return None, None, None
 
+# --- Display Update  ---
 def update_display():
     """Update the display based on the user-defined template."""
 
@@ -284,12 +286,48 @@ def do_move(event):
     if is_moving:
         deltax = event.x - offset_x
         deltay = event.y - offset_y
-        root.geometry(f"+{root.winfo_x() + deltax}+{root.winfo_y() + deltay}")
+        new_x = root.winfo_x() + deltax
+        new_y = root.winfo_y() + deltay
+        root.geometry(f"+{new_x}+{new_y}")
 
 def stop_move(event):
     """Stop moving the window."""
     global is_moving
     is_moving = False
+    save_settings({"x": root.winfo_x(), "y": root.winfo_y()})
+
+# --- Settings  ---
+SCRIPT_DIR = os.path.dirname(__file__)
+SETTINGS_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "Settings")
+SETTINGS_FILE = os.path.join(SETTINGS_DIR, "custom_status_bar.json")
+
+# Ensure the Settings directory exists
+os.makedirs(SETTINGS_DIR, exist_ok=True)
+
+def load_settings():
+    """Load settings from the JSON file."""
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, "r") as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            print("Error: Settings file is corrupted. Using defaults.")
+    return {"x": 0, "y": 0}  # Default position
+
+def save_settings(settings):
+    """Save settings to the JSON file."""
+    try:
+        with open(SETTINGS_FILE, "w") as f:
+            json.dump(settings, f, indent=4)
+    except Exception as e:
+        print(f"Error saving settings: {e}")
+
+# --- Load initial settings ---
+settings = load_settings()
+initial_x = settings.get("x", 0)
+initial_y = settings.get("y", 0)
+
+print(f"DEBUG: Loaded settings - x: {initial_x}, y: {initial_y}")
 
 # --- GUI Setup ---
 root = tk.Tk()
@@ -298,6 +336,14 @@ root.overrideredirect(True)
 root.attributes("-topmost", True)
 root.attributes("-alpha", alpha_transparency_level)
 root.configure(bg=DARK_BG)
+
+# Apply initial geometry after creating the root window
+try:
+    # Set initial position
+    root.geometry(f"+{initial_x}+{initial_y}")
+    print(f"DEBUG: Applied geometry - x: {initial_x}, y: {initial_y}")
+except Exception as e:
+    print(f"DEBUG: Failed to apply geometry - {e}")
 
 # Bind mouse events to enable dragging of the window
 root.bind("<Button-1>", start_move)
