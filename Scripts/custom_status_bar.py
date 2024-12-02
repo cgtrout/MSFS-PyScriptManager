@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta
 import os
 import json
 import requests
+import time
 
 # Print initial message
 print("custom_status_bar: Close this window to close status bar")
@@ -51,9 +52,10 @@ alpha_transparency_level = 0.95  # Set transparency (0.0 = fully transparent, 1.
 WINDOW_TITLE = "Simulator Time"
 DARK_BG = "#000000"
 FONT = ("Helvetica", 16)
-UPDATE_INTERVAL = 500  # in milliseconds (1 second)
+UPDATE_INTERVAL = 1000  # in milliseconds (1 second)
 RECONNECT_INTERVAL = 1000  # in milliseconds (5 seconds)
 SIMBRIEF_UPDATE_INTERVAL = 15000  # in milliseconds (15 seconds)
+
 PADDING_X = 20  # Horizontal padding for each label
 PADDING_Y = 10  # Vertical padding for the window
 
@@ -62,6 +64,7 @@ aq = None
 sim_connected = False
 future_time = None  # Time for countdown in seconds
 is_future_time_manually_set = False
+last_simbrief_generated_time = None  # Store the last loaded SimBrief time for update checks
 last_entered_time = None  # Last entered future time in HHMM format
 
 # --- SimConnect Lookup  ---
@@ -114,54 +117,47 @@ def get_time_to_future():
     """
     Calculate remaining time to the globally configured future event.
     Adjusts for simulator time acceleration if necessary.
-    Returns '00:00:00' if the future time has not been set.
+    Returns '00:00:00' if the future time has not been set or an error occurs.
     """
     global future_time
-    try:
-        # If future_time is not set, return "00:00:00"
-        if future_time is None:
-            return "00:00:00"
 
-        # Get the current simulator datetime
+    # If future_time is not set, return "00:00:00"
+    if future_time is None:
+        return "00:00:00"
+
+    try:
+        # Fetch current simulator time
         current_sim_time = get_simulator_datetime()
 
         # Ensure both times are timezone-aware (UTC)
-        if future_time.tzinfo is None:
-            raise ValueError("Future time is offset-naive. Ensure all times are offset-aware.")
-        if current_sim_time.tzinfo is None:
-            raise ValueError("Simulator time is offset-naive. Ensure all times are offset-aware.")
+        if future_time.tzinfo is None or current_sim_time.tzinfo is None:
+            raise ValueError("Future time or simulator time is offset-naive. Ensure all times are offset-aware.")
 
         # Calculate remaining time
         remaining_time = future_time - current_sim_time
-
-        # If the remaining time is zero or negative, return "00:00:00"
         if remaining_time.total_seconds() <= 0:
-            return "00:00:00"
+            return "00:00:00"  # If remaining time is zero or negative
 
-        # Adjust remaining time for simulation rate
+        # Fetch simulation rate
         sim_rate = get_sim_rate()
-        if sim_rate:
-            try:
-                sim_rate = float(sim_rate)  # Ensure the simulation rate is numeric
-                if sim_rate > 0:
-                    adjusted_seconds = remaining_time.total_seconds() / sim_rate
-                else:
-                    adjusted_seconds = remaining_time.total_seconds()
-            except ValueError:
-                # If conversion fails, default to 1.0
+        if sim_rate is not None:
+            sim_rate = float(sim_rate)  # Ensure simulation rate is numeric
+            if sim_rate > 0:  # Avoid division by zero or invalid rates
+                adjusted_seconds = remaining_time.total_seconds() / sim_rate
+            else:
+                print(f"DEBUG: Invalid simulation rate ({sim_rate}); using unadjusted time.")
                 adjusted_seconds = remaining_time.total_seconds()
         else:
+            print("DEBUG: Simulation rate unavailable; using unadjusted time.")
             adjusted_seconds = remaining_time.total_seconds()
 
         # Format the adjusted remaining time as HH:MM:SS
         hours, remainder = divmod(adjusted_seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
-        formatted_time = f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
-
-        return formatted_time
+        return f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
 
     except Exception as e:
-        print(f"Error in get_time_to_future: {e}")
+        print(f"DEBUG: Error in get_time_to_future: {e}")
         return "00:00:00"
 
 def initialize_simconnect():
@@ -175,15 +171,24 @@ def initialize_simconnect():
         sim_connected = False
         root.after(RECONNECT_INTERVAL, initialize_simconnect)
 
-def get_simconnect_value(variable_name):
-    """Generalized function to fetch a SimConnect variable, raising an exception on error."""
+def get_simconnect_value(variable_name, max_retries=3):
+    """
+    Generalized function to fetch a SimConnect variable with retry logic.
+    Retries fetching the value if it fails or returns None.
+    """
     if not sim_connected:
         raise ConnectionError("Sim Not Running")
-    
-    value = aq.get(variable_name)
-    if value is None:
-        raise ValueError("No Data")
-    return value
+
+    for attempt in range(max_retries):
+        try:
+            value = aq.get(variable_name)
+            if value is not None:  # Valid value received
+                return value
+        except Exception as e:
+            print(f"DEBUG: Error fetching '{variable_name}' (Attempt {attempt + 1}/{max_retries}): {e}. Retrying...")
+
+    # If all retries fail, raise an exception
+    raise ValueError(f"Unable to fetch value for '{variable_name}' after {max_retries} attempts.")
 
 def get_formatted_value(variable_names, format_string=None):
     """
@@ -269,7 +274,7 @@ def convert_real_world_time_to_sim_time(real_world_time):
 def set_future_time_internal(future_time_input, current_sim_time):
     """
     Internal helper function to process and set the future time.
-    Converts real-world times (e.g., from SimBrief) to simulator time if needed.
+    Assumes the input time is already in the correct format.
     """
     global future_time
     try:
@@ -278,23 +283,16 @@ def set_future_time_internal(future_time_input, current_sim_time):
             current_sim_time = current_sim_time.replace(tzinfo=timezone.utc)
 
         if isinstance(future_time_input, datetime):
-            # If the input is a real-world time, convert it to simulator time
-            if future_time_input.tzinfo is None:
-                future_time_input = future_time_input.replace(tzinfo=timezone.utc)
-
-            # Convert real-world time to simulator time
-            future_time_candidate = convert_real_world_time_to_sim_time(future_time_input)
-
             # Validate that the future time is after the current simulator time
-            if future_time_candidate <= current_sim_time:
+            if future_time_input <= current_sim_time:
                 raise ValueError("Future time must be later than the current simulator time.")
+
+            # Set the future time
+            future_time = future_time_input
+            print(f"DEBUG: Future time set to: {future_time}")
+            return True
         else:
             raise TypeError("Unsupported future_time_input type. Must be a datetime object.")
-
-        # Set the future time
-        future_time = future_time_candidate
-        print(f"DEBUG: Future time set to: {future_time}")
-        return True
 
     except ValueError as ve:
         print(f"Validation error in set_future_time_internal: {ve}")
@@ -307,7 +305,7 @@ def set_future_time():
     Prompt the user to set a future countdown time based on Sim Time.
     If no input is provided, use SimBrief time based on the global `USE_SIMBRIEF_ADJUSTED_TIME` flag.
     """
-    global future_time
+    global future_time, is_future_time_manually_set, last_entered_time
     try:
         # Get current simulator datetime
         current_sim_time = get_simulator_datetime()
@@ -317,11 +315,39 @@ def set_future_time():
         prompt_message = f"Enter future time based on Sim Time (HHMM)\nCurrent Sim Time: {sim_time_str}"
         future_time_input = simpledialog.askstring("Input", prompt_message, initialvalue=last_entered_time, parent=root)
 
-        # If user provides input, use it
-        if future_time_input and set_future_time_internal(future_time_input, current_sim_time):
-            print(f"DEBUG: Future time manually set to: {future_time}")
+        # If user provides input, convert it to a datetime object
+        if future_time_input:
+            last_entered_time = future_time_input  # Save the entered time for the next prompt
+            try:
+                # Convert HHMM to hours and minutes
+                hours = int(future_time_input[:2])
+                minutes = int(future_time_input[2:])
+
+                # Create a new datetime object with the entered time
+                future_time_candidate = datetime(
+                    year=current_sim_time.year,
+                    month=current_sim_time.month,
+                    day=current_sim_time.day,
+                    hour=hours,
+                    minute=minutes,
+                    tzinfo=timezone.utc
+                )
+
+                # Adjust for times past midnight
+                if future_time_candidate < current_sim_time:
+                    # If the entered time is earlier than the current time, assume it's for the next day
+                    future_time_candidate += timedelta(days=1)
+
+                # Validate and set the future time
+                is_future_time_manually_set = True
+                if set_future_time_internal(future_time_candidate, current_sim_time):
+                    print(f"DEBUG: Future time manually set to: {future_time}")
+                else:
+                    print("DEBUG: Failed to set future time.")
+            except (ValueError, IndexError):
+                messagebox.showerror("Error", "Invalid time format. Please enter time in HHMM format.")
         else:
-            # Otherwise, fallback to SimBrief time
+            # If no input is provided, fallback to SimBrief time
             load_simbrief_future_time()
     except Exception as e:
         messagebox.showerror("Error", f"Failed to set future time: {str(e)}")
@@ -506,37 +532,59 @@ def get_simbrief_ofp_arrival_datetime(username):
 def load_simbrief_future_time():
     """
     Load SimBrief's arrival time and set it as the future time.
+    Adjusts the time if `USE_SIMBRIEF_ADJUSTED_TIME` is enabled.
     """
     global future_time
+
     if not SIMBRIEF_USERNAME.strip():
+        print("DEBUG: SimBrief username is not set; skipping load.")
         return
 
     try:
-        # Fetch SimBrief arrival time (real-world UTC)
+        # Fetch the latest SimBrief OFP JSON data for the provided username
         simbrief_arrival_datetime = get_simbrief_ofp_arrival_datetime(SIMBRIEF_USERNAME)
         if simbrief_arrival_datetime:
-            # Decide whether to adjust the time based on `USE_SIMBRIEF_ADJUSTED_TIME`
+            # Adjust time if needed
             if USE_SIMBRIEF_ADJUSTED_TIME:
-                # Adjust SimBrief time to simulator time
                 sim_time = convert_real_world_time_to_sim_time(simbrief_arrival_datetime)
+                print(f"DEBUG: Adjusted SimBrief arrival time to simulator time: {sim_time}")
                 set_future_time_internal(sim_time, get_simulator_datetime())
-                print(f"DEBUG: Future time set to SimBrief Simulator-Adjusted Time: {future_time}")
             else:
-                # Use SimBrief real-world UTC time directly
+                print(f"DEBUG: Using SimBrief real-world time directly: {simbrief_arrival_datetime}")
                 set_future_time_internal(simbrief_arrival_datetime, get_simulator_datetime())
-                print(f"DEBUG: Future time set to SimBrief Real-World Time: {future_time}")
         else:
             print("DEBUG: SimBrief arrival time not available.")
     except Exception as e:
         print(f"ERROR: Failed to set SimBrief Future Time: {e}")
 
-# Start the time update loop
 def periodic_simbrief_update():
     """
-    Periodically update the future time using SimBrief data.
+    Periodically update the future time using SimBrief data if no user-set time exists.
+    Detects and reloads only if the SimBrief plan's generation time has changed.
     """
-    if not is_future_time_manually_set:
-        load_simbrief_future_time()
+    global future_time, is_future_time_manually_set, last_simbrief_generated_time
+
+    try:
+        # Skip if the user has manually set a time
+        if not is_future_time_manually_set:
+            # Fetch the latest SimBrief data
+            ofp_json = get_latest_simbrief_ofp_json(SIMBRIEF_USERNAME)
+            if not ofp_json:
+                print("DEBUG: No SimBrief data available.")
+            else:
+                # Extract the generation time
+                current_generated_time = ofp_json.get("params", {}).get("time_generated")
+                if not current_generated_time:
+                    print("DEBUG: Unable to determine SimBrief flight plan generation time.")
+                elif current_generated_time != last_simbrief_generated_time:
+                    print(f"DEBUG: New SimBrief flight plan detected. Generation Time: {current_generated_time}")
+                    last_simbrief_generated_time = current_generated_time  # Update to the new generation time
+
+                    # Reload SimBrief future time
+                    load_simbrief_future_time()
+    except Exception as e:
+        print(f"DEBUG: Error in periodic SimBrief update: {e}")
+
     # Schedule the next update
     root.after(SIMBRIEF_UPDATE_INTERVAL, periodic_simbrief_update)
 
