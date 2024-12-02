@@ -117,65 +117,47 @@ def get_time_to_future():
     """
     Calculate remaining time to the globally configured future event.
     Adjusts for simulator time acceleration if necessary.
-    Returns '00:00:00' if the future time has not been set.
+    Returns '00:00:00' if the future time has not been set or an error occurs.
     """
     global future_time
-    try:
-        # If future_time is not set, return "00:00:00"
-        if future_time is None:
-            return "00:00:00"
 
-        # Retry loop for getting simulator datetime
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                current_sim_time = get_simulator_datetime()
-                break  # If successful, exit the retry loop
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    time.sleep(0.25)  # Wait before retrying
-                else:
-                    print("DEBUG: Max retries reached. Skipping update for this cycle.")
-                    return "00:00:00"
+    # If future_time is not set, return "00:00:00"
+    if future_time is None:
+        return "00:00:00"
+
+    try:
+        # Fetch current simulator time
+        current_sim_time = get_simulator_datetime()
 
         # Ensure both times are timezone-aware (UTC)
-        if future_time.tzinfo is None:
-            raise ValueError("Future time is offset-naive. Ensure all times are offset-aware.")
-        if current_sim_time.tzinfo is None:
-            raise ValueError("Simulator time is offset-naive. Ensure all times are offset-aware.")
+        if future_time.tzinfo is None or current_sim_time.tzinfo is None:
+            raise ValueError("Future time or simulator time is offset-naive. Ensure all times are offset-aware.")
 
         # Calculate remaining time
         remaining_time = future_time - current_sim_time
-
-        # If the remaining time is zero or negative, return "00:00:00"
         if remaining_time.total_seconds() <= 0:
-            return "00:00:00"
+            return "00:00:00"  # If remaining time is zero or negative
 
-        # Adjust remaining time for simulation rate
+        # Fetch simulation rate
         sim_rate = get_sim_rate()
-        if sim_rate:
-            try:
-                sim_rate = float(sim_rate)  # Ensure the simulation rate is numeric
+        if sim_rate is not None:
+            sim_rate = float(sim_rate)  # Ensure simulation rate is numeric
+            if sim_rate > 0:  # Avoid division by zero or invalid rates
                 adjusted_seconds = remaining_time.total_seconds() / sim_rate
-            except ValueError:
-                # If conversion fails, default to 1.0 and log the issue
-                print(f"DEBUG: Simulation rate conversion failed; using unadjusted time.")
+            else:
+                print(f"DEBUG: Invalid simulation rate ({sim_rate}); using unadjusted time.")
                 adjusted_seconds = remaining_time.total_seconds()
         else:
-            # Handle missing simulation rate
             print("DEBUG: Simulation rate unavailable; using unadjusted time.")
             adjusted_seconds = remaining_time.total_seconds()
-
 
         # Format the adjusted remaining time as HH:MM:SS
         hours, remainder = divmod(adjusted_seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
-        formatted_time = f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
-
-        return formatted_time
+        return f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
 
     except Exception as e:
-        print(f"Error in get_time_to_future: {e}")
+        print(f"DEBUG: Error in get_time_to_future: {e}")
         return "00:00:00"
 
 def initialize_simconnect():
@@ -189,15 +171,24 @@ def initialize_simconnect():
         sim_connected = False
         root.after(RECONNECT_INTERVAL, initialize_simconnect)
 
-def get_simconnect_value(variable_name):
-    """Generalized function to fetch a SimConnect variable, raising an exception on error."""
+def get_simconnect_value(variable_name, max_retries=3):
+    """
+    Generalized function to fetch a SimConnect variable with retry logic.
+    Retries fetching the value if it fails or returns None.
+    """
     if not sim_connected:
         raise ConnectionError("Sim Not Running")
-    
-    value = aq.get(variable_name)
-    if value is None:
-        raise ValueError("No Data")
-    return value
+
+    for attempt in range(max_retries):
+        try:
+            value = aq.get(variable_name)
+            if value is not None:  # Valid value received
+                return value
+        except Exception as e:
+            print(f"DEBUG: Error fetching '{variable_name}' (Attempt {attempt + 1}/{max_retries}): {e}. Retrying...")
+
+    # If all retries fail, raise an exception
+    raise ValueError(f"Unable to fetch value for '{variable_name}' after {max_retries} attempts.")
 
 def get_formatted_value(variable_names, format_string=None):
     """
