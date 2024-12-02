@@ -78,6 +78,10 @@ cache_lock = threading.Lock()
 def get_sim_time():
     """Fetch the simulator time from SimConnect, formatted as HH:MM:SS."""
     try:
+
+        if not sim_connected: 
+            return "Sim Not Running"
+
         sim_time_seconds = get_simconnect_value("ZULU_TIME")
         
         if sim_time_seconds == "N/A":
@@ -87,7 +91,6 @@ def get_sim_time():
         sim_time = (datetime.min + timedelta(seconds=int(sim_time_seconds))).time()
         return sim_time.strftime("%H:%M:%S")
     except Exception as e:
-        print(f"DEBUG: Error in get_sim_time: {e}")  
         return "Err"
 
 def get_real_world_time():
@@ -181,13 +184,16 @@ def initialize_simconnect():
         sim_connected = True
     except Exception:
         sim_connected = False
-        root.after(RECONNECT_INTERVAL, initialize_simconnect)
 
 def get_simconnect_value(variable_name, default_value="N/A"):
     """
     Fetch a SimConnect variable from the cache.
     If not present, add it to the tracking list and return the default value.
     """
+
+    if not sim_connected or not sm.ok:
+        return "Sim Not Running"
+
     with cache_lock:
         if variable_name in simconnect_cache:
             value = simconnect_cache[variable_name]
@@ -209,8 +215,14 @@ def simconnect_background_updater():
         try:
             if not sim_connected:
                 initialize_simconnect()
+                continue
 
             if sim_connected:
+                # Check to see if in flight
+                if not sm.ok or sm.quit == 1: 
+                    sim_connected = False
+                    continue
+
                 # Make a copy of the variables to avoid holding the lock during network calls
                 with cache_lock:
                     vars_to_update = list(variables_to_track)
@@ -236,10 +248,13 @@ def simconnect_background_updater():
                         # If all retries fail, set a default or error value
                         with cache_lock:
                             simconnect_cache[variable_name] = "Err"
-                        print(f"DEBUG: Failed to update {variable_name} after {MAX_RETRIES} retries.")
             else:
                 print("DEBUG: SimConnect not connected. Retrying in {RECONNECT_INTERVAL}ms.")
                 time.sleep(RECONNECT_INTERVAL / 1000.0)
+
+        except OSError as os_err:
+            print(f"DEBUG: OS error occurred: {os_err} - likely a connection issue")
+            sim_connected = False
 
         except Exception as e:
             print(f"DEBUG: Error in background updater: {e}")
@@ -259,27 +274,24 @@ def get_formatted_value(variable_names, format_string=None):
     Returns:
     - The formatted string, or an error message if retrieval fails.
     """
+    
+    if not sim_connected or not sm.ok:
+        return "Sim Not Running"
+
     if isinstance(variable_names, str):
         variable_names = [variable_names]
 
-    try:
-        # Fetch values for the given variables
-        values = [get_simconnect_value(var) for var in variable_names]
+    # Fetch values for the given variables
+    values = [get_simconnect_value(var) for var in variable_names]
 
-        # Format the values if a format string is provided
-        if format_string:
-            formatted_values = format_string.format(*values)
-            return formatted_values
+    # Format the values if a format string is provided
+    if format_string:
+        formatted_values = format_string.format(*values)
+        return formatted_values
 
-        # Return raw value(s) if no format string is provided
-        result = values[0] if len(values) == 1 else values
-        return result
-
-    except Exception as e:
-        print(f"DEBUG: get_formatted_value caught exception: {e}")
-        # Always initialize 'values' to avoid unbound variable errors
-        print(f"DEBUG: Exception occurred on variable_names={variable_names}, values={locals().get('values', 'N/A')}")
-        return "Error"
+    # Return raw value(s) if no format string is provided
+    result = values[0] if len(values) == 1 else values
+    return result
 
 def get_simulator_datetime():
     """
@@ -447,8 +459,7 @@ def get_dynamic_value(function_name):
                 return func()
         return ""  # Return an empty string if the function doesn't exist
     except Exception as e:
-        print(f"Error executing function '{function_name}': {str(e)}")
-        return ""
+        return "Err"
 
 # --- Display Update  ---
 def update_display():
@@ -647,8 +658,6 @@ def load_simbrief_future_time():
         print(f"ERROR: Failed to set SimBrief Future Time: {e}")
         return False
 
-
-
 def periodic_simbrief_update():
     """
     Periodically update the future time using SimBrief data if no user-set time exists.
@@ -679,48 +688,6 @@ def periodic_simbrief_update():
 
     # Schedule the next update
     root.after(SIMBRIEF_UPDATE_INTERVAL, periodic_simbrief_update)
-
-def prefetch_variables(timeout_seconds=10, retry_interval=0.5):
-    """
-    Prefetch variables to ensure they are available in the cache.
-    Retries fetching until values are valid or timeout occurs.
-    
-    Parameters:
-    - timeout_seconds: Maximum time to spend retrying.
-    - retry_interval: Time (in seconds) to wait between retries.
-    """
-    variables_to_prefetch = [
-        "ZULU_YEAR",
-        "ZULU_MONTH_OF_YEAR",
-        "ZULU_DAY_OF_MONTH",
-        "ZULU_TIME",
-        "AMBIENT_TEMPERATURE",
-        "TOTAL_AIR_TEMPERATURE",
-        "SIMULATION_RATE"
-    ]
-
-    print("DEBUG: Prefetching variables")
-
-    start_time = time.time()
-    while time.time() - start_time < timeout_seconds:
-        all_fetched = True
-        for variable in variables_to_prefetch:
-            try:
-                value = get_simconnect_value(variable)
-                if value is None or str(value) == "N/A":
-                    all_fetched = False  # Keep retrying if any value is invalid
-            except Exception as e:
-                all_fetched = False  # Handle fetch errors
-                print(f"DEBUG: Error prefetching '{variable}': {e}")
-
-        if all_fetched:
-            print("DEBUG: All variables successfully prefetched.")
-            return True  # Successfully prefetched all variables
-
-        time.sleep(retry_interval)  # Wait before retrying
-
-    print(f"DEBUG: Prefetching timed out after {timeout_seconds} seconds.")
-    return False  # Prefetching failed
 
 # --- Drag functionality ---
 is_moving = False
@@ -808,15 +775,9 @@ display_frame.pack(padx=10, pady=5)
 # --- Double click functionality for setting timer ---
 root.bind("<Double-1>", lambda event: set_future_time())
 
-# Initialize SimConnect
-initialize_simconnect()
-
 # Start the background thread
 background_thread = threading.Thread(target=simconnect_background_updater, daemon=True)
 background_thread.start()
-
-# Prefetch variables to they are ready ahead of time
-prefetch_variables()
 
 # Start the time update loop
 periodic_simbrief_update()
