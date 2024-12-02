@@ -274,7 +274,7 @@ def convert_real_world_time_to_sim_time(real_world_time):
 def set_future_time_internal(future_time_input, current_sim_time):
     """
     Internal helper function to process and set the future time.
-    Converts real-world times (e.g., from SimBrief) to simulator time if needed.
+    Assumes the input time is already in the correct format.
     """
     global future_time
     try:
@@ -283,29 +283,16 @@ def set_future_time_internal(future_time_input, current_sim_time):
             current_sim_time = current_sim_time.replace(tzinfo=timezone.utc)
 
         if isinstance(future_time_input, datetime):
-            # If the input is a real-world time, convert it to simulator time
-            if future_time_input.tzinfo is None:
-                future_time_input = future_time_input.replace(tzinfo=timezone.utc)
-
-            if USE_SIMBRIEF_ADJUSTED_TIME:
-                # Adjust SimBrief's time to align with simulator time
-                future_time_candidate = convert_real_world_time_to_sim_time(future_time_input)
-                print("DEBUG: Adjusted SimBrief time to simulator time:", future_time_candidate)
-            else:
-                # Use SimBrief's real-world time directly
-                future_time_candidate = future_time_input
-                print("DEBUG: Using SimBrief real-world time directly:", future_time_candidate)
-
             # Validate that the future time is after the current simulator time
-            if future_time_candidate <= current_sim_time:
+            if future_time_input <= current_sim_time:
                 raise ValueError("Future time must be later than the current simulator time.")
+
+            # Set the future time
+            future_time = future_time_input
+            print(f"DEBUG: Future time set to: {future_time}")
+            return True
         else:
             raise TypeError("Unsupported future_time_input type. Must be a datetime object.")
-
-        # Set the future time
-        future_time = future_time_candidate
-        print(f"DEBUG: Future time set to: {future_time}")
-        return True
 
     except ValueError as ve:
         print(f"Validation error in set_future_time_internal: {ve}")
@@ -519,7 +506,7 @@ def get_simbrief_ofp_arrival_datetime(username):
 def load_simbrief_future_time():
     """
     Load SimBrief's arrival time and set it as the future time.
-    Directly sets the future time without performing update checks.
+    Adjusts the time if `USE_SIMBRIEF_ADJUSTED_TIME` is enabled.
     """
     global future_time
 
@@ -531,14 +518,14 @@ def load_simbrief_future_time():
         # Fetch the latest SimBrief OFP JSON data for the provided username
         simbrief_arrival_datetime = get_simbrief_ofp_arrival_datetime(SIMBRIEF_USERNAME)
         if simbrief_arrival_datetime:
-            # Decide whether to adjust the time based on `USE_SIMBRIEF_ADJUSTED_TIME`
+            # Adjust time if needed
             if USE_SIMBRIEF_ADJUSTED_TIME:
                 sim_time = convert_real_world_time_to_sim_time(simbrief_arrival_datetime)
+                print(f"DEBUG: Adjusted SimBrief arrival time to simulator time: {sim_time}")
                 set_future_time_internal(sim_time, get_simulator_datetime())
-                print(f"DEBUG: Future time set to SimBrief Simulator-Adjusted Time: {future_time}")
             else:
+                print(f"DEBUG: Using SimBrief real-world time directly: {simbrief_arrival_datetime}")
                 set_future_time_internal(simbrief_arrival_datetime, get_simulator_datetime())
-                print(f"DEBUG: Future time set to SimBrief Real-World Time: {future_time}")
         else:
             print("DEBUG: SimBrief arrival time not available.")
     except Exception as e:
