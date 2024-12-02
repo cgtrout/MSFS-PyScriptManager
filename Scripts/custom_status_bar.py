@@ -55,6 +55,7 @@ FONT = ("Helvetica", 16)
 UPDATE_INTERVAL = 1000  # in milliseconds (1 second)
 RECONNECT_INTERVAL = 1000  # in milliseconds (5 seconds)
 SIMBRIEF_UPDATE_INTERVAL = 15000  # in milliseconds (15 seconds)
+
 PADDING_X = 20  # Horizontal padding for each label
 PADDING_Y = 10  # Vertical padding for the window
 
@@ -63,6 +64,7 @@ aq = None
 sim_connected = False
 future_time = None  # Time for countdown in seconds
 is_future_time_manually_set = False
+last_simbrief_generated_time = None  # Store the last loaded SimBrief time for update checks
 last_entered_time = None  # Last entered future time in HHMM format
 
 # --- SimConnect Lookup  ---
@@ -526,42 +528,60 @@ def get_simbrief_ofp_arrival_datetime(username):
 def load_simbrief_future_time():
     """
     Load SimBrief's arrival time and set it as the future time.
+    Directly sets the future time without performing update checks.
     """
     global future_time
+
     if not SIMBRIEF_USERNAME.strip():
+        print("DEBUG: SimBrief username is not set; skipping load.")
         return
 
     try:
-        # Fetch SimBrief arrival time (real-world UTC)
+        # Fetch the latest SimBrief OFP JSON data for the provided username
         simbrief_arrival_datetime = get_simbrief_ofp_arrival_datetime(SIMBRIEF_USERNAME)
         if simbrief_arrival_datetime:
             # Decide whether to adjust the time based on `USE_SIMBRIEF_ADJUSTED_TIME`
             if USE_SIMBRIEF_ADJUSTED_TIME:
-                # Adjust SimBrief time to simulator time
                 sim_time = convert_real_world_time_to_sim_time(simbrief_arrival_datetime)
                 set_future_time_internal(sim_time, get_simulator_datetime())
                 print(f"DEBUG: Future time set to SimBrief Simulator-Adjusted Time: {future_time}")
             else:
-                # Use SimBrief real-world UTC time directly
                 set_future_time_internal(simbrief_arrival_datetime, get_simulator_datetime())
                 print(f"DEBUG: Future time set to SimBrief Real-World Time: {future_time}")
         else:
             print("DEBUG: SimBrief arrival time not available.")
     except Exception as e:
         print(f"DEBUG: Failed to set SimBrief Future Time: {e}")
-        messagebox.showerror("Error", f"Failed to load SimBrief Future Time: {str(e)}")
 
-# Start the time update loop
 def periodic_simbrief_update():
     """
     Periodically update the future time using SimBrief data if no user-set time exists.
+    Detects and reloads only if the SimBrief plan's generation time has changed.
     """
-    global future_time, is_future_time_manually_set
+    global future_time, is_future_time_manually_set, last_simbrief_generated_time
 
-    # Reload SimBrief only if no user-set time and no valid future time exists
-    if not is_future_time_manually_set and future_time is None:
-        print("DEBUG: No user-set time or future time exists. Reloading SimBrief data.")
-        load_simbrief_future_time()
+    try:
+        # Skip if the user has manually set a time
+        if is_future_time_manually_set:
+            print("DEBUG: User has manually set a time; skipping SimBrief updates.")
+        else:
+            # Fetch the latest SimBrief data
+            ofp_json = get_latest_simbrief_ofp_json(SIMBRIEF_USERNAME)
+            if not ofp_json:
+                print("DEBUG: No SimBrief data available.")
+            else:
+                # Extract the generation time
+                current_generated_time = ofp_json.get("params", {}).get("time_generated")
+                if not current_generated_time:
+                    print("DEBUG: Unable to determine SimBrief flight plan generation time.")
+                elif current_generated_time != last_simbrief_generated_time:
+                    print(f"DEBUG: New SimBrief flight plan detected. Generation Time: {current_generated_time}")
+                    last_simbrief_generated_time = current_generated_time  # Update to the new generation time
+
+                    # Reload SimBrief future time
+                    load_simbrief_future_time()
+    except Exception as e:
+        print(f"DEBUG: Error in periodic SimBrief update: {e}")
 
     # Schedule the next update
     root.after(SIMBRIEF_UPDATE_INTERVAL, periodic_simbrief_update)
