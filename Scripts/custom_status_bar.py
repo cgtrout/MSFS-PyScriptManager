@@ -543,12 +543,20 @@ def load_simbrief_future_time():
 # Start the time update loop
 def periodic_simbrief_update():
     """
-    Periodically update the future time using SimBrief data.
+    Periodically update the future time using SimBrief data if no user-set time exists.
     """
-    if not is_future_time_manually_set:
+    global future_time, is_future_time_manually_set
+
+    # Reload SimBrief only if no user-set time and no valid future time exists
+    if not is_future_time_manually_set and future_time is None:
+        print("DEBUG: No user-set time or future time exists. Reloading SimBrief data.")
         load_simbrief_future_time()
+    else:
+        print("DEBUG: Skipping SimBrief reload; user-set time or future time already exists.")
+
     # Schedule the next update
     root.after(SIMBRIEF_UPDATE_INTERVAL, periodic_simbrief_update)
+
 
 # --- Drag functionality ---
 is_moving = False
