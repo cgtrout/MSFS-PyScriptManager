@@ -10,6 +10,7 @@ from tkinter import scrolledtext
 import psutil  # Import psutil for process management
 import os
 import time  # Import time for handling timeouts
+from threading import Lock
 
 # Path to the WinPython Python executable and VS Code.exe
 current_dir = Path(__file__).resolve().parent
@@ -75,6 +76,7 @@ class ScriptLauncherApp:
     def __init__(self, root):
         self.cpu_stats = {}  # Initialize a dictionary to store CPU stats for each script
         self.performance_metrics_open = False  # Track if the metrics tab is open
+        self.cpu_stats_lock = Lock()
 
         self.root = root
         self.root.title("Python Script Launcher")
@@ -137,6 +139,19 @@ class ScriptLauncherApp:
         # Call autoplay_script_group to automatically load the script _auto group file at startup
         self.autoplay_script_group()
 
+    def initialize_cpu_percent(self):
+        """Initialize CPU percent measurement for each process and its children."""
+        for process_info in self.processes.values():
+            process = process_info.get('process')
+            if process and process.pid:
+                try:
+                    proc = psutil.Process(process.pid)
+                    proc.cpu_percent(interval=None)  # Initialize for parent
+                    for child in proc.children(recursive=True):
+                        child.cpu_percent(interval=None)  # Initialize for children
+                except psutil.NoSuchProcess:
+                    continue
+
     def open_performance_metrics_tab(self):
         """Open a single instance of the Performance Metrics tab."""
         if self.performance_metrics_open:
@@ -162,7 +177,9 @@ class ScriptLauncherApp:
         self.performance_metrics_tab_id = tab_id
         self.performance_metrics_open = True  # Set the flag
 
-        self.monitor_performance_metrics()  # Start the monitoring thread
+        # Initialize CPU usage tracking for all processes
+        self.initialize_cpu_percent()  
+        self.monitor_performance_metrics()  
 
     def monitor_performance_metrics(self):
         """Periodically update the performance metrics tab."""
@@ -183,32 +200,48 @@ class ScriptLauncherApp:
     def generate_metrics_text(self):
         """Generate a text representation of performance metrics dynamically."""
         metrics = []
-        processes_copy = self.processes.copy()  # Create a snapshot to avoid iteration issues
-        for tab_id, process_info in processes_copy.items():
+
+        if not self.processes:  # Handle the case where no processes are tracked
+            return "No scripts are currently running."
+
+        for tab_id, process_info in self.processes.items():
             process = process_info.get('process')
             script_name = Path(process_info.get('script_path', 'Unknown')).name
+
             if process and process.pid:
                 try:
                     proc = psutil.Process(process.pid)
                     if proc.is_running():
+                        # Initialize stats tracking if not already done
+                        with self.cpu_stats_lock:
+                            if tab_id not in self.cpu_stats:
+                                self.cpu_stats[tab_id] = {"cumulative_cpu": 0, "count": 0, "peak_cpu": 0}
+
                         # Aggregate CPU and memory usage
-                        total_cpu_usage = proc.cpu_percent(interval=0.1) / psutil.cpu_count()
+                        total_cpu_usage = proc.cpu_percent(interval=None)
                         total_memory_usage = proc.memory_info().rss  # In bytes
+
                         for child in proc.children(recursive=True):
                             if child.is_running():
-                                total_cpu_usage += child.cpu_percent(interval=0.1) / psutil.cpu_count()
+                                total_cpu_usage += child.cpu_percent(interval=None)
                                 total_memory_usage += child.memory_info().rss
 
-                        # Track stats for averages and peaks
-                        if tab_id not in self.cpu_stats:
-                            self.cpu_stats[tab_id] = {"cumulative_cpu": 0, "count": 0, "peak_cpu": 0}
+                        if total_cpu_usage == 0.0 and self.cpu_stats[tab_id]["count"] == 0:
+                            with self.cpu_stats_lock:
+                                self.cpu_stats[tab_id]["count"] += 1  # Increment count to avoid infinite skipping
+                            print(f"Skipping initial CPU measurement for Tab ID: {tab_id}")  # Debugging
+                            continue
 
-                        self.cpu_stats[tab_id]["cumulative_cpu"] += total_cpu_usage
-                        self.cpu_stats[tab_id]["count"] += 1
-                        self.cpu_stats[tab_id]["peak_cpu"] = max(self.cpu_stats[tab_id]["peak_cpu"], total_cpu_usage)
+                        # Update stats with locking
+                        with self.cpu_stats_lock:
+                            self.cpu_stats[tab_id]["cumulative_cpu"] += total_cpu_usage
+                            self.cpu_stats[tab_id]["count"] += 1
+                            self.cpu_stats[tab_id]["peak_cpu"] = max(self.cpu_stats[tab_id]["peak_cpu"], total_cpu_usage)
 
-                        avg_cpu_usage = self.cpu_stats[tab_id]["cumulative_cpu"] / self.cpu_stats[tab_id]["count"]
-                        peak_cpu_usage = self.cpu_stats[tab_id]["peak_cpu"]
+                            avg_cpu_usage = (
+                                self.cpu_stats[tab_id]["cumulative_cpu"] / self.cpu_stats[tab_id]["count"]
+                            )
+                            peak_cpu_usage = self.cpu_stats[tab_id]["peak_cpu"]
 
                         # Convert memory usage to MB
                         total_memory_usage_mb = total_memory_usage / (1024 ** 2)
@@ -229,6 +262,7 @@ class ScriptLauncherApp:
                 metrics.append(f"Script: {script_name}\n  Status: Not Running\n")
 
         return "\n".join(metrics)
+
 
     def stop_performance_monitoring(self):
         """Stop monitoring performance metrics and reset related attributes."""
