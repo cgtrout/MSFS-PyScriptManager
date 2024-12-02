@@ -180,7 +180,7 @@ def initialize_simconnect():
     global sm, aq, sim_connected
     try:
         sm = SimConnect()  # Connect to SimConnect
-        aq = AircraftRequests(sm)
+        aq = AircraftRequests(sm, _time=0)
         sim_connected = True
     except Exception:
         sim_connected = False
