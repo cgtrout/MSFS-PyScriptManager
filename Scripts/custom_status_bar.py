@@ -45,7 +45,7 @@ DISPLAY_TEMPLATE = (
 # VAR(Altitude:, get_altitude, tomato)
 
 # Configurable Variables
-SIMBRIEF_USERNAME = "cgtrout"  # Enter your SimBrief username here to enable automatic lookup of flight arrival times for the countdown timer. Leave blank to disable SimBrief integration.
+SIMBRIEF_USERNAME = ""  # Enter your SimBrief username here to enable automatic lookup of flight arrival times for the countdown timer. Leave blank to disable SimBrief integration.
 USE_SIMBRIEF_ADJUSTED_TIME = False  # Set to True for simulator-adjusted time, False for real-world time
 
 alpha_transparency_level = 0.95  # Set transparency (0.0 = fully transparent, 1.0 = fully opaque)
