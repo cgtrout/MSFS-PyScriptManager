@@ -52,7 +52,7 @@ alpha_transparency_level = 0.95  # Set transparency (0.0 = fully transparent, 1.
 WINDOW_TITLE = "Simulator Time"
 DARK_BG = "#000000"
 FONT = ("Helvetica", 16)
-UPDATE_INTERVAL = 500  # in milliseconds (1 second)
+UPDATE_INTERVAL = 1000  # in milliseconds (1 second)
 RECONNECT_INTERVAL = 1000  # in milliseconds (5 seconds)
 SIMBRIEF_UPDATE_INTERVAL = 15000  # in milliseconds (15 seconds)
 PADDING_X = 20  # Horizontal padding for each label
