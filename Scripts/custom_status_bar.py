@@ -282,8 +282,14 @@ def set_future_time_internal(future_time_input, current_sim_time):
             if future_time_input.tzinfo is None:
                 future_time_input = future_time_input.replace(tzinfo=timezone.utc)
 
-            # Convert real-world time to simulator time
-            future_time_candidate = convert_real_world_time_to_sim_time(future_time_input)
+            if USE_SIMBRIEF_ADJUSTED_TIME:
+                # Adjust SimBrief's time to align with simulator time
+                future_time_candidate = convert_real_world_time_to_sim_time(future_time_input)
+                print("DEBUG: Adjusted SimBrief time to simulator time:", future_time_candidate)
+            else:
+                # Use SimBrief's real-world time directly
+                future_time_candidate = future_time_input
+                print("DEBUG: Using SimBrief real-world time directly:", future_time_candidate)
 
             # Validate that the future time is after the current simulator time
             if future_time_candidate <= current_sim_time:
