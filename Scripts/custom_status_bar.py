@@ -143,15 +143,16 @@ def get_time_to_future():
         if sim_rate:
             try:
                 sim_rate = float(sim_rate)  # Ensure the simulation rate is numeric
-                if sim_rate > 0:
-                    adjusted_seconds = remaining_time.total_seconds() / sim_rate
-                else:
-                    adjusted_seconds = remaining_time.total_seconds()
+                adjusted_seconds = remaining_time.total_seconds() / sim_rate
             except ValueError:
-                # If conversion fails, default to 1.0
+                # If conversion fails, default to 1.0 and log the issue
+                print(f"DEBUG: Simulation rate conversion failed; using unadjusted time.")
                 adjusted_seconds = remaining_time.total_seconds()
         else:
+            # Handle missing simulation rate
+            print("DEBUG: Simulation rate unavailable; using unadjusted time.")
             adjusted_seconds = remaining_time.total_seconds()
+
 
         # Format the adjusted remaining time as HH:MM:SS
         hours, remainder = divmod(adjusted_seconds, 3600)
