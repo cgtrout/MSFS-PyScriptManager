@@ -528,8 +528,7 @@ def load_simbrief_future_time():
         else:
             print("DEBUG: SimBrief arrival time not available.")
     except Exception as e:
-        print(f"DEBUG: Failed to set SimBrief Future Time: {e}")
-        messagebox.showerror("Error", f"Failed to load SimBrief Future Time: {str(e)}")
+        print(f"ERROR: Failed to set SimBrief Future Time: {e}")
 
 # Start the time update loop
 def periodic_simbrief_update():
