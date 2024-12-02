@@ -11,6 +11,8 @@ import json
 import requests
 import time
 
+import threading
+
 # Print initial message
 print("custom_status_bar: Close this window to close status bar")
 
@@ -67,16 +69,26 @@ is_future_time_manually_set = False
 last_simbrief_generated_time = None  # Store the last loaded SimBrief time for update checks
 last_entered_time = None  # Last entered future time in HHMM format
 
+# Shared data structures for threading
+simconnect_cache = {}
+variables_to_track = set()
+cache_lock = threading.Lock()  
+
 # --- SimConnect Lookup  ---
 def get_sim_time():
     """Fetch the simulator time from SimConnect, formatted as HH:MM:SS."""
     try:
         sim_time_seconds = get_simconnect_value("ZULU_TIME")
+        
+        if sim_time_seconds == "N/A":
+            return "Loading..."
+
         # Create a datetime object starting from midnight and add the sim time seconds
         sim_time = (datetime.min + timedelta(seconds=int(sim_time_seconds))).time()
         return sim_time.strftime("%H:%M:%S")
     except Exception as e:
-        return str(e)
+        print(f"DEBUG: Error in get_sim_time: {e}")  
+        return "Err"
 
 def get_real_world_time():
     """Fetch the real-world Zulu time."""
@@ -171,33 +183,70 @@ def initialize_simconnect():
         sim_connected = False
         root.after(RECONNECT_INTERVAL, initialize_simconnect)
 
-def get_simconnect_value(variable_name, max_retries=3):
+def get_simconnect_value(variable_name, default_value="N/A"):
     """
-    Generalized function to fetch a SimConnect variable with retry logic.
-    Retries fetching the value if it fails or returns None.
-    Handles disconnection gracefully and prevents excessive log spamming.
+    Fetch a SimConnect variable from the cache.
+    If not present, add it to the tracking list and return the default value.
     """
-    global sim_connected
+    with cache_lock:
+        if variable_name in simconnect_cache:
+            value = simconnect_cache[variable_name]
+        else:
+            variables_to_track.add(variable_name)
+            simconnect_cache[variable_name] = default_value
+            value = default_value  
 
-    if not sim_connected:
-        print(f"DEBUG: SimConnect not connected. Skipping variable '{variable_name}'.")
-        raise ConnectionError("NO_CONNECTION")
+    return value
 
-    for attempt in range(max_retries):
+def simconnect_background_updater():
+    """Background thread to update SimConnect variables with retry logic, including retries for 'None' values."""
+    global sim_connected, aq
+    MAX_RETRIES = 5  # Maximum number of retries for each variable
+
+    print("DEBUG: simconnect_background_updater start\n")
+
+    while True:
         try:
-            value = aq.get(variable_name)
-            if value is not None:  # Valid value received
-                return value
-        except WindowsError as e:  # Handle Windows-specific errors
-            print(f"DEBUG: WindowsError fetching '{variable_name}' (Attempt {attempt + 1}/{max_retries}): {e}")
-            sim_connected = False  # Mark SimConnect as disconnected
-            raise ConnectionError("ConnectionError") from e
-        except Exception as e:
-            print(f"DEBUG: Error fetching '{variable_name}' (Attempt {attempt + 1}/{max_retries}): {e}")
+            if not sim_connected:
+                initialize_simconnect()
 
-    # If all retries fail, raise an exception
-    sim_connected = False  # Mark SimConnect as disconnected after multiple failures
-    raise ValueError(f"Unable to fetch value for '{variable_name}' after {max_retries} attempts.")
+            if sim_connected:
+                # Make a copy of the variables to avoid holding the lock during network calls
+                with cache_lock:
+                    vars_to_update = list(variables_to_track)
+
+                for variable_name in vars_to_update:
+                    retries = 0
+                    success = False
+                    while retries < MAX_RETRIES and not success:
+                        try:
+                            value = aq.get(variable_name)
+                            if value is not None:  # Check if a valid value is returned
+                                with cache_lock:
+                                    simconnect_cache[variable_name] = value
+                                success = True
+                            else:
+                                retries += 1
+                                time.sleep(0.1)  # Small delay before retrying
+                        except Exception as e:
+                            retries += 1
+                            time.sleep(0.1)  # Small delay before retrying
+
+                    if not success:
+                        # If all retries fail, set a default or error value
+                        with cache_lock:
+                            simconnect_cache[variable_name] = "Err"
+                        print(f"DEBUG: Failed to update {variable_name} after {MAX_RETRIES} retries.")
+            else:
+                print("DEBUG: SimConnect not connected. Retrying in {RECONNECT_INTERVAL}ms.")
+                time.sleep(RECONNECT_INTERVAL / 1000.0)
+
+        except Exception as e:
+            print(f"DEBUG: Error in background updater: {e}")
+
+        # Sleep for the update interval
+        time.sleep(UPDATE_INTERVAL / 1000.0)
+
 
 def get_formatted_value(variable_names, format_string=None):
     """
@@ -214,13 +263,27 @@ def get_formatted_value(variable_names, format_string=None):
         variable_names = [variable_names]
 
     try:
+        # Fetch values for the given variables
         values = [get_simconnect_value(var) for var in variable_names]
+
+        # Ensure all values are valid before applying the format
+        if any(val == "N/A" or val == "Err" for val in values):
+            return "Loading..."
+
+        # Format the values if a format string is provided
         if format_string:
-            return format_string.format(*values)
-        return values[0] if len(values) == 1 else values  # Return raw value(s) if no format specified
+            formatted_values = format_string.format(*values)
+            return formatted_values
+
+        # Return raw value(s) if no format string is provided
+        result = values[0] if len(values) == 1 else values
+        return result
+
     except Exception as e:
-        print( "get_formatted_value caught exception: " + str(e) )
-        return "Err"
+        print(f"DEBUG: get_formatted_value caught exception: {e}")
+        # Always initialize 'values' to avoid unbound variable errors
+        print(f"DEBUG: Exception occurred on variable_names={variable_names}, values={locals().get('values', 'N/A')}")
+        return "Error"
 
 def get_simulator_datetime():
     """
@@ -482,7 +545,6 @@ def get_latest_simbrief_ofp_json(username):
     Returns None if the username is not set or if an error occurs.
     """
     if not username.strip():
-        print("DEBUG: SimBrief username is not set. Skipping SimBrief lookup.")
         return None
 
     simbrief_url = f"https://www.simbrief.com/api/xml.fetcher.php?username={username}&json=1"
@@ -522,7 +584,6 @@ def get_simbrief_ofp_arrival_datetime(username):
     Returns None if the username is not set or SimBrief data is unavailable.
     """
     if not username.strip():
-        print("DEBUG: SimBrief username is not set. Cannot retrieve arrival datetime.")
         return None
 
     ofp_json = get_latest_simbrief_ofp_json(username)
@@ -547,7 +608,6 @@ def load_simbrief_future_time():
     global future_time
 
     if not SIMBRIEF_USERNAME.strip():
-        print("DEBUG: SimBrief username is not set; skipping load.")
         return
 
     try:
@@ -579,9 +639,7 @@ def periodic_simbrief_update():
         if not is_future_time_manually_set:
             # Fetch the latest SimBrief data
             ofp_json = get_latest_simbrief_ofp_json(SIMBRIEF_USERNAME)
-            if not ofp_json:
-                print("DEBUG: No SimBrief data available.")
-            else:
+            if  ofp_json:
                 # Extract the generation time
                 current_generated_time = ofp_json.get("params", {}).get("time_generated")
                 if not current_generated_time:
@@ -686,6 +744,10 @@ root.bind("<Double-1>", lambda event: set_future_time())
 
 # Initialize SimConnect
 initialize_simconnect()
+
+# Start the background thread
+background_thread = threading.Thread(target=simconnect_background_updater, daemon=True)
+background_thread.start()
 
 # Start the time update loop
 periodic_simbrief_update()
