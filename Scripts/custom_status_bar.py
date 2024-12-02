@@ -314,7 +314,7 @@ def set_future_time():
     Prompt the user to set a future countdown time based on Sim Time.
     If no input is provided, use SimBrief time based on the global `USE_SIMBRIEF_ADJUSTED_TIME` flag.
     """
-    global future_time
+    global future_time, is_future_time_manually_set
     try:
         # Get current simulator datetime
         current_sim_time = get_simulator_datetime()
@@ -323,6 +323,8 @@ def set_future_time():
         # Prompt the user to enter the future time in HHMM format
         prompt_message = f"Enter future time based on Sim Time (HHMM)\nCurrent Sim Time: {sim_time_str}"
         future_time_input = simpledialog.askstring("Input", prompt_message, initialvalue=last_entered_time, parent=root)
+
+        is_future_time_manually_set = True
 
         # If user provides input, use it
         if future_time_input and set_future_time_internal(future_time_input, current_sim_time):
