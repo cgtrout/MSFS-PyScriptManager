@@ -555,7 +555,7 @@ def load_simbrief_future_time():
         else:
             print("DEBUG: SimBrief arrival time not available.")
     except Exception as e:
-        print(f"DEBUG: Failed to set SimBrief Future Time: {e}")
+        print(f"ERROR: Failed to set SimBrief Future Time: {e}")
 
 def periodic_simbrief_update():
     """
