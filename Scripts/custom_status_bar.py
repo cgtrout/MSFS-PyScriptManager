@@ -175,19 +175,28 @@ def get_simconnect_value(variable_name, max_retries=3):
     """
     Generalized function to fetch a SimConnect variable with retry logic.
     Retries fetching the value if it fails or returns None.
+    Handles disconnection gracefully and prevents excessive log spamming.
     """
+    global sim_connected
+
     if not sim_connected:
-        raise ConnectionError("Sim Not Running")
+        print(f"DEBUG: SimConnect not connected. Skipping variable '{variable_name}'.")
+        raise ConnectionError("NO_CONNECTION")
 
     for attempt in range(max_retries):
         try:
             value = aq.get(variable_name)
             if value is not None:  # Valid value received
                 return value
+        except WindowsError as e:  # Handle Windows-specific errors
+            print(f"DEBUG: WindowsError fetching '{variable_name}' (Attempt {attempt + 1}/{max_retries}): {e}")
+            sim_connected = False  # Mark SimConnect as disconnected
+            raise ConnectionError("ConnectionError") from e
         except Exception as e:
-            print(f"DEBUG: Error fetching '{variable_name}' (Attempt {attempt + 1}/{max_retries}): {e}. Retrying...")
+            print(f"DEBUG: Error fetching '{variable_name}' (Attempt {attempt + 1}/{max_retries}): {e}")
 
     # If all retries fail, raise an exception
+    sim_connected = False  # Mark SimConnect as disconnected after multiple failures
     raise ValueError(f"Unable to fetch value for '{variable_name}' after {max_retries} attempts.")
 
 def get_formatted_value(variable_names, format_string=None):
@@ -210,7 +219,8 @@ def get_formatted_value(variable_names, format_string=None):
             return format_string.format(*values)
         return values[0] if len(values) == 1 else values  # Return raw value(s) if no format specified
     except Exception as e:
-        return str(e)
+        print( "get_formatted_value caught exception: " + str(e) )
+        return "Err"
 
 def get_simulator_datetime():
     """
