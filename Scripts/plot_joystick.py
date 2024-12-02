@@ -15,6 +15,7 @@ from SimConnect import SimConnect, AircraftRequests
 import threading
 import tkinter as tk
 import pygame
+import time
 
 # Initialize pygame for joystick input
 pygame.init()
@@ -105,49 +106,53 @@ ax.axhline(0, color='darkgray', lw=0.7)
 ax.axvline(0, color='darkgray', lw=0.7)
 
 # Add trim markers with custom colors and transparency
-elevator_trim_marker = ax.axhline(0, color=(0.1, 0.5, 0.9, 0.6) , lw=0.8, linestyle='--', label="Pitch Trim (Elevator)")
+elevator_trim_marker = ax.axhline(0, color=(0.1, 0.5, 0.9, 0.6), lw=0.8, linestyle='--', label="Pitch Trim (Elevator)")
 aileron_trim_marker = ax.axvline(0, color=(0.5, 0.1, 0.3, 0.8), lw=0.8, linestyle='--', label="Roll Trim (Aileron)")
 
-# Global variable for reconnection cooldown
-reconnect_cooldown = 0  # Number of frames to wait before retrying
-
-threshold = 0.01
-query_interval = 20  # Query SimConnect every n frames
-frame_counter = 0  # Frame counter to track updates
-
+# Global variable for cached trim values and lock
 cached_trim_values = {
     "elevator_trim": 0,
     "aileron_trim": 0,
     "rotor_lateral_trim": 0,
     "rotor_longitudinal_trim": 0,
 }
-
-# Lock for thread safety
 cache_lock = threading.Lock()
 
-def fetch_trim_data():
-    """Fetch trim data asynchronously from SimConnect."""
-    global sm, aq, cached_trim_values
-    if sm and aq:
-        try:
-            # Fetch data
-            elevator_trim = aq.find("ELEVATOR_TRIM_PCT").value or 0
-            aileron_trim = aq.find("AILERON_TRIM_PCT").value or 0
-            rotor_lateral_trim = aq.find("ROTOR_LATERAL_TRIM_PCT").value or 0
-            rotor_longitudinal_trim = aq.find("ROTOR_LONGITUDINAL_TRIM_PCT").value or 0
+# Update interval for trim data in seconds
+trim_update_interval = 0.5  # Fetch trim data every 0.5 seconds
 
-            # Safely update the cache
-            with cache_lock:
-                cached_trim_values["elevator_trim"] = elevator_trim
-                cached_trim_values["aileron_trim"] = aileron_trim
-                cached_trim_values["rotor_lateral_trim"] = rotor_lateral_trim
-                cached_trim_values["rotor_longitudinal_trim"] = rotor_longitudinal_trim
-        except Exception as e:
-            print(f"[ERROR] SimConnect query failed: {e}")
-            sm, aq = None, None  # Reset connection on failure
+# Function to fetch trim data in a loop
+def fetch_trim_data_continuously():
+    global sm, aq, cached_trim_values
+
+    while True:
+        if sm and aq:
+            try:
+                # Fetch data
+                elevator_trim = aq.find("ELEVATOR_TRIM_PCT").value or 0
+                aileron_trim = aq.find("AILERON_TRIM_PCT").value or 0
+                rotor_lateral_trim = aq.find("ROTOR_LATERAL_TRIM_PCT").value or 0
+                rotor_longitudinal_trim = aq.find("ROTOR_LONGITUDINAL_TRIM_PCT").value or 0
+
+                # Safely update the cache
+                with cache_lock:
+                    cached_trim_values["elevator_trim"] = elevator_trim
+                    cached_trim_values["aileron_trim"] = aileron_trim
+                    cached_trim_values["rotor_lateral_trim"] = rotor_lateral_trim
+                    cached_trim_values["rotor_longitudinal_trim"] = rotor_longitudinal_trim
+
+            except Exception as e:
+                print(f"[ERROR] SimConnect query failed: {e}")
+                sm, aq = None, None  # Reset connection on failure
+
+        time.sleep(trim_update_interval)  # Wait before the next update
+
+# Start the trim data thread
+trim_thread = threading.Thread(target=fetch_trim_data_continuously, daemon=True)
+trim_thread.start()
 
 def update(frame):
-    global sm, aq, reconnect_cooldown, cached_trim_values
+    global sm, aq, cached_trim_values
 
     # Ensure joystick input is processed
     pygame.event.pump()
@@ -162,10 +167,6 @@ def update(frame):
 
     scat.set_offsets([[x, y]])  # Update the scatter plot position
 
-    # Start a new thread every 10 frames to fetch data
-    if frame % 10 == 0:
-        threading.Thread(target=fetch_trim_data).start()
-
     # Use cached values for graph and text display
     with cache_lock:
         elevator_trim = cached_trim_values.get("elevator_trim", 0)
@@ -174,6 +175,7 @@ def update(frame):
         rotor_longitudinal_trim = cached_trim_values.get("rotor_longitudinal_trim", 0)
 
     # Determine mode (helicopter or airplane) based on trim values
+    threshold = 0.01  # Small value to avoid unnecessary updates
     is_helicopter = (
         abs(rotor_lateral_trim) > threshold or abs(rotor_longitudinal_trim) > threshold
     )
@@ -199,12 +201,11 @@ def update(frame):
         aileron_trim_marker.set_ydata([-1.01, 1.01])  # Full graph height
         aileron_trim_marker.set_visible(abs(aileron_trim) > threshold)
 
-    # Update text display
-    coord_text.set_text(
-        f"X: {x:>5.2f} Y: {y:>5.2f}"
-    )
+    # Update text display for joystick position
+    coord_text.set_text(f"X: {x:>5.2f} Y: {y:>5.2f}")
 
     return scat, coord_text, elevator_trim_marker, aileron_trim_marker
+
 
 # Embed the plot in the tkinter window and ensure it draws correctly
 canvas = FigureCanvasTkAgg(fig, master=root)
