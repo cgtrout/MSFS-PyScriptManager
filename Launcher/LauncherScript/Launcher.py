@@ -73,6 +73,9 @@ def attempt_graceful_shutdown(process, timeout=5):
 
 class ScriptLauncherApp:
     def __init__(self, root):
+        self.cpu_stats = {}  # Initialize a dictionary to store CPU stats for each script
+        self.performance_metrics_open = False  # Track if the metrics tab is open
+
         self.root = root
         self.root.title("Python Script Launcher")
         self.root.geometry("1000x600")
@@ -93,11 +96,19 @@ class ScriptLauncherApp:
                                            activeforeground=BUTTON_ACTIVE_FG_COLOR, relief="flat", highlightthickness=0)
         self.load_group_button.pack(side="right", padx=5, pady=2)
 
+        
         # Add buttons for saving and loading script groups
         self.save_group_button = tk.Button(self.toolbar, text="Save Script Group", command=self.save_script_group,
                                            bg=BUTTON_BG_COLOR, fg=BUTTON_FG_COLOR, activebackground=BUTTON_ACTIVE_BG_COLOR,
                                            activeforeground=BUTTON_ACTIVE_FG_COLOR, relief="flat", highlightthickness=0)
         self.save_group_button.pack(side="right", padx=5, pady=2)
+
+        self.performance_metrics_button = tk.Button(
+                    self.toolbar, text="Performance Metrics", command=self.open_performance_metrics_tab,
+                    bg=BUTTON_BG_COLOR, fg=BUTTON_FG_COLOR, activebackground=BUTTON_ACTIVE_BG_COLOR,
+                    activeforeground=BUTTON_ACTIVE_FG_COLOR, relief="flat", highlightthickness=0
+                )
+        self.performance_metrics_button.pack(side="right", padx=5, pady=2)
 
         # Create a notebook to show multiple tabs (for script output)
         self.notebook = ttk.Notebook(self.root)
@@ -125,6 +136,113 @@ class ScriptLauncherApp:
 
         # Call autoplay_script_group to automatically load the script _auto group file at startup
         self.autoplay_script_group()
+
+    def open_performance_metrics_tab(self):
+        """Open a single instance of the Performance Metrics tab."""
+        if self.performance_metrics_open:
+            # Bring the existing tab to the front if it's already open
+            self.notebook.select(self.performance_metrics_tab)
+            print("Performance Metrics tab is already open.")
+            return
+
+        # Create the tab and set the flag
+        self.performance_metrics_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.performance_metrics_tab, text="Performance Metrics")
+        self.notebook.select(self.performance_metrics_tab)
+
+        self.performance_text_widget = scrolledtext.ScrolledText(
+            self.performance_metrics_tab, wrap="word", bg=TEXT_WIDGET_BG_COLOR, fg=TEXT_WIDGET_FG_COLOR,
+            insertbackground=TEXT_WIDGET_INSERT_COLOR
+        )
+        self.performance_text_widget.pack(expand=True, fill="both")
+
+        # Track the tab and start monitoring
+        tab_id = self.generate_tab_id()
+        self.tab_frames[tab_id] = self.performance_metrics_tab
+        self.performance_metrics_tab_id = tab_id
+        self.performance_metrics_open = True  # Set the flag
+
+        self.monitor_performance_metrics()  # Start the monitoring thread
+
+    def monitor_performance_metrics(self):
+        """Periodically update the performance metrics tab."""
+        def update_metrics():
+            while True:
+                if not hasattr(self, 'performance_metrics_tab'):
+                    break  # Exit if the tab has been closed
+
+                metrics_text = self.generate_metrics_text()
+                self.root.after(0, lambda: self.refresh_performance_metrics(metrics_text))
+                
+                time.sleep(0.5)  # Refresh every 0.5 seconds for more frequent updates
+
+        self.performance_thread = Thread(target=update_metrics, daemon=True)
+        self.performance_thread.start()
+
+
+    def generate_metrics_text(self):
+        """Generate a text representation of performance metrics dynamically."""
+        metrics = []
+        processes_copy = self.processes.copy()  # Create a snapshot to avoid iteration issues
+        for tab_id, process_info in processes_copy.items():
+            process = process_info.get('process')
+            script_name = Path(process_info.get('script_path', 'Unknown')).name
+            if process and process.pid:
+                try:
+                    proc = psutil.Process(process.pid)
+                    if proc.is_running():
+                        # Aggregate CPU and memory usage
+                        total_cpu_usage = proc.cpu_percent(interval=0.1) / psutil.cpu_count()
+                        total_memory_usage = proc.memory_info().rss  # In bytes
+                        for child in proc.children(recursive=True):
+                            if child.is_running():
+                                total_cpu_usage += child.cpu_percent(interval=0.1) / psutil.cpu_count()
+                                total_memory_usage += child.memory_info().rss
+
+                        # Track stats for averages and peaks
+                        if tab_id not in self.cpu_stats:
+                            self.cpu_stats[tab_id] = {"cumulative_cpu": 0, "count": 0, "peak_cpu": 0}
+
+                        self.cpu_stats[tab_id]["cumulative_cpu"] += total_cpu_usage
+                        self.cpu_stats[tab_id]["count"] += 1
+                        self.cpu_stats[tab_id]["peak_cpu"] = max(self.cpu_stats[tab_id]["peak_cpu"], total_cpu_usage)
+
+                        avg_cpu_usage = self.cpu_stats[tab_id]["cumulative_cpu"] / self.cpu_stats[tab_id]["count"]
+                        peak_cpu_usage = self.cpu_stats[tab_id]["peak_cpu"]
+
+                        # Convert memory usage to MB
+                        total_memory_usage_mb = total_memory_usage / (1024 ** 2)
+
+                        metrics.append(
+                            f"Script: {script_name}\n"
+                            f"  PID: {process.pid}\n"
+                            f"  Current CPU Usage: {total_cpu_usage:.2f}%\n"
+                            f"  Average CPU Usage: {avg_cpu_usage:.2f}%\n"
+                            f"  Peak CPU Usage: {peak_cpu_usage:.2f}%\n"
+                            f"  Memory Usage: {total_memory_usage_mb:.2f} MB\n"
+                        )
+                    else:
+                        metrics.append(f"Script: {script_name}\n  Status: Not Running\n")
+                except psutil.NoSuchProcess:
+                    metrics.append(f"Script: {script_name}\n  Status: Process Terminated\n")
+            else:
+                metrics.append(f"Script: {script_name}\n  Status: Not Running\n")
+
+        return "\n".join(metrics)
+
+    def stop_performance_monitoring(self):
+        """Stop monitoring performance metrics and reset related attributes."""
+        if hasattr(self, 'performance_thread') and self.performance_thread:
+            print("Stopping performance monitoring thread...")
+            self.performance_thread = None  # Mark the thread as stopped
+        else:
+            print("No active performance monitoring thread to stop.")
+
+    def refresh_performance_metrics(self, text):
+        """Clear and refresh the performance metrics text."""
+        if hasattr(self, 'performance_text_widget'):
+            self.performance_text_widget.delete('1.0', tk.END)  # Clear text
+            self.performance_text_widget.insert(tk.END, text)   # Insert updated metrics
 
     def autoplay_script_group(self):
         """Automatically load a script group file named '_autoplay.script_group' located in the Scripts directory."""
@@ -415,36 +533,57 @@ class ScriptLauncherApp:
                 return
 
     def close_tab(self, tab_id):
-        """Close a specific tab and terminate the script."""
+        """Close a specific tab and terminate the script or stop monitoring."""
+        # Handle "Performance Metrics" tab
+        if tab_id == getattr(self, 'performance_metrics_tab_id', None):
+            print(f"Closing Performance Metrics tab (tab_id: {tab_id})")
+            self.stop_performance_monitoring()  # Stop the monitoring thread
+
+            try:
+                self.notebook.forget(self.performance_metrics_tab)  # Remove the tab from the notebook
+            except Exception as e:
+                print(f"Error while removing Performance Metrics tab: {e}")
+
+            # Clean up associated state
+            if tab_id in self.tab_frames:
+                del self.tab_frames[tab_id]
+            if hasattr(self, 'performance_metrics_tab'):
+                del self.performance_metrics_tab
+            if hasattr(self, 'performance_text_widget'):
+                del self.performance_text_widget
+            if hasattr(self, 'performance_metrics_tab_id'):
+                del self.performance_metrics_tab_id
+
+            self.performance_metrics_open = False  # Reset the flag
+            return
+        
+        # Handle other script tabs
         if tab_id in self.processes:
-            print(f"Attempting to close tab {tab_id}")
+            print(f"Closing script tab (tab_id: {tab_id})")
             process_info = self.processes[tab_id]
             process = process_info.get('process')
             stdout_thread = process_info.get('stdout_thread')
             stderr_thread = process_info.get('stderr_thread')
 
-            # Immediately stop reading threads and close the tab
-            self.stop_events[tab_id].set()  # Signal threads to stop reading output
-
-            # Perform process termination in the background, so the UI doesn't freeze
+            # Stop process threads
+            self.stop_events[tab_id].set()
             cleanup_thread = Thread(target=self.terminate_and_cleanup, args=(tab_id, process, stdout_thread, stderr_thread))
-            cleanup_thread.daemon = True  # Daemon thread to clean up in the background
+            cleanup_thread.daemon = True
             cleanup_thread.start()
 
-            # Immediately remove the tab from the notebook
+            # Remove the tab from the notebook
             try:
-                print(f"Removing tab {tab_id} from notebook.")
-                self.notebook.forget(self.tab_frames[tab_id])  # Forget tab in notebook
+                self.notebook.forget(self.tab_frames[tab_id])
+                print(f"Script tab (tab_id: {tab_id}) removed from notebook.")
             except KeyError:
-                print(f"Tab {tab_id} could not be found in tab_frames for removal.")
+                print(f"Tab {tab_id} not found in tab_frames.")
             except Exception as e:
-                print(f"Error while trying to remove tab {tab_id}: {e}")
+                print(f"Error while removing script tab: {e}")
 
-            # Cleanup UI elements and process tracking
+            # Clean up associated state
             del self.processes[tab_id]
             del self.stop_events[tab_id]
             del self.tab_frames[tab_id]
-
 
     def on_tab_right_click(self, event):
         """Handle right-click event on notebook tabs for direct tab closing."""
