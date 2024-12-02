@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta
 import os
 import json
 import requests
+import time
 
 # Print initial message
 print("custom_status_bar: Close this window to close status bar")
@@ -122,8 +123,18 @@ def get_time_to_future():
         if future_time is None:
             return "00:00:00"
 
-        # Get the current simulator datetime
-        current_sim_time = get_simulator_datetime()
+        # Retry loop for getting simulator datetime
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                current_sim_time = get_simulator_datetime()
+                break  # If successful, exit the retry loop
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    time.sleep(0.25)  # Wait before retrying
+                else:
+                    print("DEBUG: Max retries reached. Skipping update for this cycle.")
+                    return "00:00:00"
 
         # Ensure both times are timezone-aware (UTC)
         if future_time.tzinfo is None:
