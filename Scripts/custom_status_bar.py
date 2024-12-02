@@ -266,10 +266,6 @@ def get_formatted_value(variable_names, format_string=None):
         # Fetch values for the given variables
         values = [get_simconnect_value(var) for var in variable_names]
 
-        # Ensure all values are valid before applying the format
-        if any(val == "N/A" or val == "Err" for val in values):
-            return "Loading..."
-
         # Format the values if a format string is provided
         if format_string:
             formatted_values = format_string.format(*values)
@@ -290,12 +286,23 @@ def get_simulator_datetime():
     Fetch the current simulator date and time as a datetime object.
     Ensure it is simulator time and timezone-aware (UTC).
     """
+    global sim_connected
     try:
         # Fetch simulator date and time from SimConnect (ZULU time assumed as UTC)
-        zulu_year = int(get_simconnect_value("ZULU_YEAR"))
-        zulu_month = int(get_simconnect_value("ZULU_MONTH_OF_YEAR"))
-        zulu_day = int(get_simconnect_value("ZULU_DAY_OF_MONTH"))
-        zulu_time_seconds = float(get_simconnect_value("ZULU_TIME"))
+        zulu_year = get_simconnect_value("ZULU_YEAR")
+        zulu_month = get_simconnect_value("ZULU_MONTH_OF_YEAR")
+        zulu_day = get_simconnect_value("ZULU_DAY_OF_MONTH")
+        zulu_time_seconds = get_simconnect_value("ZULU_TIME")
+
+        # Ensure all fetched values are valid
+        if any(value is None or str(value) == "N/A" for value in [zulu_year, zulu_month, zulu_day, zulu_time_seconds]):
+            raise ValueError("SimConnect values are not available yet.")
+
+        # Convert values to integers and calculate datetime
+        zulu_year = int(zulu_year)
+        zulu_month = int(zulu_month)
+        zulu_day = int(zulu_day)
+        zulu_time_seconds = float(zulu_time_seconds)
 
         # Convert ZULU_TIME (seconds since midnight) into hours, minutes, seconds
         hours, remainder = divmod(int(zulu_time_seconds), 3600)
@@ -305,8 +312,12 @@ def get_simulator_datetime():
         simulator_datetime = datetime(zulu_year, zulu_month, zulu_day, hours, minutes, seconds, tzinfo=timezone.utc)
         return simulator_datetime
 
+    except ValueError as ve:
+        print(f"DEBUG: Simulator datetime not ready: {ve}")
+        return None  # Return None if data is not ready
     except Exception as e:
-        raise ValueError(f"get_simulator_datetime: Failed to retrieve simulator datetime: {str(e)}")
+        print(f"get_simulator_datetime: Failed to retrieve simulator datetime: {e}")
+        return None  # Return None for other exceptions
 
 def get_simulator_time_offset():
     """
@@ -604,28 +615,39 @@ def load_simbrief_future_time():
     """
     Load SimBrief's arrival time and set it as the future time.
     Adjusts the time if `USE_SIMBRIEF_ADJUSTED_TIME` is enabled.
+    Returns True if successful, False otherwise.
     """
     global future_time
 
     if not SIMBRIEF_USERNAME.strip():
-        return
+        return False
 
     try:
         # Fetch the latest SimBrief OFP JSON data for the provided username
         simbrief_arrival_datetime = get_simbrief_ofp_arrival_datetime(SIMBRIEF_USERNAME)
         if simbrief_arrival_datetime:
+            # Fetch simulator datetime
+            current_sim_datetime = get_simulator_datetime()
+            if current_sim_datetime is None:
+                print("DEBUG: Simulator datetime not available yet. Retrying later.")
+                return False  # Retry later
+
             # Adjust time if needed
             if USE_SIMBRIEF_ADJUSTED_TIME:
                 sim_time = convert_real_world_time_to_sim_time(simbrief_arrival_datetime)
                 print(f"DEBUG: Adjusted SimBrief arrival time to simulator time: {sim_time}")
-                set_future_time_internal(sim_time, get_simulator_datetime())
+                return set_future_time_internal(sim_time, current_sim_datetime)
             else:
                 print(f"DEBUG: Using SimBrief real-world time directly: {simbrief_arrival_datetime}")
-                set_future_time_internal(simbrief_arrival_datetime, get_simulator_datetime())
+                return set_future_time_internal(simbrief_arrival_datetime, current_sim_datetime)
         else:
             print("DEBUG: SimBrief arrival time not available.")
+            return False
     except Exception as e:
         print(f"ERROR: Failed to set SimBrief Future Time: {e}")
+        return False
+
+
 
 def periodic_simbrief_update():
     """
@@ -639,22 +661,66 @@ def periodic_simbrief_update():
         if not is_future_time_manually_set:
             # Fetch the latest SimBrief data
             ofp_json = get_latest_simbrief_ofp_json(SIMBRIEF_USERNAME)
-            if  ofp_json:
+            if ofp_json:
                 # Extract the generation time
                 current_generated_time = ofp_json.get("params", {}).get("time_generated")
                 if not current_generated_time:
                     print("DEBUG: Unable to determine SimBrief flight plan generation time.")
                 elif current_generated_time != last_simbrief_generated_time:
                     print(f"DEBUG: New SimBrief flight plan detected. Generation Time: {current_generated_time}")
-                    last_simbrief_generated_time = current_generated_time  # Update to the new generation time
-
-                    # Reload SimBrief future time
-                    load_simbrief_future_time()
+                    
+                    # Try to reload SimBrief future time
+                    if load_simbrief_future_time():  # Update only if successful
+                        last_simbrief_generated_time = current_generated_time
+                    else:
+                        print("DEBUG: Failed to load SimBrief future time. Will retry later.")
     except Exception as e:
         print(f"DEBUG: Error in periodic SimBrief update: {e}")
 
     # Schedule the next update
     root.after(SIMBRIEF_UPDATE_INTERVAL, periodic_simbrief_update)
+
+def prefetch_variables(timeout_seconds=10, retry_interval=0.5):
+    """
+    Prefetch variables to ensure they are available in the cache.
+    Retries fetching until values are valid or timeout occurs.
+    
+    Parameters:
+    - timeout_seconds: Maximum time to spend retrying.
+    - retry_interval: Time (in seconds) to wait between retries.
+    """
+    variables_to_prefetch = [
+        "ZULU_YEAR",
+        "ZULU_MONTH_OF_YEAR",
+        "ZULU_DAY_OF_MONTH",
+        "ZULU_TIME",
+        "AMBIENT_TEMPERATURE",
+        "TOTAL_AIR_TEMPERATURE",
+        "SIMULATION_RATE"
+    ]
+
+    print("DEBUG: Prefetching variables")
+
+    start_time = time.time()
+    while time.time() - start_time < timeout_seconds:
+        all_fetched = True
+        for variable in variables_to_prefetch:
+            try:
+                value = get_simconnect_value(variable)
+                if value is None or str(value) == "N/A":
+                    all_fetched = False  # Keep retrying if any value is invalid
+            except Exception as e:
+                all_fetched = False  # Handle fetch errors
+                print(f"DEBUG: Error prefetching '{variable}': {e}")
+
+        if all_fetched:
+            print("DEBUG: All variables successfully prefetched.")
+            return True  # Successfully prefetched all variables
+
+        time.sleep(retry_interval)  # Wait before retrying
+
+    print(f"DEBUG: Prefetching timed out after {timeout_seconds} seconds.")
+    return False  # Prefetching failed
 
 # --- Drag functionality ---
 is_moving = False
@@ -748,6 +814,9 @@ initialize_simconnect()
 # Start the background thread
 background_thread = threading.Thread(target=simconnect_background_updater, daemon=True)
 background_thread.start()
+
+# Prefetch variables to they are ready ahead of time
+prefetch_variables()
 
 # Start the time update loop
 periodic_simbrief_update()
