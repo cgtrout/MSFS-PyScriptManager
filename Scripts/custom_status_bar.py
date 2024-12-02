@@ -305,7 +305,7 @@ def set_future_time():
     Prompt the user to set a future countdown time based on Sim Time.
     If no input is provided, use SimBrief time based on the global `USE_SIMBRIEF_ADJUSTED_TIME` flag.
     """
-    global future_time, is_future_time_manually_set
+    global future_time, is_future_time_manually_set, last_entered_time
     try:
         # Get current simulator datetime
         current_sim_time = get_simulator_datetime()
@@ -315,13 +315,39 @@ def set_future_time():
         prompt_message = f"Enter future time based on Sim Time (HHMM)\nCurrent Sim Time: {sim_time_str}"
         future_time_input = simpledialog.askstring("Input", prompt_message, initialvalue=last_entered_time, parent=root)
 
-        is_future_time_manually_set = True
+        # If user provides input, convert it to a datetime object
+        if future_time_input:
+            last_entered_time = future_time_input  # Save the entered time for the next prompt
+            try:
+                # Convert HHMM to hours and minutes
+                hours = int(future_time_input[:2])
+                minutes = int(future_time_input[2:])
 
-        # If user provides input, use it
-        if future_time_input and set_future_time_internal(future_time_input, current_sim_time):
-            print(f"DEBUG: Future time manually set to: {future_time}")
+                # Create a new datetime object with the entered time
+                future_time_candidate = datetime(
+                    year=current_sim_time.year,
+                    month=current_sim_time.month,
+                    day=current_sim_time.day,
+                    hour=hours,
+                    minute=minutes,
+                    tzinfo=timezone.utc
+                )
+
+                # Adjust for times past midnight
+                if future_time_candidate < current_sim_time:
+                    # If the entered time is earlier than the current time, assume it's for the next day
+                    future_time_candidate += timedelta(days=1)
+
+                # Validate and set the future time
+                is_future_time_manually_set = True
+                if set_future_time_internal(future_time_candidate, current_sim_time):
+                    print(f"DEBUG: Future time manually set to: {future_time}")
+                else:
+                    print("DEBUG: Failed to set future time.")
+            except (ValueError, IndexError):
+                messagebox.showerror("Error", "Invalid time format. Please enter time in HHMM format.")
         else:
-            # Otherwise, fallback to SimBrief time
+            # If no input is provided, fallback to SimBrief time
             load_simbrief_future_time()
     except Exception as e:
         messagebox.showerror("Error", f"Failed to set future time: {str(e)}")
@@ -540,9 +566,7 @@ def periodic_simbrief_update():
 
     try:
         # Skip if the user has manually set a time
-        if is_future_time_manually_set:
-            print("DEBUG: User has manually set a time; skipping SimBrief updates.")
-        else:
+        if not is_future_time_manually_set:
             # Fetch the latest SimBrief data
             ofp_json = get_latest_simbrief_ofp_json(SIMBRIEF_USERNAME)
             if not ofp_json:
