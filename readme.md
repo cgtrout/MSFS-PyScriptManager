@@ -4,7 +4,7 @@
  - Note: at moment the Mobiflight functionality of some scripts may not be working correctly (such as fenix_disable_efb.py).  As of yet the Python library has not been updated for MSFS 2024.
  - custom_status_bar.py - works as expected except that MSFS 2024 currently does not report the sim time correctly meaning that the sim time reported on the panel is incorrect. (it reports sim time as real world time).  I believe this has been marked as a bug and should eventually be fixed by Asobo.
  - The other scripts should all still work the same as before.
- - The community addon for the print-out toolbar works with no modifications for 2024 - the script has been updated for the automated installation although note that it hasn't been tested for those with a Microsoft store installation.
+ - The community addon for the print-out toolbar works with no modifications for 2024 - the installation script has been updated for the automated installation although note that it hasn't been tested for those with a Microsoft store installation.
    
 # Download
 - [Download MSFS-PyScriptManager(Release Page)](https://github.com/cgtrout/MSFS-PyScriptManager/releases/)
@@ -40,15 +40,14 @@
 
 - **custom_status_bar.py:** Shows a draggable status bar that shows the real world zulu time and sim zulu time, along with a countdown timer.  Double-click to program the count-down timer.
   - If 'SIMBRIEF_USERNAME' is set, it will look up the time for this flight to automatically set the countdown timer.
-  - Uses more easily modifiable 'template' system to define variables that show on the bar.  See source file for more details.
-  
+  - Uses an easily modifiable 'template' system to define variables that show on the bar.  See source file for more details.
   ![image](https://github.com/user-attachments/assets/05786688-b542-4050-95eb-1e85bf8d673d) 
 
 - **fbw_a380_checklist.py** Allows keyboard control of built in A380 checklist.
 - **fenix_disable_efb.py:** Example script that shows how LVARS can be automated.  This script will hide the EFBs on the Fenix A32x.  This script requires a Mobiflight "Wasm" module installation.
-- **fenix_radio.py:** Shows a draggable radio panel that shows RMP1 channel.
-- **plot_altitude.py** Shows a draggable graph panel of altitude - can easily be changed to other SimConnect variables.
-- **plot_joystick.py** Show visualization of joystick and trim values state.
+- **fenix_radio.py:** Shows a draggable radio panel that shows RMP1 active/standby channels.
+- **plot_altitude.py:** Shows a draggable graph panel of altitude - can easily be changed to other SimConnect variables.
+- **plot_joystick.py:** Show visualization of joystick and trim values state.
 
 # Script Groups
 - "Script Groups" can be used to automate loading groups of scripts at once. 
