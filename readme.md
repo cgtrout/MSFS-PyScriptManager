@@ -39,7 +39,7 @@
   - If you have any issues with the automated printer installation see this guide: [Printer Troubleshooting Guide](https://github.com/cgtrout/MSFS-PyScriptManager/blob/main/Docs/Printer_Troubleshooting_Guide.md)
 
 - **custom_status_bar.py:** Shows a draggable status bar that shows the real world zulu time and sim zulu time, along with a countdown timer.  Double-click to program the count-down timer.
-  - If 'SIMBRIEF_USERNAME' is set, it will look up the time for this flight to automatically set the countdown timer (thanks @leftos for this idea/initial implementation).
+  - NEW: If 'SIMBRIEF_USERNAME' is set, it will look up the time for this flight to automatically set the countdown timer (thanks @leftos for this idea/initial implementation).
   - Uses an easily modifiable 'template' system to define variables that show on the bar.  See source file for more details.
   ![image](https://github.com/user-attachments/assets/05786688-b542-4050-95eb-1e85bf8d673d) 
 
