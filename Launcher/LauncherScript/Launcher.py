@@ -77,6 +77,7 @@ class ScriptLauncherApp:
         self.cpu_stats = {}  # Initialize a dictionary to store CPU stats for each script
         self.performance_metrics_open = False  # Track if the metrics tab is open
         self.cpu_stats_lock = Lock()
+        self.closing = False
 
         self.root = root
         self.root.title("Python Script Launcher")
@@ -185,17 +186,27 @@ class ScriptLauncherApp:
         """Periodically update the performance metrics tab."""
         def update_metrics():
             while True:
-                if not hasattr(self, 'performance_metrics_tab'):
-                    break  # Exit if the tab has been closed
-
-                metrics_text = self.generate_metrics_text()
-                self.root.after(0, lambda: self.refresh_performance_metrics(metrics_text))
+                if not self.performance_metrics_open or not hasattr(self, 'performance_metrics_tab'):
+                    break
                 
-                time.sleep(0.5)  # Refresh every 0.5 seconds for more frequent updates
+                try:
+                    metrics_text = self.generate_metrics_text()
+                    # Use after with checks
+                    self.root.after(0, lambda txt=metrics_text: self.safe_refresh_performance_metrics(txt))
+                except Exception as e:
+                    print(f"Error in performance metrics update: {e}")
+
+                time.sleep(0.5)
 
         self.performance_thread = Thread(target=update_metrics, daemon=True)
         self.performance_thread.start()
 
+    def safe_refresh_performance_metrics(self, text):
+        # Only update if tab and widget still exist
+        if self.performance_metrics_open and hasattr(self, 'performance_text_widget'):
+            if self.performance_text_widget.winfo_exists():
+                self.performance_text_widget.delete('1.0', tk.END)
+                self.performance_text_widget.insert(tk.END, text)
 
     def generate_metrics_text(self):
         """Generate a text representation of performance metrics dynamically."""
@@ -307,73 +318,82 @@ class ScriptLauncherApp:
         self.root.after(0, lambda: self._insert_output(tab_id, text))
 
     def _insert_output(self, tab_id, text):
-        """Actual insertion of text into the Text widget."""
         if tab_id in self.processes:
             tab = self.processes[tab_id].get('tab')
-            if tab:
+            if tab and tab.winfo_exists():
                 tab.insert(tk.END, text)
-                tab.see(tk.END)  # Scroll to the end
+                tab.see(tk.END)
 
     def run_script(self, script_path, tab_id):
         """Run the selected script using the portable Python interpreter and display output."""
         print(f"run_script: {script_path} tab_id: {tab_id}")
         self.processes[tab_id]['script_path'] = str(script_path)
 
-        def read_output(pipe, insert_function, tab_id):
-            """Read from the provided pipe and insert output into the GUI."""
-            try:
-                with pipe:
-                    for line in iter(pipe.readline, ''):
-                        if self.stop_events[tab_id].is_set():
-                            break  # Exit reading loop if stop event is set
-                        insert_function(tab_id, line)
-            except Exception as e:
-                error_message = f"Error reading output for tab {tab_id}: {e}\n"
-                self.insert_output(tab_id, error_message)
+        # Start the run method in a separate thread
+        Thread(target=self.run, args=(script_path, tab_id), daemon=True).start()
 
-        def run():
-            process = None
-            try:
-                process = subprocess.Popen(
-                    [str(pythonw_path.resolve()), "-u", str(script_path.resolve())],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    bufsize=1
-                )
+    def run(self, script_path, tab_id):
+        """Run the script and manage its process."""
+        process = None
+        try:
+            process = subprocess.Popen(
+                [str(pythonw_path.resolve()), "-u", str(script_path.resolve())],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,  # Enable text mode
+                bufsize=1   # Line-buffered
+            )
 
-                # Track the PID of this process
-                self.process_pids.append(process.pid)
+            # Track the PID of this process
+            self.process_pids.append(process.pid)
 
-                self.processes[tab_id]['process'] = process
-                self.stop_events[tab_id] = Event()
+            self.processes[tab_id]['process'] = process
+            self.stop_events[tab_id] = Event()
 
-                stdout_thread = Thread(target=read_output, args=(process.stdout, self.insert_output, tab_id))
-                stderr_thread = Thread(target=read_output, args=(process.stderr, self.insert_output, tab_id))
+            # Create and start threads for reading stdout and stderr
+            stdout_thread = Thread(target=self.read_output, args=(process.stdout, tab_id))
+            stderr_thread = Thread(target=self.read_output, args=(process.stderr, tab_id))
 
-                stdout_thread.start()
-                stderr_thread.start()
+            stdout_thread.start()
+            stderr_thread.start()
 
-                self.processes[tab_id]['stdout_thread'] = stdout_thread
-                self.processes[tab_id]['stderr_thread'] = stderr_thread
+            self.processes[tab_id]['stdout_thread'] = stdout_thread
+            self.processes[tab_id]['stderr_thread'] = stderr_thread
 
-                process.wait()
+            # Wait for the process to finish
+            process.wait()
 
-                stdout_thread.join()
-                stderr_thread.join()
+            stdout_thread.join()
+            stderr_thread.join()
 
-                exit_code = process.returncode
-                if tab_id in self.processes:
-                    self.insert_output(tab_id, f"\nScript finished with exit code {exit_code}\n")
-                    self.processes[tab_id]['process'] = None
+            exit_code = process.returncode
+            if tab_id in self.processes:
+                self.safe_insert_output(tab_id, f"\nScript finished with exit code {exit_code}\n")
+                self.processes[tab_id]['process'] = None
 
-            except Exception as e:
-                error_message = f"Error running script {script_path}: {e}\n"
-                self.insert_output(tab_id, error_message)
-                if process and process.pid:
-                    terminate_process_tree(process.pid)
+        except Exception as e:
+            error_message = f"Error running script {script_path}: {e}\n"
+            self.safe_insert_output(tab_id, error_message)
+            if process and process.pid:
+                terminate_process_tree(process.pid)
 
-        Thread(target=run, daemon=True).start()
+    def read_output(self, pipe, tab_id):
+        """Read output from the process and insert it into the corresponding tab."""
+        try:
+            for line in iter(pipe.readline, ''):  # Read line by line in real-time
+                if self.stop_events[tab_id].is_set():
+                    break
+                self.root.after(0, lambda l=line: self.safe_insert_output(tab_id, l))  # Use safe insert
+        except Exception as e:
+            self.root.after(0, lambda: self.safe_insert_output(tab_id, f"Error reading output: {e}\n"))
+
+    def safe_insert_output(self, tab_id, text):
+        """Safely insert text into the corresponding Text widget for a tab."""
+        if tab_id in self.processes:
+            tab = self.processes[tab_id].get('tab')
+            if tab and tab.winfo_exists():
+                tab.insert(tk.END, text)
+                tab.see(tk.END)  # Scroll to the end
 
     def select_and_run_script(self):
         """Open a file dialog to select and run a Python script, then create a new tab for it."""
@@ -567,57 +587,49 @@ class ScriptLauncherApp:
                 return
 
     def close_tab(self, tab_id):
-        """Close a specific tab and terminate the script or stop monitoring."""
-        # Handle "Performance Metrics" tab
         if tab_id == getattr(self, 'performance_metrics_tab_id', None):
-            print(f"Closing Performance Metrics tab (tab_id: {tab_id})")
-            self.stop_performance_monitoring()  # Stop the monitoring thread
-
-            try:
-                self.notebook.forget(self.performance_metrics_tab)  # Remove the tab from the notebook
-            except Exception as e:
-                print(f"Error while removing Performance Metrics tab: {e}")
-
-            # Clean up associated state
-            if tab_id in self.tab_frames:
-                del self.tab_frames[tab_id]
+            self.stop_performance_monitoring()
             if hasattr(self, 'performance_metrics_tab'):
-                del self.performance_metrics_tab
-            if hasattr(self, 'performance_text_widget'):
-                del self.performance_text_widget
-            if hasattr(self, 'performance_metrics_tab_id'):
-                del self.performance_metrics_tab_id
-
-            self.performance_metrics_open = False  # Reset the flag
+                try:
+                    self.notebook.forget(self.performance_metrics_tab)
+                except:
+                    pass
+            self.cleanup_performance_tab(tab_id)
             return
-        
-        # Handle other script tabs
+
         if tab_id in self.processes:
-            print(f"Closing script tab (tab_id: {tab_id})")
             process_info = self.processes[tab_id]
             process = process_info.get('process')
             stdout_thread = process_info.get('stdout_thread')
             stderr_thread = process_info.get('stderr_thread')
 
-            # Stop process threads
+            # Signal threads to stop
             self.stop_events[tab_id].set()
-            cleanup_thread = Thread(target=self.terminate_and_cleanup, args=(tab_id, process, stdout_thread, stderr_thread))
-            cleanup_thread.daemon = True
-            cleanup_thread.start()
 
-            # Remove the tab from the notebook
-            try:
-                self.notebook.forget(self.tab_frames[tab_id])
-                print(f"Script tab (tab_id: {tab_id}) removed from notebook.")
-            except KeyError:
-                print(f"Tab {tab_id} not found in tab_frames.")
-            except Exception as e:
-                print(f"Error while removing script tab: {e}")
+            # Gracefully terminate the process if running
+            if process and process.pid:
+                attempt_graceful_shutdown(process)
 
-            # Clean up associated state
-            del self.processes[tab_id]
-            del self.stop_events[tab_id]
-            del self.tab_frames[tab_id]
+            # Wait for I/O threads to finish
+            if stdout_thread and stdout_thread.is_alive():
+                stdout_thread.join(timeout=2)
+            if stderr_thread and stderr_thread.is_alive():
+                stderr_thread.join(timeout=2)
+
+            # Now it is safe to remove the tab
+            if tab_id in self.tab_frames:
+                try:
+                    self.notebook.forget(self.tab_frames[tab_id])
+                except Exception as e:
+                    print(f"Error removing tab {tab_id}: {e}")
+
+            # Clean up references
+            if tab_id in self.processes:
+                del self.processes[tab_id]
+            if tab_id in self.stop_events:
+                del self.stop_events[tab_id]
+            if tab_id in self.tab_frames:
+                del self.tab_frames[tab_id]
 
     def on_tab_right_click(self, event):
         """Handle right-click event on notebook tabs for direct tab closing."""
@@ -647,26 +659,44 @@ class ScriptLauncherApp:
                 print(f"Error terminating process with PID {pid}: {e}")
 
     def on_close(self):
-        """Handle window close event: terminate all running scripts and close the application."""
-        tab_ids = list(self.processes.keys())
-        
-        # Try to close all tabs and terminate associated processes
-        for tab_id in tab_ids:
-            try:
-                self.close_tab(tab_id)  # This will invoke terminate_and_cleanup for each tab
-            except Exception as e:
-                print(f"Error closing tab {tab_id}: {e}")
-        
-        # Give some time to allow processes to terminate gracefully
-        time.sleep(0.5)  # Optional: give a short delay to ensure background threads finish
+        """
+        Handle window close event: terminate all running scripts and close the application.
+        """
+        if self.closing:
+            print("LAUNCHER: on_close() already called. Skipping redundant cleanup.")
+            return
 
-        print("Ensuring all launched pythonw processes are terminated...")
+        print("LAUNCHER: on_close() called. Starting cleanup...")
+        self.closing = True  # Mark cleanup as started
 
-        # Terminate any remaining tracked processes (just in case some were missed)
+        # Signal threads to stop
+        for tab_id, process_info in self.processes.items():
+            stop_event = process_info.get('stop_event')
+            if stop_event:
+                stop_event.set()  # Signal threads to stop
+
+            stdout_thread = process_info.get('stdout_thread')
+            stderr_thread = process_info.get('stderr_thread')
+
+            if stdout_thread and stdout_thread.is_alive():
+                stdout_thread.join(timeout=1)
+            if stderr_thread and stderr_thread.is_alive():
+                stderr_thread.join(timeout=1)
+
+        # Terminate subprocesses and clean up tabs
+        print("LAUNCHER: Terminating subprocesses...")
         self.terminate_tracked_processes_on_close()
 
-        # Finally, destroy the Tkinter root window
-        self.root.destroy()
+        for tab_id in list(self.processes.keys()):
+            print(f"LAUNCHER: Closing tab {tab_id}...")
+            self.close_tab(tab_id)
+
+        # Destroy the root window
+        print("LAUNCHER: Stopping mainloop and destroying root...")
+        self.root.quit()  # Stop the mainloop
+        self.root.destroy()  # Destroy all widgets
+        print("LAUNCHER: on_close() completed.")
+
 
 # Create the main window (root) for the UI with a dark theme
 root = ThemedTk(theme="black")  # Applying dark theme using ThemedTk
