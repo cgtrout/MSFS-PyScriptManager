@@ -98,7 +98,6 @@ class ScriptLauncherApp:
                                            bg=BUTTON_BG_COLOR, fg=BUTTON_FG_COLOR, activebackground=BUTTON_ACTIVE_BG_COLOR,
                                            activeforeground=BUTTON_ACTIVE_FG_COLOR, relief="flat", highlightthickness=0)
         self.load_group_button.pack(side="right", padx=5, pady=2)
-
         
         # Add buttons for saving and loading script groups
         self.save_group_button = tk.Button(self.toolbar, text="Save Script Group", command=self.save_script_group,
@@ -133,6 +132,7 @@ class ScriptLauncherApp:
         self.stop_events = {}
         self.tab_frames = {}
         self.current_tab_id = 0  # Initialize the unique tab ID counter
+        self.lock = Lock()  # Lock to synchronize access to shared resources
 
         # Override close window behavior to ensure all processes are killed
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -344,11 +344,12 @@ class ScriptLauncherApp:
                 bufsize=1   # Line-buffered
             )
 
-            # Track the PID of this process
-            self.process_pids.append(process.pid)
+            with self.lock: 
+                # Track the PID of this process
+                self.process_pids.append(process.pid)
 
-            self.processes[tab_id]['process'] = process
-            self.stop_events[tab_id] = Event()
+                self.processes[tab_id]['process'] = process
+                self.stop_events[tab_id] = Event()
 
             # Create and start threads for reading stdout and stderr
             stdout_thread = Thread(target=self.read_output, args=(process.stdout, tab_id))
@@ -357,8 +358,9 @@ class ScriptLauncherApp:
             stdout_thread.start()
             stderr_thread.start()
 
-            self.processes[tab_id]['stdout_thread'] = stdout_thread
-            self.processes[tab_id]['stderr_thread'] = stderr_thread
+            with self.lock: 
+                self.processes[tab_id]['stdout_thread'] = stdout_thread
+                self.processes[tab_id]['stderr_thread'] = stderr_thread
 
             # Wait for the process to finish
             process.wait()
@@ -369,7 +371,8 @@ class ScriptLauncherApp:
             exit_code = process.returncode
             if tab_id in self.processes:
                 self.safe_insert_output(tab_id, f"\nScript finished with exit code {exit_code}\n")
-                self.processes[tab_id]['process'] = None
+                with self.lock:
+                    self.processes[tab_id]['process'] = None
 
         except Exception as e:
             error_message = f"Error running script {script_path}: {e}\n"
@@ -389,11 +392,22 @@ class ScriptLauncherApp:
 
     def safe_insert_output(self, tab_id, text):
         """Safely insert text into the corresponding Text widget for a tab."""
+        try:
+            # Schedule the insertion to ensure it runs in the Tkinter main thread
+            self.root.after(0, lambda: self._insert_text(tab_id, text))
+        except Exception as e:
+            print(f"Error in safe_insert_output for Tab ID {tab_id}: {e}")
+
+    def _insert_text(self, tab_id, text):
+        """Internal function to insert text directly into the widget."""
         if tab_id in self.processes:
             tab = self.processes[tab_id].get('tab')
             if tab and tab.winfo_exists():
-                tab.insert(tk.END, text)
-                tab.see(tk.END)  # Scroll to the end
+                try:
+                    tab.insert(tk.END, text)
+                    tab.see(tk.END)  # Scroll to the end
+                except Exception as e:
+                    print(f"Error inserting text into widget for Tab ID {tab_id}: {e}")
 
     def select_and_run_script(self):
         """Open a file dialog to select and run a Python script, then create a new tab for it."""
@@ -634,6 +648,7 @@ class ScriptLauncherApp:
     def on_tab_right_click(self, event):
         """Handle right-click event on notebook tabs for direct tab closing."""
         try:
+            
             # Get the index of the clicked tab
             print("DEBUG: on_tab_right_click: enter")
             clicked_tab_index = self.notebook.index(f"@{event.x},{event.y}")
