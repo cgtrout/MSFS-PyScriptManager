@@ -712,7 +712,8 @@ class ScriptLauncherApp:
                     graceful = attempt_graceful_shutdown(proc)
                     if not graceful:
                         print(f"Force terminating pythonw process with PID {pid}")
-                self.process_pids.remove(pid)  # Remove PID from tracking after termination
+                with self.lock: 
+                    self.process_pids.remove(pid)  # Remove PID from tracking after termination
                 print(f"Removed PID {pid} from tracked process list.")
             except psutil.NoSuchProcess:
                 print(f"Process with PID {pid} not found (might already be terminated).")
