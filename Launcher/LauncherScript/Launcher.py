@@ -401,13 +401,13 @@ class ScriptLauncherApp:
 
             exit_code = process.returncode
             if tab_id in self.processes:
-                self.safe_insert_output(tab_id, f"\nScript finished with exit code {exit_code}\n")
+                self.insert_output(tab_id, f"\nScript finished with exit code {exit_code}\n")
                 with self.lock:
                     self.processes[tab_id]['process'] = None
 
         except Exception as e:
             error_message = f"Error running script {script_path}: {e}\n"
-            self.safe_insert_output(tab_id, error_message)
+            self.insert_output(tab_id, error_message)
             if process and process.pid:
                 terminate_process_tree(process.pid)
 
@@ -665,6 +665,7 @@ class ScriptLauncherApp:
 
             # Signal threads to stop
             if tab_id in self.stop_events:
+                print("close_tab:STOP EVENT")
                 self.stop_events[tab_id].set()
 
         # Perform long-running operations outside the lock
