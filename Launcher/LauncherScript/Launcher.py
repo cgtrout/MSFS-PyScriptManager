@@ -633,13 +633,14 @@ class ScriptLauncherApp:
 
     def on_tab_right_click(self, event):
         """Handle right-click event on notebook tabs for direct tab closing."""
-        # Get the index of the clicked tab
         try:
+            # Get the index of the clicked tab
+            print("DEBUG: on_tab_right_click: enter")
             clicked_tab_index = self.notebook.index(f"@{event.x},{event.y}")
             print(f"Right-clicked on tab with index: {clicked_tab_index}")
             self.close_tab_by_index(clicked_tab_index)  # Directly close the tab
-        except TclError:
-            return
+        except TclError as e:
+            print(f"Error: on_tab_right_click error - Details: {e}")
 
     def terminate_tracked_processes_on_close(self):
         """Terminate any remaining processes left in self.process_pids on app close."""
