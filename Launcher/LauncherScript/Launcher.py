@@ -419,7 +419,7 @@ class ScriptLauncherApp:
                     if tab_id in self.stop_events and self.stop_events[tab_id].is_set():
                         break
                 # Safely schedule output insertion in the main thread
-                self.root.after(0, lambda l=line: self._insert_text(tab_id, l))
+                self.root.after(0, self._insert_text, tab_id, line)
         except Exception as e:
             # Log the error to the console
             print(f"Error reading output for Tab ID {tab_id}: {e}")
