@@ -155,32 +155,49 @@ class ScriptLauncherApp:
 
     def open_performance_metrics_tab(self):
         """Open a single instance of the Performance Metrics tab."""
-        if self.performance_metrics_open:
-            # Bring the existing tab to the front if it's already open
-            self.notebook.select(self.performance_metrics_tab)
-            print("Performance Metrics tab is already open.")
-            return
+        with self.lock:  # Protect shared resource access
+            if self.performance_metrics_open:
+                # Bring the existing tab to the front if it's already open
+                try:
+                    self.notebook.select(self.performance_metrics_tab)
+                    print("Performance Metrics tab is already open.")
+                except Exception as e:
+                    print(f"Error selecting performance metrics tab: {e}")
+                return
 
-        # Create the tab and set the flag
-        self.performance_metrics_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.performance_metrics_tab, text="Performance Metrics")
-        self.notebook.select(self.performance_metrics_tab)
+            # Create the tab and set the flag
+            try:
+                self.performance_metrics_tab = ttk.Frame(self.notebook)
+                self.notebook.add(self.performance_metrics_tab, text="Performance Metrics")
+                self.notebook.select(self.performance_metrics_tab)
 
-        self.performance_text_widget = scrolledtext.ScrolledText(
-            self.performance_metrics_tab, wrap="word", bg=TEXT_WIDGET_BG_COLOR, fg=TEXT_WIDGET_FG_COLOR,
-            insertbackground=TEXT_WIDGET_INSERT_COLOR
-        )
-        self.performance_text_widget.pack(expand=True, fill="both")
+                self.performance_text_widget = scrolledtext.ScrolledText(
+                    self.performance_metrics_tab, wrap="word", bg=TEXT_WIDGET_BG_COLOR, fg=TEXT_WIDGET_FG_COLOR,
+                    insertbackground=TEXT_WIDGET_INSERT_COLOR
+                )
+                self.performance_text_widget.pack(expand=True, fill="both")
 
-        # Track the tab and start monitoring
-        tab_id = self.generate_tab_id()
-        self.tab_frames[tab_id] = self.performance_metrics_tab
-        self.performance_metrics_tab_id = tab_id
-        self.performance_metrics_open = True  # Set the flag
+                # Track the tab and mark it as open
+                tab_id = self.generate_tab_id()
+                self.tab_frames[tab_id] = self.performance_metrics_tab
+                self.performance_metrics_tab_id = tab_id
+                self.performance_metrics_open = True  # Set the flag
+            except Exception as e:
+                print(f"Error initializing performance metrics tab: {e}")
+                return
 
         # Initialize CPU usage tracking for all processes
-        self.initialize_cpu_percent()  
-        self.monitor_performance_metrics()  
+        try:
+            self.initialize_cpu_percent()
+        except Exception as e:
+            print(f"Error initializing CPU metrics: {e}")
+
+        # Start monitoring metrics
+        try:
+            self.monitor_performance_metrics()
+        except Exception as e:
+            print(f"Error starting performance metrics monitoring: {e}")
+
 
     def monitor_performance_metrics(self):
         """Periodically update the performance metrics tab."""
@@ -215,7 +232,10 @@ class ScriptLauncherApp:
         if not self.processes:  # Handle the case where no processes are tracked
             return "No scripts are currently running."
 
-        for tab_id, process_info in self.processes.items():
+        with self.lock:
+            processes_snapshot = dict(self.processes)  # Make a copy to avoid holding the lock for too long
+
+        for tab_id, process_info in processes_snapshot.items():
             process = process_info.get('process')
             script_name = Path(process_info.get('script_path', 'Unknown')).name
 
@@ -303,8 +323,9 @@ class ScriptLauncherApp:
 
     def generate_tab_id(self):
         """Generates a unique tab ID by incrementing the counter."""
-        self.current_tab_id += 1
-        return self.current_tab_id
+        with self.lock:  # Protect access to self.current_tab_id
+            self.current_tab_id += 1
+            return self.current_tab_id
 
     def create_output_text_widget(self, parent):
         text_widget = scrolledtext.ScrolledText(parent, wrap="word", bg=TEXT_WIDGET_BG_COLOR, fg=TEXT_WIDGET_FG_COLOR, 
@@ -315,19 +336,29 @@ class ScriptLauncherApp:
 
     def insert_output(self, tab_id, text):
         """Insert text into the corresponding Text widget in a thread-safe way."""
-        self.root.after(0, lambda: self._insert_output(tab_id, text))
-
-    def _insert_output(self, tab_id, text):
-        if tab_id in self.processes:
+        with self.lock:  
+            # Safely check if tab_id exists in processes
+            if tab_id not in self.processes:
+                return
             tab = self.processes[tab_id].get('tab')
-            if tab and tab.winfo_exists():
-                tab.insert(tk.END, text)
-                tab.see(tk.END)
+
+        # Use root.after to schedule the update in the main thread
+        if tab and tab.winfo_exists():
+            self.root.after(0, lambda: self._safe_insert(tab, text))
+
+    def _safe_insert(self, tab, text):
+        """Safely insert text into the Text widget."""
+        try:
+            tab.insert(tk.END, text)
+            tab.see(tk.END)  # Scroll to the end
+        except Exception as e:
+            print(f"Error inserting text into tab: {e}")
 
     def run_script(self, script_path, tab_id):
         """Run the selected script using the portable Python interpreter and display output."""
         print(f"run_script: {script_path} tab_id: {tab_id}")
-        self.processes[tab_id]['script_path'] = str(script_path)
+        with self.lock:
+            self.processes[tab_id]['script_path'] = str(script_path)
 
         # Start the run method in a separate thread
         Thread(target=self.run, args=(script_path, tab_id), daemon=True).start()
@@ -383,31 +414,32 @@ class ScriptLauncherApp:
     def read_output(self, pipe, tab_id):
         """Read output from the process and insert it into the corresponding tab."""
         try:
-            for line in iter(pipe.readline, ''):  # Read line by line in real-time
-                if self.stop_events[tab_id].is_set():
-                    break
-                self.root.after(0, lambda l=line: self.safe_insert_output(tab_id, l))  # Use safe insert
+            for line in iter(pipe.readline, ''):
+                with self.lock:
+                    if tab_id in self.stop_events and self.stop_events[tab_id].is_set():
+                        break
+                # Safely schedule output insertion in the main thread
+                self.root.after(0, lambda l=line: self._insert_text(tab_id, l))
         except Exception as e:
-            self.root.after(0, lambda: self.safe_insert_output(tab_id, f"Error reading output: {e}\n"))
-
-    def safe_insert_output(self, tab_id, text):
-        """Safely insert text into the corresponding Text widget for a tab."""
-        try:
-            # Schedule the insertion to ensure it runs in the Tkinter main thread
-            self.root.after(0, lambda: self._insert_text(tab_id, text))
-        except Exception as e:
-            print(f"Error in safe_insert_output for Tab ID {tab_id}: {e}")
+            # Log the error to the console
+            print(f"Error reading output for Tab ID {tab_id}: {e}")
 
     def _insert_text(self, tab_id, text):
         """Internal function to insert text directly into the widget."""
-        if tab_id in self.processes:
+        # Protect access to shared resources
+        with self.lock:
+            if tab_id not in self.processes:
+                print(f"Tab ID {tab_id} not found in processes. Skipping text insertion.")
+                return
             tab = self.processes[tab_id].get('tab')
-            if tab and tab.winfo_exists():
-                try:
-                    tab.insert(tk.END, text)
-                    tab.see(tk.END)  # Scroll to the end
-                except Exception as e:
-                    print(f"Error inserting text into widget for Tab ID {tab_id}: {e}")
+
+        # Ensure UI operations are performed in the main thread
+        if tab and tab.winfo_exists():
+            try:
+                tab.insert(tk.END, text)
+                tab.see(tk.END)  # Scroll to the end
+            except Exception as e:
+                print(f"Error inserting text into widget for Tab ID {tab_id}: {e}")
 
     def select_and_run_script(self):
         """Open a file dialog to select and run a Python script, then create a new tab for it."""
@@ -455,9 +487,10 @@ class ScriptLauncherApp:
         reload_button.pack(side="left", padx=5, pady=2)
 
         # Track the process, stop event, and tab frame
-        self.processes[tab_id] = {'tab': output_text, 'process': None, 'script_path': str(script_path)}
-        self.stop_events[tab_id] = Event()
-        self.tab_frames[tab_id] = new_tab
+        with self.lock:
+            self.processes[tab_id] = {'tab': output_text, 'process': None, 'script_path': str(script_path)}
+            self.stop_events[tab_id] = Event()
+            self.tab_frames[tab_id] = new_tab
 
         # Run the script
         self.run_script(script_path, tab_id)
@@ -537,7 +570,6 @@ class ScriptLauncherApp:
                 loaded_scripts.add(str(absolute_path))
                 self.load_script_from_path(absolute_path)
 
-
     def edit_script(self, tab_id):
         """Open the selected script in VSCode for editing."""
         if tab_id in self.processes:
@@ -594,43 +626,58 @@ class ScriptLauncherApp:
 
     def close_tab_by_index(self, tab_index):
         """Close a tab by its index."""
-        for tab_id, frame in self.tab_frames.items():
-            if self.notebook.index(frame) == tab_index:
-                print(f"Closing tab with index: {tab_index}")
-                self.close_tab(tab_id)
-                return
+        # Make a snapshot of the items to avoid modification issues
+        with self.lock:
+            tab_frames_snapshot = list(self.tab_frames.items())
+
+        for tab_id, frame in tab_frames_snapshot:
+            try:
+                if self.notebook.index(frame) == tab_index:
+                    print(f"Closing tab with index: {tab_index}")
+                    self.close_tab(tab_id)
+                    return
+            except Exception as e:
+                print(f"Error accessing tab index {tab_index}: {e}")
 
     def close_tab(self, tab_id):
+        """Close a tab and clean up its associated resources."""
         if tab_id == getattr(self, 'performance_metrics_tab_id', None):
             self.stop_performance_monitoring()
             if hasattr(self, 'performance_metrics_tab'):
                 try:
                     self.notebook.forget(self.performance_metrics_tab)
-                except:
+                except Exception:
                     pass
             self.cleanup_performance_tab(tab_id)
             return
 
-        if tab_id in self.processes:
+        # Access shared resources in one lock-protected block
+        with self.lock:
+            if tab_id not in self.processes:
+                print(f"Tab ID {tab_id} not found. Nothing to close.")
+                return
+
+            # Retrieve process and thread information
             process_info = self.processes[tab_id]
             process = process_info.get('process')
             stdout_thread = process_info.get('stdout_thread')
             stderr_thread = process_info.get('stderr_thread')
 
             # Signal threads to stop
-            self.stop_events[tab_id].set()
+            if tab_id in self.stop_events:
+                self.stop_events[tab_id].set()
 
-            # Gracefully terminate the process if running
-            if process and process.pid:
-                attempt_graceful_shutdown(process)
+        # Perform long-running operations outside the lock
+        if process and process.pid:
+            attempt_graceful_shutdown(process)
 
-            # Wait for I/O threads to finish
-            if stdout_thread and stdout_thread.is_alive():
-                stdout_thread.join(timeout=2)
-            if stderr_thread and stderr_thread.is_alive():
-                stderr_thread.join(timeout=2)
+        if stdout_thread and stdout_thread.is_alive():
+            stdout_thread.join(timeout=2)
+        if stderr_thread and stderr_thread.is_alive():
+            stderr_thread.join(timeout=2)
 
-            # Now it is safe to remove the tab
+        # Clean up references and remove tab safely
+        with self.lock:
             if tab_id in self.tab_frames:
                 try:
                     self.notebook.forget(self.tab_frames[tab_id])
@@ -638,12 +685,9 @@ class ScriptLauncherApp:
                     print(f"Error removing tab {tab_id}: {e}")
 
             # Clean up references
-            if tab_id in self.processes:
-                del self.processes[tab_id]
-            if tab_id in self.stop_events:
-                del self.stop_events[tab_id]
-            if tab_id in self.tab_frames:
-                del self.tab_frames[tab_id]
+            self.processes.pop(tab_id, None)
+            self.stop_events.pop(tab_id, None)
+            self.tab_frames.pop(tab_id, None)
 
     def on_tab_right_click(self, event):
         """Handle right-click event on notebook tabs for direct tab closing."""
