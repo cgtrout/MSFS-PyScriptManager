@@ -1,7 +1,6 @@
 **MSFS-PyScriptManager** is a tool designed for managing and executing custom Python scripts tailored for Microsoft Flight Simulator (MSFS). This tool leverages the [WinPython](https://github.com/winpython) portable Python environment for ease of installation.  Simply download the release and extract it - no further installation required to run scripts!  Comes with some useful scripts, such as "virtual_pos_printer.py" that can print popup notes on the screen from the Fenix A32x printer.
 
 # MSFS 2024 Update
- - Note: at moment the Mobiflight functionality of some scripts may not be working correctly (such as fenix_disable_efb.py).  As of yet the Python library has not been updated for MSFS 2024.
  - custom_status_bar.py - works as expected except that MSFS 2024 currently does not report the sim time correctly meaning that the sim time reported on the panel is incorrect. (it reports sim time as real world time).  I believe this has been marked as a bug and should eventually be fixed by Asobo.
  - The other scripts should all still work the same as before.
  - The community addon for the print-out toolbar works with no modifications for 2024 - the installation script has been updated for the automated installation although note that it hasn't been tested for those with a Microsoft store installation.
