@@ -31,8 +31,8 @@ void displayErrorAndRestoreConsole(const char* message, HWND hConsole, ShowWindo
     if (hConsole) showWindow(hConsole, SW_RESTORE);
 }
 
-// Execute a Python script using the specified interpreter path and script file path.
-// Returns the exit code from the Python process, or -1 if there was an error.
+// Execute a Python script using the specified interpreter path and script file path
+// Returns the exit code from the Python process, or -1 if there was an error
 int run_script(const char *pythonPath, const char *scriptPath) {
     char commandLine[512];
     snprintf(commandLine, sizeof(commandLine), "\"%s\" -u \"%s\"", pythonPath, scriptPath);
@@ -40,7 +40,7 @@ int run_script(const char *pythonPath, const char *scriptPath) {
     printf("MSFS-PyScriptManager: Loader exe\n");
     printf("-------------------------------------------------------------------------------------------\n\n");
 
-    // Load console management functions
+    // Load console window management functions
     GetConsoleWindow_t getConsoleWindow;
     ShowWindow_t showWindow;
     SetForegroundWindow_t setForegroundWindow;
@@ -61,6 +61,11 @@ int run_script(const char *pythonPath, const char *scriptPath) {
     Sleep(100); // Allow time for the operation to take effect
 
     // Set up a named pipe for redirecting the output from the Python process
+    SECURITY_ATTRIBUTES sa = {0};
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = NULL;
+
     const char *pipeName = "\\\\.\\pipe\\PythonOutputPipe";
     HANDLE hNamedPipe = CreateNamedPipe(
         pipeName,                 // Pipe name
@@ -70,7 +75,7 @@ int run_script(const char *pythonPath, const char *scriptPath) {
         4096,                     // Output buffer size
         4096,                     // Input buffer size
         0,                        // Default timeout
-        NULL                      // Default security attributes
+        &sa                       // Security attributes
     );
 
     if (hNamedPipe == INVALID_HANDLE_VALUE) {
@@ -80,11 +85,12 @@ int run_script(const char *pythonPath, const char *scriptPath) {
 
     STARTUPINFO si = { sizeof(si), 0 };
     si.dwFlags = STARTF_USESTDHANDLES;
+
     si.hStdOutput = CreateFile(
         pipeName,
         GENERIC_WRITE,
         0,
-        NULL,
+        &sa,
         OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL,
         NULL
@@ -115,8 +121,14 @@ int run_script(const char *pythonPath, const char *scriptPath) {
     printf("Keep this window open to monitor launcher.py output, otherwise it is safe to close.\n");
     printf("-------------------------------------------------------------------------------------------\n\n");
 
+    // Bring the console window to the foreground and minimize it
+    setForegroundWindow(hConsole);
+    Sleep(100);
+    showWindow(hConsole, SW_MINIMIZE);
+
     char buffer[4096];
     DWORD bytesRead;
+
     while (1) {
         BOOL result = ReadFile(hNamedPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL);
         if (!result || bytesRead == 0) break;
@@ -124,11 +136,6 @@ int run_script(const char *pythonPath, const char *scriptPath) {
         buffer[bytesRead] = '\0';
         printf("%s", buffer);
     }
-
-    // Bring the console window to the foreground and minimize it.
-    setForegroundWindow(hConsole);
-    Sleep(100);
-    showWindow(hConsole, SW_MINIMIZE);
 
     // Wait for the Python process to complete
     WaitForSingleObject(pi.hProcess, INFINITE);
