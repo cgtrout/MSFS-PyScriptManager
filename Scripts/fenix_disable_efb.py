@@ -2,18 +2,19 @@
 #  https://kb.fenixsim.com/example-of-how-to-use-lvars - use this tutorial to see how to find other lvars
 # - uses https://github.com/Koseng/MSFSPythonSimConnectMobiFlightExtension/ extension library for reading from Mobiflight
 from time import sleep
-from simconnect_mobiflight.mobiflight_variable_requests import MobiFlightVariableRequests
 from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
+from lib.extended_mobiflight_variable_requests import ExtendedMobiFlightVariableRequests  
 
 # Constants for LVARs
-EFB_VISIBLE_CAPT = "(L:S_EFB_VISIBLE_CAPT)"
-EFB_CHARGING_CAPT = "(L:S_EFB_CHARGING_CABLE_CAPT)"
-EFB_VISIBLE_FO = "(L:S_EFB_VISIBLE_FO)"
-EFB_CHARGING_FO = "(L:S_EFB_CHARGING_CABLE_FO)"
+EFB_VISIBLE_CAPT = "L:S_EFB_VISIBLE_CAPT"
+EFB_CHARGING_CAPT = "L:S_EFB_CHARGING_CABLE_CAPT"
+EFB_VISIBLE_FO = "L:S_EFB_VISIBLE_FO"
+EFB_CHARGING_FO = "L:S_EFB_CHARGING_CABLE_FO"
 
 def set_and_get_lvar(mf_requests, lvar, value):
     """Sets an LVAR to a specified value and retrieves the updated value."""
-    mf_requests.set(f"{value} (> {lvar})")
+    req_str = f"{value} (> {lvar})"
+    mf_requests.set(req_str)
     result = mf_requests.get(f"{lvar}")
     print(f"{lvar} set to {value}. Current value: {result}")
     return result
@@ -22,7 +23,9 @@ def main():
     try:
         # Initialize the SimConnect connection
         sm = SimConnectMobiFlight()
-        mf_requests = MobiFlightVariableRequests(sm)
+        mf_requests = ExtendedMobiFlightVariableRequests(sm, "fenix_disable_efb")
+
+        mf_requests.clear_sim_variables()
 
         # Prime the library - possibly necessary to ensure the connection works properly?
         # TODO determine what causes this
