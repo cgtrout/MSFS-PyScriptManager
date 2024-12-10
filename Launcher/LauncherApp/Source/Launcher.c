@@ -33,10 +33,6 @@ void displayErrorAndRestoreConsole(const char* message, HWND hConsole, ShowWindo
 
 // Execute a Python script using the specified interpreter path and script file path.
 // Returns the exit code from the Python process, or -1 if there was an error.
-#include <stdio.h>
-#include <stdlib.h>
-#include <windows.h>
-
 int run_script(const char *pythonPath, const char *scriptPath) {
     char commandLine[512];
     snprintf(commandLine, sizeof(commandLine), "\"%s\" -u \"%s\"", pythonPath, scriptPath);
