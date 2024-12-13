@@ -142,81 +142,66 @@ class ScriptLauncherApp:
 
     def initialize_cpu_percent(self):
         """Initialize CPU percent measurement for each process and its children."""
-        for process_info in self.processes.values():
-            process = process_info.get('process')
-            if process and process.pid:
-                try:
-                    proc = psutil.Process(process.pid)
-                    proc.cpu_percent(interval=None)  # Initialize for parent
-                    for child in proc.children(recursive=True):
-                        child.cpu_percent(interval=None)  # Initialize for children
-                except psutil.NoSuchProcess:
-                    continue
-
-    def open_performance_metrics_tab(self):
-        """Open a single instance of the Performance Metrics tab."""
-        with self.lock:  # Protect shared resource access
-            if self.performance_metrics_open:
-                # Bring the existing tab to the front if it's already open
-                try:
-                    self.notebook.select(self.performance_metrics_tab)
-                    print("Performance Metrics tab is already open.")
-                except Exception as e:
-                    print(f"Error selecting performance metrics tab: {e}")
-                return
-
-            # Create the tab and set the flag
-            try:
-                self.performance_metrics_tab = ttk.Frame(self.notebook)
-                self.notebook.add(self.performance_metrics_tab, text="Performance Metrics")
-                self.notebook.select(self.performance_metrics_tab)
-
-                self.performance_text_widget = scrolledtext.ScrolledText(
-                    self.performance_metrics_tab, wrap="word", bg=TEXT_WIDGET_BG_COLOR, fg=TEXT_WIDGET_FG_COLOR,
-                    insertbackground=TEXT_WIDGET_INSERT_COLOR
-                )
-                self.performance_text_widget.pack(expand=True, fill="both")
-
-                # Track the tab and mark it as open
-                tab_id = self.generate_tab_id()
-                self.tab_frames[tab_id] = self.performance_metrics_tab
-                self.performance_metrics_tab_id = tab_id
-                self.performance_metrics_open = True  # Set the flag
-            except Exception as e:
-                print(f"Error initializing performance metrics tab: {e}")
-                return
-
-        # Initialize CPU usage tracking for all processes
         try:
-            self.initialize_cpu_percent()
+            for process_info in self.processes.values():
+                process = process_info.get('process')
+                if process and process.pid:
+                    proc = psutil.Process(process.pid)
+                    proc.cpu_percent(interval=0.1)  # Initialize for the parent process with a small interval
+                    for child in proc.children(recursive=True):
+                        child.cpu_percent(interval=0.1)  # Initialize for children with the same interval
         except Exception as e:
             print(f"Error initializing CPU metrics: {e}")
 
-        # Start monitoring metrics
-        try:
-            self.monitor_performance_metrics()
-        except Exception as e:
-            print(f"Error starting performance metrics monitoring: {e}")
 
+    def open_performance_metrics_tab(self):
+        print("Opening performance metrics tab...")
+        tab_id = self.generate_tab_id()
+        with self.lock:
+            self.performance_metrics_tab_id = tab_id
+            self.performance_metrics_open = True
+
+        def create_tab():
+            print("Creating performance metrics tab...")
+            self.performance_metrics_tab = ttk.Frame(self.notebook)
+            self.notebook.add(self.performance_metrics_tab, text="Performance Metrics")
+            self.notebook.select(self.performance_metrics_tab)
+
+            self.performance_text_widget = scrolledtext.ScrolledText(
+                self.performance_metrics_tab, wrap="word", bg=TEXT_WIDGET_BG_COLOR, fg=TEXT_WIDGET_FG_COLOR,
+                insertbackground=TEXT_WIDGET_INSERT_COLOR
+            )
+            self.performance_text_widget.pack(expand=True, fill="both")
+
+            # Add the tab to the tab_frames outside of the lock
+            self.tab_frames[self.performance_metrics_tab_id] = self.performance_metrics_tab
+            print(f"Performance metrics tab added to tab_frames with ID: {self.performance_metrics_tab_id}")
+
+            # Start monitoring after the tab is created
+            self.root.after(100, self.monitor_performance_metrics)
+
+        # Schedule the tab creation
+        self.root.after(0, create_tab)
 
     def monitor_performance_metrics(self):
         """Periodically update the performance metrics tab."""
         def update_metrics():
-            while True:
-                if not self.performance_metrics_open or not hasattr(self, 'performance_metrics_tab'):
-                    break
-                
+            while self.performance_metrics_open:
                 try:
                     metrics_text = self.generate_metrics_text()
-                    # Use after with checks
-                    self.root.after(0, lambda txt=metrics_text: self.safe_refresh_performance_metrics(txt))
+                    self.root.after(0, lambda: self.refresh_performance_metrics(metrics_text))
                 except Exception as e:
                     print(f"Error in performance metrics update: {e}")
-
-                time.sleep(0.5)
+                time.sleep(1)  # Update every second
 
         self.performance_thread = Thread(target=update_metrics, daemon=True)
         self.performance_thread.start()
+
+    def refresh_performance_metrics(self, text):
+        """Refresh the performance metrics text widget."""
+        if hasattr(self, 'performance_text_widget') and self.performance_text_widget.winfo_exists():
+            self.performance_text_widget.delete('1.0', tk.END)
+            self.performance_text_widget.insert(tk.END, text)
 
     def safe_refresh_performance_metrics(self, text):
         # Only update if tab and widget still exist
@@ -225,15 +210,17 @@ class ScriptLauncherApp:
                 self.performance_text_widget.delete('1.0', tk.END)
                 self.performance_text_widget.insert(tk.END, text)
 
+
     def generate_metrics_text(self):
         """Generate a text representation of performance metrics dynamically."""
         metrics = []
 
-        if not self.processes:  # Handle the case where no processes are tracked
+        if not self.processes:
             return "No scripts are currently running."
 
+        total_cores = psutil.cpu_count(logical=True)  # Get total logical cores
         with self.lock:
-            processes_snapshot = dict(self.processes)  # Make a copy to avoid holding the lock for too long
+            processes_snapshot = dict(self.processes)
 
         for tab_id, process_info in processes_snapshot.items():
             process = process_info.get('process')
@@ -244,35 +231,32 @@ class ScriptLauncherApp:
                     proc = psutil.Process(process.pid)
                     if proc.is_running():
                         # Initialize stats tracking if not already done
-                        with self.cpu_stats_lock:
-                            if tab_id not in self.cpu_stats:
-                                self.cpu_stats[tab_id] = {"cumulative_cpu": 0, "count": 0, "peak_cpu": 0}
+                        if tab_id not in self.cpu_stats:
+                            self.cpu_stats[tab_id] = {"cumulative_cpu": 0, "count": 0, "peak_cpu": 0}
+                            proc.cpu_percent(interval=None)  # Establish baseline for measurement
 
-                        # Aggregate CPU and memory usage
-                        total_cpu_usage = proc.cpu_percent(interval=None)
-                        total_memory_usage = proc.memory_info().rss  # In bytes
+                        # Ensure a small delay to avoid sampling conflict
+                        total_cpu_usage = proc.cpu_percent(interval=0.1)
+                        total_memory_usage = proc.memory_info().rss  # Memory usage in bytes
 
                         for child in proc.children(recursive=True):
                             if child.is_running():
-                                total_cpu_usage += child.cpu_percent(interval=None)
+                                total_cpu_usage += child.cpu_percent(interval=0.1)
                                 total_memory_usage += child.memory_info().rss
 
-                        if total_cpu_usage == 0.0 and self.cpu_stats[tab_id]["count"] == 0:
-                            with self.cpu_stats_lock:
-                                self.cpu_stats[tab_id]["count"] += 1  # Increment count to avoid infinite skipping
-                            print(f"Skipping initial CPU measurement for Tab ID: {tab_id}")  # Debugging
-                            continue
+                        # Normalize CPU usage to total cores
+                        normalized_cpu_usage = total_cpu_usage / total_cores
+                        self.cpu_stats[tab_id]["cumulative_cpu"] += normalized_cpu_usage
+                        self.cpu_stats[tab_id]["count"] += 1
+                        self.cpu_stats[tab_id]["peak_cpu"] = max(
+                            self.cpu_stats[tab_id]["peak_cpu"], normalized_cpu_usage
+                        )
 
-                        # Update stats with locking
-                        with self.cpu_stats_lock:
-                            self.cpu_stats[tab_id]["cumulative_cpu"] += total_cpu_usage
-                            self.cpu_stats[tab_id]["count"] += 1
-                            self.cpu_stats[tab_id]["peak_cpu"] = max(self.cpu_stats[tab_id]["peak_cpu"], total_cpu_usage)
-
-                            avg_cpu_usage = (
-                                self.cpu_stats[tab_id]["cumulative_cpu"] / self.cpu_stats[tab_id]["count"]
-                            )
-                            peak_cpu_usage = self.cpu_stats[tab_id]["peak_cpu"]
+                        # Compute average CPU usage
+                        avg_cpu_usage = (
+                            self.cpu_stats[tab_id]["cumulative_cpu"] / self.cpu_stats[tab_id]["count"]
+                        )
+                        peak_cpu_usage = self.cpu_stats[tab_id]["peak_cpu"]
 
                         # Convert memory usage to MB
                         total_memory_usage_mb = total_memory_usage / (1024 ** 2)
@@ -280,7 +264,6 @@ class ScriptLauncherApp:
                         metrics.append(
                             f"Script: {script_name}\n"
                             f"  PID: {process.pid}\n"
-                            f"  Current CPU Usage: {total_cpu_usage:.2f}%\n"
                             f"  Average CPU Usage: {avg_cpu_usage:.2f}%\n"
                             f"  Peak CPU Usage: {peak_cpu_usage:.2f}%\n"
                             f"  Memory Usage: {total_memory_usage_mb:.2f} MB\n"
@@ -642,22 +625,26 @@ class ScriptLauncherApp:
     def close_tab(self, tab_id):
         """Close a tab and clean up its associated resources."""
         if tab_id == getattr(self, 'performance_metrics_tab_id', None):
+            # Stop monitoring performance metrics
             self.stop_performance_monitoring()
-            if hasattr(self, 'performance_metrics_tab'):
+
+            # Remove the performance metrics tab from the notebook
+            if hasattr(self, 'performance_metrics_tab') and self.performance_metrics_tab:
                 try:
                     self.notebook.forget(self.performance_metrics_tab)
                 except Exception:
-                    pass
+                    print(f"Error forgetting the performance metrics tab (ID: {tab_id}).")
+            
+            # Perform cleanup
             self.cleanup_performance_tab(tab_id)
             return
 
-        # Access shared resources in one lock-protected block
+        # General tab closing logic for other tabs
         with self.lock:
             if tab_id not in self.processes:
                 print(f"Tab ID {tab_id} not found. Nothing to close.")
                 return
 
-            # Retrieve process and thread information
             process_info = self.processes[tab_id]
             process = process_info.get('process')
             stdout_thread = process_info.get('stdout_thread')
@@ -665,10 +652,9 @@ class ScriptLauncherApp:
 
             # Signal threads to stop
             if tab_id in self.stop_events:
-                print("close_tab:STOP EVENT")
                 self.stop_events[tab_id].set()
 
-        # Perform long-running operations outside the lock
+        # Perform process termination
         if process and process.pid:
             attempt_graceful_shutdown(process)
 
@@ -677,7 +663,7 @@ class ScriptLauncherApp:
         if stderr_thread and stderr_thread.is_alive():
             stderr_thread.join(timeout=2)
 
-        # Clean up references and remove tab safely
+        # Remove tab from the notebook and clean up
         with self.lock:
             if tab_id in self.tab_frames:
                 try:
@@ -685,10 +671,23 @@ class ScriptLauncherApp:
                 except Exception as e:
                     print(f"Error removing tab {tab_id}: {e}")
 
-            # Clean up references
             self.processes.pop(tab_id, None)
             self.stop_events.pop(tab_id, None)
             self.tab_frames.pop(tab_id, None)
+
+    def cleanup_performance_tab(self, tab_id):
+        """Clean up resources associated with the performance metrics tab."""
+        with self.lock:
+            # Reset attributes related to the performance metrics tab
+            if tab_id == getattr(self, 'performance_metrics_tab_id', None):
+                self.performance_metrics_tab = None
+                self.performance_metrics_tab_id = None
+                print("cleanup_perf")
+                self.performance_metrics_open = False
+
+            # Remove tab reference from tab frames
+            self.tab_frames.pop(tab_id, None)
+            print(f"Performance metrics tab (ID: {tab_id}) has been cleaned up.")
 
     def on_tab_right_click(self, event):
         """Handle right-click event on notebook tabs for direct tab closing."""
