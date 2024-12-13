@@ -5,8 +5,8 @@ import json
 import os
 from time import sleep
 from PIL import Image, ImageDraw, ImageFont, ImageTk
-from simconnect_mobiflight.mobiflight_variable_requests import MobiFlightVariableRequests
 from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
+from lib.extended_mobiflight_variable_requests import ExtendedMobiFlightVariableRequests  
 import logging
 from threading import Thread
 
@@ -135,10 +135,10 @@ def main():
 
     # Initialize SimConnect and MobiFlightVariableRequests
     sm = SimConnectMobiFlight()
-    mf_requests = MobiFlightVariableRequests(sm)
+    mf_requests = ExtendedMobiFlightVariableRequests(sm, "fenix_radio")
 
-    # Altitude priming step
     altitude = mf_requests.get("(A:PLANE ALTITUDE,Feet)")
+    mf_requests.clear_sim_variables()
 
     # Set up the tkinter window
     window = tk.Tk()
