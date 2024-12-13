@@ -4,12 +4,11 @@ import random
 import time
 import socket
 from pathlib import Path
-from Launcher import ScriptLauncherApp  
+from Launcher import ScriptLauncherApp, ScriptTab
 
 def get_python_pids():
     """Get all active Python process PIDs."""
-    return {p.pid for p in psutil.process_iter(attrs=['name']) if p.info['name'] and 'python' in p.info['name'].lower()}
-
+    return {p.pid for p in psutil.process_iter(attrs=["name"]) if p.info["name"] and "python" in p.info["name"].lower()}
 
 def start_network_server(host="127.0.0.1", port=65432, stop_event=None):
     """Start a network server that randomly disconnects or delays clients."""
@@ -135,9 +134,19 @@ def fuzz_test_launcher(scripts_dir, server_address=("127.0.0.1", 65432), duratio
     while not app:
         time.sleep(1)
 
-    print("[TEST] App started. Beginning fuzz testing...")
+    print("[TEST] App started. Opening Performance Monitor...")
+    
+    # Step 5: Open the Performance Monitor tab
+    perf_tab_id = None
+    try:
+        perf_tab_id = app.tab_manager.generate_tab_id()  # Generate a unique ID for the PerfTab
+        app.open_performance_metrics_tab()  # Open the performance monitoring tab
+    except Exception as e:
+        print(f"[TEST] Error opening Performance Monitor: {e}")
 
-    # Step 5: Randomized addition and closure of script tabs
+    print("[TEST] Performance Monitor tab opened. Beginning fuzz testing...")
+
+    # Step 6: Randomized addition and closure of script tabs
     start_time = time.time()
     open_tabs = []
     tab_counter = 0
@@ -149,15 +158,15 @@ def fuzz_test_launcher(scripts_dir, server_address=("127.0.0.1", 65432), duratio
             if action == "add" or not open_tabs:
                 # Add a new script tab
                 print("[TEST] Adding a new script tab...")
-                tab_id = app.generate_tab_id()
-                app.run_script_with_tab(test_script, tab_id)
+                app.load_script(test_script)
+                tab_id = app.tab_manager.current_tab_id  # Get the most recently added tab ID
                 open_tabs.append(tab_id)
                 print(f"[TEST] Added tab {tab_id}.")
             elif action == "close" and open_tabs:
                 # Close a random tab
                 tab_id = random.choice(open_tabs)
                 print(f"[TEST] Closing tab {tab_id}...")
-                app.close_tab(tab_id)
+                app.tab_manager.close_tab(tab_id)
                 open_tabs.remove(tab_id)
 
             # Wait for a random interval between actions
@@ -169,11 +178,16 @@ def fuzz_test_launcher(scripts_dir, server_address=("127.0.0.1", 65432), duratio
         print("[TEST] Fuzz testing interrupted by user.")
 
     finally:
-        # Step 6: Cleanup
+        # Step 7: Cleanup
         print("[TEST] Cleaning up...")
         for tab_id in open_tabs:
             print(f"[TEST] Closing remaining tab {tab_id}...")
-            app.close_tab(tab_id)
+            app.tab_manager.close_tab(tab_id)
+
+        if perf_tab_id is not None:
+            print("[TEST] Closing Performance Monitor tab...")
+            app.tab_manager.close_tab(perf_tab_id)
+
         cleanup_test_script(test_script)
         print("[TEST] Test script cleaned up.")
         root.quit()
@@ -181,18 +195,17 @@ def fuzz_test_launcher(scripts_dir, server_address=("127.0.0.1", 65432), duratio
         stop_event.set()
         print("[TEST] Launcher app and server stopped.")
 
-        # Step 7: Capture Python processes after
+        # Step 8: Capture Python processes after
         final_pids = get_python_pids()
         print(f"[TEST] Final Python processes: {final_pids}")
 
-        # Step 8: Ensure all new PIDs are terminated
+        # Step 9: Ensure all new PIDs are terminated
         remaining_pids = final_pids - initial_pids
         if remaining_pids:
             print(f"[WARNING] The following Python processes were not terminated: {remaining_pids}")
         else:
             print("[TEST] All Python processes started by the app were terminated successfully.")
 
-
 if __name__ == "__main__":
     scripts_dir = Path(__file__).resolve().parent / "Scripts"  # Directory for the test script
-    fuzz_test_launcher(scripts_dir, duration=30)  # Run the test for 300 seconds (5 minutes)
+    fuzz_test_launcher(scripts_dir, duration=30)  # Run the test for 30 seconds
