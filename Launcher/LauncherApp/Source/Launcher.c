@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
+#include <time.h>
 
 // Define types for function pointers to dynamically load Windows API functions.
 typedef HWND (*GetConsoleWindow_t)(void);
@@ -66,7 +67,13 @@ int run_script(const char *pythonPath, const char *scriptPath) {
     sa.bInheritHandle = TRUE;
     sa.lpSecurityDescriptor = NULL;
 
-    const char *pipeName = "\\\\.\\pipe\\PythonOutputPipe";
+    // Generate a unique pipe name using process ID and timestamp
+    DWORD pid = GetCurrentProcessId();
+    srand((unsigned int)time(NULL)); // Seed the random number generator
+    int randomSuffix = rand();       // Generate a random number
+    char pipeName[256];
+    snprintf(pipeName, sizeof(pipeName), "\\\\.\\pipe\\PythonOutputPipe_%lu_%d", pid, randomSuffix);
+
     HANDLE hNamedPipe = CreateNamedPipe(
         pipeName,                 // Pipe name
         PIPE_ACCESS_INBOUND,      // Read-only pipe
