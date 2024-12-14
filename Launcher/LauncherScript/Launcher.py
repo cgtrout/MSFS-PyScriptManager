@@ -1,7 +1,8 @@
 import os
 import time  
 from pathlib import Path
-from threading import Thread, Event, Lock  
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, Callable, Optional
 import subprocess  
 import psutil  
 
@@ -78,7 +79,6 @@ class TabManager:
         self.processes = {}  # Stores subprocess details by tab ID
         self.stop_events = {}  # Stores threading stop events by tab ID
         self.current_tab_id = 0  # Counter for unique tab IDs
-        self.lock = Lock()  # Thread-safety for shared state
 
     def generate_tab_id(self):
         """Generate a unique tab ID."""
@@ -540,13 +540,26 @@ class ScriptLauncherApp:
 
 class ProcessTracker:
     def __init__(self):
-        self.processes = {}  # Track processes by tab ID
-        self.lock = Lock()  # Thread safety for shared state
+        """Initialize the ProcessTracker with a thread pool executor."""
+        self.executor = ThreadPoolExecutor(max_workers=4)
+        self.processes: Dict[int, subprocess.Popen] = {}  # Map tab_id to process
 
-    def start_process(self, tab_id, command, stdout_callback, stderr_callback, script_name=None):
-        """Start a process and track its state."""
+    def start_process(self, 
+                      tab_id: int, 
+                      command: list, 
+                      stdout_callback: Callable[[str], None], 
+                      stderr_callback: Callable[[str], None], 
+                      script_name: Optional[str] = None) -> None:
+        """Start a process and track it.
+
+        Args:
+            tab_id (int): The ID of the tab associated with the process.
+            command (list): The command to run the process.
+            stdout_callback (Callable[[str], None]): Callback for stdout lines.
+            stderr_callback (Callable[[str], None]): Callback for stderr lines.
+            script_name (Optional[str]): Optional name of the script being run.
+        """
         try:
-            stop_event = Event()
             process = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
@@ -554,131 +567,88 @@ class ProcessTracker:
                 text=True,
                 bufsize=1,
             )
+            self.processes[tab_id] = process
 
-            # Store process details, including the script name
-            with self.lock:
-                self.processes[tab_id] = {
-                    "process": process,
-                    "stop_event": stop_event,
-                    "script_name": script_name,  # Add the script name to metadata
-                }
-
-            # Start threads for reading process output
-            stdout_thread = Thread(target=self._read_output, args=(process.stdout, tab_id, stdout_callback))
-            stderr_thread = Thread(target=self._read_output, args=(process.stderr, tab_id, stderr_callback))
-
-            stdout_thread.start()
-            stderr_thread.start()
-
-            with self.lock:
-                self.processes[tab_id]["stdout_thread"] = stdout_thread
-                self.processes[tab_id]["stderr_thread"] = stderr_thread
-
-            return process
+            # Submit tasks to read stdout and stderr asynchronously
+            if process.stdout:
+                self.executor.submit(self._read_output, process.stdout, stdout_callback)
+            if process.stderr:
+                self.executor.submit(self._read_output, process.stderr, stderr_callback)
         except Exception as e:
-            print(f"Error starting process for Tab ID {tab_id}: {e}")
-            return None
-        
-    def get_process(self, tab_id):
-        """Retrieve process information for a given tab ID."""
-        with self.lock:
-            return self.processes.get(tab_id)
+            print(f"Failed to start process for Tab ID {tab_id}: {e}")
 
-    def list_processes(self):
-        """List all tracked processes and their metadata."""
-        with self.lock:
-            return dict(self.processes)  # Return a shallow copy for safe iteration
-        
-    def remove_process(self, tab_id):
-        """Remove the process associated with a specific tab ID."""
-        with self.lock:
-            if tab_id in self.processes:
-                del self.processes[tab_id]
+    def _read_output(self, stream, callback: Callable[[str], None]) -> None:
+        """Read the output from a stream line by line and invoke a callback.
 
-    def _read_output(self, pipe, tab_id, callback):
-        """Read output from the process and invoke the callback."""
+        Args:
+            stream: The output stream to read from (stdout or stderr).
+            callback: A function to call with each line of output.
+        """
         try:
-            for line in iter(pipe.readline, ""):
-                with self.lock:
-                    if tab_id not in self.processes or self.processes[tab_id]["stop_event"].is_set():
-                        break
-                if callback and callable(callback):
-                    callback(line)
+            for line in iter(stream.readline, ""):
+                callback(line)
+            stream.close()
         except Exception as e:
-            print(f"Error reading output for Tab ID {tab_id}: {e}")
+            print(f"Error reading output: {e}")
 
-    def terminate_process(self, tab_id):
-        """Terminate a process associated with a tab ID."""
-        with self.lock:
-            process_info = self.processes.pop(tab_id, None)
-            if not process_info:
-                print(f"No process found for Tab ID {tab_id}. It may have already been terminated.")
-                return
+    def terminate_process(self, tab_id: int) -> None:
+        """Terminate the process associated with a given tab ID.
 
-            process = process_info.get("process")
-            stop_event = process_info.get("stop_event")
-            if process and process.poll() is None:  # Check if process is running
+        Args:
+            tab_id (int): The ID of the tab whose process should be terminated.
+        """
+        process = self.processes.pop(tab_id, None)
+        if not process:
+            print(f"No process found for Tab ID {tab_id}. It may have already been terminated.")
+            return
+
+        try:
+            if process.poll() is None:  # Process is still running
                 print(f"Terminating process for Tab ID {tab_id}.")
-                process.terminate()
-                stop_event.set()
+                self._terminate_process_tree(process.pid)
+        except Exception as e:
+            print(f"Error terminating process for Tab ID {tab_id}: {e}")
 
-            # Wait for threads to finish
-            stdout_thread = process_info.get("stdout_thread")
-            stderr_thread = process_info.get("stderr_thread")
-            if stdout_thread:
-                stdout_thread.join()
-            if stderr_thread:
-                stderr_thread.join()
-
-        print(f"Process for Tab ID {tab_id} has been terminated and cleaned up.")
-
-    def terminate_all_processes(self):
+    def terminate_all_processes(self) -> None:
         """Terminate all tracked processes."""
-        with self.lock:
-            tab_ids = list(self.processes.keys())
-        for tab_id in tab_ids:
+        for tab_id in list(self.processes.keys()):
             self.terminate_process(tab_id)
 
-    def _terminate_process_tree(self, pid, force=False):
-        """Terminate a process and all its child processes."""
+    def _terminate_process_tree(self, pid: int, force: bool = False) -> None:
+        """Terminate a process and all its child processes.
+
+        Args:
+            pid (int): The PID of the process to terminate.
+            force (bool): Whether to forcefully kill the process.
+        """
         try:
             parent = psutil.Process(pid)
             children = parent.children(recursive=True)  # Get all child processes
 
             # Terminate children first
             for child in children:
-                print(f"Terminating child process: {child.pid}")
                 if not force:
                     child.terminate()
                 else:
                     child.kill()
 
             # Terminate the parent process
-            print(f"Terminating parent process: {pid}")
             if not force:
-                parent.terminate()  # Try graceful termination
+                parent.terminate()
             else:
-                parent.kill()  # Force kill
+                parent.kill()
         except psutil.NoSuchProcess:
             print(f"Process with PID {pid} not found (might already be terminated).")
         except Exception as e:
-            print(f"Error terminating process tree: {e}")
+            print(f"Error terminating process tree for PID {pid}: {e}")
 
-    def _attempt_graceful_shutdown(self, process, timeout=5):
-        """Try to terminate the process gracefully, and force kill if it doesn't terminate within the timeout."""
-        try:
-            print(f"Attempting graceful termination of process with PID {process.pid}")
-            process.terminate()  # Attempt graceful termination
-            process.wait(timeout=timeout)  # Wait for the process to exit
-            print(f"Process {process.pid} terminated gracefully.")
-            return True
-        except subprocess.TimeoutExpired:
-            print(f"Process {process.pid} did not terminate within {timeout} seconds. Forcing termination...")
-            self._terminate_process_tree(process.pid, force=True)  # Force termination if it doesn't exit in time
-            return False
-        except Exception as e:
-            print(f"Error during graceful termination attempt: {e}")
-            return False
+    def list_processes(self) -> Dict[int, subprocess.Popen]:
+        """List all tracked processes.
+
+        Returns:
+            Dict[int, subprocess.Popen]: A dictionary mapping tab IDs to processes.
+        """
+        return self.processes.copy()
 
 # Create the main window (root) for the UI with a dark theme
 root = ThemedTk(theme="black")  # Applying dark theme using ThemedTk
