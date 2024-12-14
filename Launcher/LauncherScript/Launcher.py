@@ -608,7 +608,7 @@ class ProcessTracker:
                 if self.queues[tab_id]["stop_event"].is_set():
                     print(f"[INFO] Stop event triggered for {stream_name}, Tab ID: {tab_id}")
                     break
-                print(f"[DEBUG] {stream_name} line read (Tab ID {tab_id}): {line.strip()}")
+                #print(f"[DEBUG] {stream_name} line read (Tab ID {tab_id}): {line.strip()}")
                 q.put(line)
             stream.close()
         except Exception as e:
@@ -623,7 +623,7 @@ class ProcessTracker:
         while True:
             try:
                 line = q.get(timeout=1)  # Avoid indefinite blocking
-                print("[DEBUG] Dispatcher received line from queue.")
+                #print("[DEBUG] Dispatcher received line from queue.")
             except queue.Empty:
                 # Check for shutdown periodically
                 if any(queue_data["stop_event"].is_set() for queue_data in self.queues.values()):
