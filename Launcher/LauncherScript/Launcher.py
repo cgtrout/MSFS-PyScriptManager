@@ -1,3 +1,4 @@
+import msvcrt
 import os
 import sys
 import threading
@@ -7,11 +8,15 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Callable, Optional
 import subprocess  
 import logging
+import ctypes
 import psutil  
 import tkinter as tk
 from tkinter import filedialog, scrolledtext, TclError
 from tkinter import ttk  
 import queue
+from queue import Queue
+from queue import Empty
+from multiprocessing import Process, Event
 from ttkthemes import ThemedTk  
 
 # Path to the WinPython Python executable and VS Code.exe
@@ -726,31 +731,42 @@ logging.basicConfig(
     ]
 )
 
-def monitor_shutdown_pipe(pipe_name, shutdown_event, on_shutdown_callback):
-    """Connect to the named pipe and listen for a shutdown signal."""
-    logging.info(f"Connecting to shutdown pipe: {pipe_name}")
-
+def monitor_shutdown_pipe(pipe_name, shutdown_event):
+    """Monitor the named pipe for shutdown signals."""
+    logging.info(f"Monitoring shutdown pipe in subprocess. Pipe: {pipe_name}")
     try:
-        pipe = open(pipe_name, "r")  # Open the pipe for reading
-        logging.info(f"Successfully connected to the pipe: {pipe_name}")
+        with open(pipe_name, "r", encoding="utf-8") as pipe:
+            logging.info("Successfully connected to the shutdown pipe.")
+            while not shutdown_event.is_set():
+                try:
+                    line = pipe.readline().strip()  # Blocking read
+                    if not line:
+                        if shutdown_event.is_set():
+                            logging.info("Shutdown event detected. Exiting monitoring loop.")
+                            break
+                        time.sleep(0.1)
+                        continue
 
-        with pipe:
-            for line in pipe:
-                message = line.strip()
-                logging.info(f"Received message: {message}")
-                if message == "shutdown":
-                    logging.info("Shutdown signal received.")
-                    on_shutdown_callback()  # Notify the main thread to exit
-                    return
+                    logging.debug(f"Read line from pipe: {line}")
+                    if line == "shutdown":
+                        logging.info("Shutdown signal received in subprocess.")
+                        shutdown_event.set()  # Notify the parent process
+                        return
+                except Exception as e:
+                    logging.error(f"Exception while reading pipe: {e}")
+                    break
     except Exception as e:
         logging.error(f"Failed to monitor shutdown pipe: {e}")
+    finally:
+        logging.info("Exiting monitor_shutdown_pipe subprocess.")
+
 
 def main():
     """Main entry point for the script."""
     args = sys.argv
     logging.debug(f"args={args}")
 
-    # Check if --shutdown-pipe argument is provided
+    # Parse the --shutdown-pipe argument
     shutdown_pipe = None
     if "--shutdown-pipe" in args:
         shutdown_pipe = args[args.index("--shutdown-pipe") + 1]
@@ -758,49 +774,56 @@ def main():
     else:
         logging.info("No --shutdown-pipe argument provided. Skipping pipe-based shutdown logic.")
 
-    # Create an event to signal shutdown
-    shutdown_event = threading.Event()
+    # Create a multiprocessing Event for shutdown
+    shutdown_event = Event()
 
-    # Create the main window (root) for the UI with a dark theme
-    root = ThemedTk(theme="black")  # Applying dark theme using ThemedTk
-    app = ScriptLauncherApp(root)  # Initialize the main application
-
-    # Define a callback to cleanly shut down the ScriptLauncherApp
-    def on_shutdown():
-        logging.info("Shutdown signal received. Entering on_shutdown.")
-        logging.info(f"Shutdown event state: {shutdown_event.is_set()}")
-        if not shutdown_event.is_set():
-            logging.info("shutdown_event.set()")
-            shutdown_event.set()
-            app.on_close()  # Use the application’s existing cleanup logic
-        else:
-            logging.warning("Shutdown event already set. Skipping redundant cleanup.")
-        logging.info("Exiting on_shutdown.")
-
-    # Start the shutdown monitoring thread if a shutdown pipe is provided
+    # Start the shutdown monitoring subprocess if a pipe is provided
+    monitor_process = None
     if shutdown_pipe:
-        monitor_thread = threading.Thread(
-            target=monitor_shutdown_pipe,
-            args=(shutdown_pipe, shutdown_event, on_shutdown),  # Pass the callback
-            daemon=True  # Ensure this thread exits when the main program exits
-        )
-        monitor_thread.start()
-        logging.info("Started shutdown monitoring thread.")
-    else:
-        monitor_thread = None  # No monitoring thread started
+        monitor_process = Process(target=monitor_shutdown_pipe, args=(shutdown_pipe, shutdown_event))
+        monitor_process.start()
+        logging.info("Started shutdown monitoring process.")
+
+    # Define the main application shutdown logic
+    def on_shutdown():
+        logging.info("Shutdown signal received. Starting cleanup.")
+        shutdown_event.set()  # Signal the subprocess to terminate
+        app.on_close()  # Use the main application’s cleanup logic
 
     try:
         logging.info("Starting the application.")
-        root.mainloop()  # Run the Tkinter event loop
+        # Your main Tkinter application logic here
+        root = ThemedTk(theme="black")
+        app = ScriptLauncherApp(root)
+
+        # Periodically check for the shutdown_event
+        def check_shutdown():
+            if shutdown_event.is_set():
+                logging.info("Shutdown event detected in main application.")
+                on_shutdown()
+                return
+            root.after(100, check_shutdown)  # Recheck every 100ms
+
+        # Start monitoring shutdown_event
+        root.after(100, check_shutdown)
+
+        root.mainloop()
+
         logging.info("Tkinter main loop has exited.")
     finally:
-        # Ensure the shutdown event is set, and clean up the monitoring thread if it exists
-        shutdown_event.set()
-        if monitor_thread:
-            monitor_thread.join()
-            logging.debug("Shutdown monitoring thread exited.")
-        logging.info("Script exited cleanly.")
-        sys.exit(0)
+        logging.info("Finalizing application shutdown...")
+
+        # Ensure subprocess cleanup
+        if monitor_process:
+            shutdown_event.set()  # Ensure the subprocess knows to exit
+            logging.debug("Waiting for shutdown monitoring process to exit...")
+            monitor_process.join(timeout=5)
+            if monitor_process.is_alive():
+                logging.warning("Forcibly terminating the shutdown monitoring process.")
+                monitor_process.terminate()
+
+        logging.info("Application closed successfully.")
+
 
 if __name__ == "__main__":
     main()
