@@ -1,4 +1,5 @@
 import os
+import threading
 import time  
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -9,6 +10,7 @@ import psutil
 import tkinter as tk
 from tkinter import filedialog, scrolledtext, TclError
 from tkinter import ttk  
+import queue
 from ttkthemes import ThemedTk  
 
 # Path to the WinPython Python executable and VS Code.exe
@@ -111,6 +113,14 @@ class TabManager:
 
         tab.close()  
 
+    def close_all_tabs(self):
+        """Close all tabs and clean up resources."""
+        print("[INFO] Closing all tabs.")
+        for tab_id in list(self.tabs.keys()):  # Copy keys to avoid runtime modification issues
+            print(f"[INFO] Closing tab with ID {tab_id}.")
+            self.close_tab(tab_id)
+        print("[INFO] All tabs closed.")
+
     def on_tab_right_click(self, event):
         """Handle right-click to close a tab."""
         try:
@@ -190,15 +200,24 @@ class ScriptTab(Tab):
         super().close()
 
     def run_script(self):
-        """Run the script using the ProcessTracker."""
+        """Run the script using ProcessTracker."""
         command = [str(pythonw_path.resolve()), "-u", str(self.script_path.resolve())]
         self.process_tracker.start_process(
-            tab_id=self.tab_id,  # Use the tab's ID
-            command=command,  # Command to execute the script
-            stdout_callback=self._insert_output,  # Pass the method to handle stdout
-            stderr_callback=self._insert_output,  # Pass the method to handle stderr
-            script_name=self.script_path.name  # Provide the script name
+            tab_id=self.tab_id,
+            command=command,
+            stdout_callback=self._insert_stdout,
+            stderr_callback=self._insert_stderr,
+            script_name=self.script_path.name,
         )
+
+    # TODO may not be best place for these
+    def _insert_stdout(self, text):
+        """Safely insert stdout text into the widget."""
+        self.frame.after(0, lambda: self.text_widget.insert(tk.END, text))
+
+    def _insert_stderr(self, text):
+        """Safely insert stderr text into the widget."""
+        self.frame.after(0, lambda: self.text_widget.insert(tk.END, text))
 
     def edit_script(self):
         """Open the script in VSCode for editing."""
@@ -515,22 +534,20 @@ class ScriptLauncherApp:
 
     def on_close(self):
         """Handle application shutdown."""
-        self.process_tracker.terminate_all_processes()
-        self.root.destroy()
+        print("[INFO] Shutting down application.")
+        self.tab_manager.close_all_tabs()  # Close all tabs first
+        self.root.destroy()  # Destroy the main window
+        print("[INFO] Application closed successfully.")
 
 class ProcessTracker:
     def __init__(self):
         """Initialize the ProcessTracker with a thread pool executor."""
-        self.executor = ThreadPoolExecutor(max_workers=4)
-        self.processes: Dict[int, subprocess.Popen] = {}  # Map tab_id to process
-
-    def start_process(self, 
-                      tab_id: int, 
-                      command: list, 
-                      stdout_callback: Callable[[str], None], 
-                      stderr_callback: Callable[[str], None], 
-                      script_name: Optional[str] = None) -> None:
-        """Start a process and track it."""
+        self.processes = {}  # Maps tab_id to process metadata
+        self.queues = {}  # Maps tab_id to queues for stdout and stderr
+        self.lock = threading.Lock()
+    
+    def start_process(self, tab_id, command, stdout_callback, stderr_callback, script_name=None):
+        """Start a subprocess and manage its I/O."""
         try:
             process = subprocess.Popen(
                 command,
@@ -539,107 +556,155 @@ class ProcessTracker:
                 text=True,
                 bufsize=1,
             )
-            # Store metadata dictionary in self.processes
-            self.processes[tab_id] = {
-                "process": process,
-                "script_name": script_name or "Unknown",
+            print(f"[INFO] Started process: {script_name}, PID: {process.pid}, Tab ID: {tab_id}")
+
+            self.processes[tab_id] = {"process": process, "script_name": script_name or "Unknown"}
+            
+            # Create queues for communication
+            self.queues[tab_id] = {
+                "stdout": queue.Queue(),
+                "stderr": queue.Queue(),
+                "stop_event": threading.Event()
             }
 
-            # Submit tasks to read stdout and stderr asynchronously
-            if process.stdout:
-                self.executor.submit(self._read_output, process.stdout, stdout_callback)
-            if process.stderr:
-                self.executor.submit(self._read_output, process.stderr, stderr_callback)
+            # Start threads for stdout and stderr reading
+            threading.Thread(
+                target=self._read_output,
+                args=(process.stdout, self.queues[tab_id]["stdout"], tab_id, "stdout"),
+                daemon=True,
+                name=f"StdoutThread-{tab_id}"
+            ).start()
+
+            threading.Thread(
+                target=self._read_output,
+                args=(process.stderr, self.queues[tab_id]["stderr"], tab_id, "stderr"),
+                daemon=True,
+                name=f"StderrThread-{tab_id}"
+            ).start()
+
+            # Start dispatcher threads to process queues and invoke callbacks
+            threading.Thread(
+                target=self._dispatch_queue,
+                args=(self.queues[tab_id]["stdout"], stdout_callback),
+                daemon=True,
+                name=f"DispatcherStdout-{tab_id}"
+            ).start()
+
+            threading.Thread(
+                target=self._dispatch_queue,
+                args=(self.queues[tab_id]["stderr"], stderr_callback),
+                daemon=True,
+                name=f"DispatcherStderr-{tab_id}"
+            ).start()
+
         except Exception as e:
             print(f"[ERROR] Failed to start process for Tab ID {tab_id}: {e}")
 
-    def _read_output(self, stream, callback: Callable[[str], None]) -> None:
-        """Read the output from a stream line by line and invoke a callback. """
+    def _read_output(self, stream, q, tab_id, stream_name):
+        """Read subprocess output and write lines to a queue."""
+        print(f"[INFO] Starting output reader for {stream_name}, Tab ID: {tab_id}")
         try:
             for line in iter(stream.readline, ""):
-                callback(line)
+                if self.queues[tab_id]["stop_event"].is_set():
+                    print(f"[INFO] Stop event triggered for {stream_name}, Tab ID: {tab_id}")
+                    break
+                print(f"[DEBUG] {stream_name} line read (Tab ID {tab_id}): {line.strip()}")
+                q.put(line)
             stream.close()
         except Exception as e:
-            print(f"[ERROR] Error reading output: {e}")
+            print(f"[ERROR] Error reading {stream_name} for Tab ID {tab_id}: {e}")
+        finally:
+            q.put(None)  # Sentinel to indicate EOF
+            print(f"[INFO] Output reader for {stream_name} finished, Tab ID: {tab_id}")
 
-    def terminate_process(self, tab_id: int) -> None:
-        """Terminate the process associated with a given tab ID."""
-        metadata = self.processes.pop(tab_id, None)
-        if not metadata:
-            print(f"[INFO] No process found for Tab ID {tab_id}. It may have already been terminated.")
-            return
+    def _dispatch_queue(self, q, callback):
+        """Consume items from the queue and invoke the callback."""
+        print("[INFO] Starting dispatcher thread.")
+        while True:
+            try:
+                line = q.get(timeout=1)  # Avoid indefinite blocking
+                print("[DEBUG] Dispatcher received line from queue.")
+            except queue.Empty:
+                # Check for shutdown periodically
+                if any(queue_data["stop_event"].is_set() for queue_data in self.queues.values()):
+                    print("[INFO] Dispatcher stopping due to stop event.")
+                    break
+                continue
 
-        process = metadata["process"]  # Extract the Popen object
-        script_name = metadata.get("script_name", "Unknown")
-        try:
-            if process.poll() is None:  # Process is still running
-                print(f"[INFO] Attempting to terminate process (Tab ID: {tab_id}, Script: {script_name}, PID: {process.pid}).")
+            if line is None:  # Sentinel for end-of-stream
+                print("[INFO] Dispatcher received EOF sentinel. Exiting.")
+                break
+
+            callback(line)
+
+    def terminate_process(self, tab_id):
+        """Terminate the process for a given tab ID."""
+        print(f"[INFO] Attempting to terminate process for Tab ID: {tab_id}")
+        with self.lock:
+            metadata = self.processes.pop(tab_id, None)
+            if not metadata:
+                print(f"[INFO] No process found for Tab ID {tab_id}.")
+                return
+            
+            process = metadata["process"]
+            if process.poll() is None:  # Still running
+                print(f"[INFO] Terminating process for Tab ID {tab_id} (PID {process.pid}).")
                 self._terminate_process_tree(process.pid)
-            else:
-                print(f"[INFO] Process (Tab ID: {tab_id}, Script: {script_name}) has already terminated.")
-        except Exception as e:
-            print(f"[ERROR] Error terminating process for Tab ID {tab_id} (Script: {script_name}): {e}")
 
-    def terminate_all_processes(self) -> None:
-        """Terminate all tracked processes."""
-        for tab_id in list(self.processes.keys()):
-            self.terminate_process(tab_id)
+            # Signal threads to stop
+            self.queues[tab_id]["stop_event"].set()
+            print(f"[INFO] Stop event set for Tab ID: {tab_id}")
+            del self.queues[tab_id]
 
-    def _terminate_process_tree(self, pid: int, timeout: int = 5, force: bool = False) -> None:
-        """
-        Terminate a process and all its child processes. Use kill() if terminate() fails within a timeout."""
+    def terminate_all_processes(self):
+        """Terminate all subprocesses and ensure threads stop."""
+        print("[INFO] Terminating all processes.")
+        with self.lock:
+            for tab_id in list(self.processes.keys()):
+                self.terminate_process(tab_id)
+
+            # Signal all threads to stop
+            for q in self.queues.values():
+                q["stop_event"].set()
+            
+            # Clear any remaining items in the queues to unblock `Queue.get()`
+            for q in self.queues.values():
+                q["stdout"].put(None)
+                q["stderr"].put(None)
+
+        print("[INFO] All processes and threads terminated.")
+    
+    def _terminate_process_tree(self, pid, timeout=5, force=True):
+        """Terminate a process tree."""
+        print(f"[INFO] Terminating process tree for PID: {pid}")
         try:
             parent = psutil.Process(pid)
-            children = parent.children(recursive=True)  # Get all child processes
-
-            # Attempt to terminate children first
+            children = parent.children(recursive=True)
             for child in children:
                 try:
-                    print(f"[INFO] Terminating child process (PID: {child.pid})...")
-                    if not force:
-                        child.terminate()
-                        if not self._wait_for_process_termination(child, timeout):
-                            print(f"[WARNING] Child process (PID: {child.pid}) did not terminate in time. Forcing termination.")
-                            child.kill()
-                    else:
-                        child.kill()
-
-                    if not child.is_running():
-                        print(f"[INFO] Child process (PID: {child.pid}) terminated successfully.")
-                    else:
-                        print(f"[ERROR] Failed to terminate child process (PID: {child.pid}).")
+                    child.terminate()
                 except psutil.NoSuchProcess:
-                    print(f"[INFO] Child process (PID: {child.pid}) already terminated.")
-                except Exception as e:
-                    print(f"[ERROR] Error terminating child process (PID: {child.pid}): {e}")
+                    continue
 
-            # Attempt to terminate the parent process
-            print(f"[INFO] Terminating parent process (PID: {parent.pid})...")
-            if not force:
-                parent.terminate()
-                if not self._wait_for_process_termination(parent, timeout):
-                    print(f"[WARNING] Parent process (PID: {parent.pid}) did not terminate in time. Forcing termination.")
-                    parent.kill()
-            else:
-                parent.kill()
-
-            if not parent.is_running():
-                print(f"[INFO] Parent process (PID: {parent.pid}) terminated successfully.")
-            else:
-                print(f"[ERROR] Failed to terminate parent process (PID: {parent.pid}).")
+            parent.terminate()
+            gone, alive = psutil.wait_procs([parent] + children, timeout=timeout)
+            if alive and force:
+                for proc in alive:
+                    print(f"[WARNING] Forcing termination for PID: {proc.pid}")
+                    proc.kill()
         except psutil.NoSuchProcess:
-            print(f"[INFO] Process with PID {pid} not found (already terminated).")
+            print(f"[INFO] Process with PID {pid} already terminated.")
         except Exception as e:
             print(f"[ERROR] Error terminating process tree for PID {pid}: {e}")
 
-    def _wait_for_process_termination(self, process: psutil.Process, timeout: int) -> bool:
-        """ Wait for a process to terminate within the given timeout. """
+    def _wait_for_process_termination(self, process, timeout):
+        """Wait for process termination."""
         try:
-            process.wait(timeout=timeout)
+            process.wait(timeout)
             return True
         except psutil.TimeoutExpired:
             return False
-
+        
     def list_processes(self) -> Dict[int, Dict]:
         """List all tracked processes and their metadata."""
         return {
