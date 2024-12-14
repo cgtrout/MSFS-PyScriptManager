@@ -566,44 +566,79 @@ class ProcessTracker:
         """Terminate the process associated with a given tab ID."""
         metadata = self.processes.pop(tab_id, None)
         if not metadata:
-            print(f"No process found for Tab ID {tab_id}. It may have already been terminated.")
+            print(f"[INFO] No process found for Tab ID {tab_id}. It may have already been terminated.")
             return
 
         process = metadata["process"]  # Extract the Popen object
+        script_name = metadata.get("script_name", "Unknown")
         try:
             if process.poll() is None:  # Process is still running
-                print(f"Terminating process for Tab ID {tab_id}.")
+                print(f"[INFO] Attempting to terminate process (Tab ID: {tab_id}, Script: {script_name}, PID: {process.pid}).")
                 self._terminate_process_tree(process.pid)
+            else:
+                print(f"[INFO] Process (Tab ID: {tab_id}, Script: {script_name}) has already terminated.")
         except Exception as e:
-            print(f"Error terminating process for Tab ID {tab_id}: {e}")
+            print(f"[ERROR] Error terminating process for Tab ID {tab_id} (Script: {script_name}): {e}")
 
     def terminate_all_processes(self) -> None:
         """Terminate all tracked processes."""
         for tab_id in list(self.processes.keys()):
             self.terminate_process(tab_id)
 
-    def _terminate_process_tree(self, pid: int, force: bool = False) -> None:
-        """Terminate a process and all its child processes."""
+    def _terminate_process_tree(self, pid: int, timeout: int = 5, force: bool = False) -> None:
+        """
+        Terminate a process and all its child processes. Use kill() if terminate() fails within a timeout."""
         try:
             parent = psutil.Process(pid)
             children = parent.children(recursive=True)  # Get all child processes
 
-            # Terminate children first
+            # Attempt to terminate children first
             for child in children:
-                if not force:
-                    child.terminate()
-                else:
-                    child.kill()
+                try:
+                    print(f"[INFO] Terminating child process (PID: {child.pid})...")
+                    if not force:
+                        child.terminate()
+                        if not self._wait_for_process_termination(child, timeout):
+                            print(f"[WARNING] Child process (PID: {child.pid}) did not terminate in time. Forcing termination.")
+                            child.kill()
+                    else:
+                        child.kill()
 
-            # Terminate the parent process
+                    if not child.is_running():
+                        print(f"[INFO] Child process (PID: {child.pid}) terminated successfully.")
+                    else:
+                        print(f"[ERROR] Failed to terminate child process (PID: {child.pid}).")
+                except psutil.NoSuchProcess:
+                    print(f"[INFO] Child process (PID: {child.pid}) already terminated.")
+                except Exception as e:
+                    print(f"[ERROR] Error terminating child process (PID: {child.pid}): {e}")
+
+            # Attempt to terminate the parent process
+            print(f"[INFO] Terminating parent process (PID: {parent.pid})...")
             if not force:
                 parent.terminate()
+                if not self._wait_for_process_termination(parent, timeout):
+                    print(f"[WARNING] Parent process (PID: {parent.pid}) did not terminate in time. Forcing termination.")
+                    parent.kill()
             else:
                 parent.kill()
+
+            if not parent.is_running():
+                print(f"[INFO] Parent process (PID: {parent.pid}) terminated successfully.")
+            else:
+                print(f"[ERROR] Failed to terminate parent process (PID: {parent.pid}).")
         except psutil.NoSuchProcess:
-            print(f"Process with PID {pid} not found (might already be terminated).")
+            print(f"[INFO] Process with PID {pid} not found (already terminated).")
         except Exception as e:
-            print(f"Error terminating process tree for PID {pid}: {e}")
+            print(f"[ERROR] Error terminating process tree for PID {pid}: {e}")
+
+    def _wait_for_process_termination(self, process: psutil.Process, timeout: int) -> bool:
+        """ Wait for a process to terminate within the given timeout. """
+        try:
+            process.wait(timeout=timeout)
+            return True
+        except psutil.TimeoutExpired:
+            return False
 
     def list_processes(self) -> Dict[int, Dict]:
         """List all tracked processes and their metadata."""
