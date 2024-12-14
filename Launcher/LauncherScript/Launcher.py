@@ -34,24 +34,21 @@ class Tab:
     """Manages the content and behavior of an individual tab (its frame, widgets, etc.)."""
     def __init__(self, title):
         self.title = title
-        self.lock = Lock()  # Ensure thread-safe updates
 
     def initialize_frame(self, notebook):
         """Create the frame for this tab within the given notebook."""
         self.frame = ttk.Frame(notebook)
 
+    
     def insert_output(self, text):
         """Insert text into the tab's text widget in a thread-safe way."""
-        # This assumes the tab has a `self.text_widget` (defined in subclasses)
         if not hasattr(self, 'text_widget') or not self.text_widget:
             print(f"Warning: Text widget not found in tab '{self.title}'. Skipping output.")
             return
-        
-        if hasattr(self, 'text_widget') and self.text_widget:
-            with self.lock:
-                if self.text_widget.winfo_exists():
-                    # Use after to schedule the update on the main thread
-                    self.frame.after(0, lambda: self._safe_insert(text))
+
+        if self.text_widget.winfo_exists():
+            # Schedule the update on the main thread
+            self.frame.after(0, lambda: self._safe_insert(text))
 
     def _safe_insert(self, text):
         """Safely insert text into the text widget."""
@@ -239,8 +236,6 @@ class PerfTab(Tab):
     def __init__(self, title, process_tracker):
         super().__init__(title)
         self.process_tracker = process_tracker
-        self.cpu_stats = {}
-        self.cpu_stats_lock = Lock()
         self.performance_metrics_open = True
         self.text_widget = None
 
@@ -268,18 +263,16 @@ class PerfTab(Tab):
             print(f"Error initializing CPU metrics: {e}")
 
     def start_monitoring(self):
-        """Start the thread to monitor performance metrics."""
-        def update_metrics():
-            while self.performance_metrics_open:
-                try:
-                    metrics_text = self.generate_metrics_text()
-                    self.refresh_performance_metrics(metrics_text)
-                except Exception as e:
-                    print(f"Error in performance metrics update: {e}")
-                time.sleep(1)  # Update every second
+        """Start monitoring performance metrics using tkinter's after."""
+        if not self.performance_metrics_open:
+            return
 
-        self.performance_thread = Thread(target=update_metrics, daemon=True)
-        self.performance_thread.start()
+        # Update metrics
+        metrics_text = self.generate_metrics_text()
+        self.refresh_performance_metrics(metrics_text)
+
+        # Schedule the next update after 1000 ms (1 second)
+        self.frame.after(1000, self.start_monitoring)
 
     def refresh_performance_metrics(self, text):
         """Refresh the performance metrics text widget."""
@@ -304,13 +297,13 @@ class PerfTab(Tab):
 
         total_cores = psutil.cpu_count(logical=True)
 
-        # Dictionary to store cumulative CPU time and count for averaging
+        # Ensure cpu_stats exists for tracking cumulative CPU stats
         if not hasattr(self, 'cpu_stats'):
             self.cpu_stats = {}
 
         for tab_id, process_info in processes.items():
             process = process_info.get("process")
-            script_name = process_info.get("script_name", "Unknown")  
+            script_name = process_info.get("script_name", "Unknown")
 
             if process and process.pid:
                 try:
@@ -320,7 +313,7 @@ class PerfTab(Tab):
                         if tab_id not in self.cpu_stats:
                             self.cpu_stats[tab_id] = {"cumulative_cpu": 0, "count": 0}
 
-                        # Calculate normalized CPU usage (as a percentage of total cores)
+                        # Calculate current CPU usage (normalized as a percentage of total cores)
                         cpu_usage = proc.cpu_percent(interval=0.1) / total_cores
                         memory_usage = proc.memory_info().rss / (1024 ** 2)  # Convert to MB
 
@@ -333,11 +326,12 @@ class PerfTab(Tab):
                             self.cpu_stats[tab_id]["cumulative_cpu"] / self.cpu_stats[tab_id]["count"]
                         )
 
+                        # Add metrics to the output
                         metrics.append(
                             f"Script: {script_name}\n"
                             f"  PID: {process.pid}\n"
-                            f"  Average CPU Usage: {avg_cpu_usage:.2f}%\n"
                             f"  Current CPU Usage: {cpu_usage:.2f}%\n"
+                            f"  Average CPU Usage: {avg_cpu_usage:.2f}%\n"
                             f"  Memory Usage: {memory_usage:.2f} MB\n"
                         )
                     else:
@@ -350,29 +344,15 @@ class PerfTab(Tab):
         return "\n".join(metrics)
 
     def stop_performance_monitoring(self):
-        """Stop monitoring performance metrics and reset related attributes."""
-        self.performance_metrics_open = False  # Signal thread to stop
-        if hasattr(self, 'performance_thread') and self.performance_thread:
-            print("Stopping performance monitoring thread...")
-            self.performance_thread.join(timeout=2)  # Wait for the thread to stop
-            self.performance_thread = None
+        """Stop monitoring performance metrics."""
+        self.performance_metrics_open = False
 
     def create_metrics_widget(self):
         """Create and add a text widget for displaying performance metrics."""
         text_widget = tk.Text(self.frame, wrap="word")
         text_widget.pack(expand=True, fill="both")
         return text_widget
-
-    def update_cpu_stats(self, pid, cpu_percent):
-        """Update CPU stats for a specific PID."""
-        with self.cpu_stats_lock:
-            self.cpu_stats[pid] = cpu_percent
-
-    def get_cpu_stats(self):
-        """Retrieve a snapshot of CPU stats."""
-        with self.cpu_stats_lock:
-            return dict(self.cpu_stats)
-
+    
 class ScriptLauncherApp:
     def __init__(self, root):
         # Root Window Setup
@@ -550,15 +530,7 @@ class ProcessTracker:
                       stdout_callback: Callable[[str], None], 
                       stderr_callback: Callable[[str], None], 
                       script_name: Optional[str] = None) -> None:
-        """Start a process and track it.
-
-        Args:
-            tab_id (int): The ID of the tab associated with the process.
-            command (list): The command to run the process.
-            stdout_callback (Callable[[str], None]): Callback for stdout lines.
-            stderr_callback (Callable[[str], None]): Callback for stderr lines.
-            script_name (Optional[str]): Optional name of the script being run.
-        """
+        """Start a process and track it."""
         try:
             process = subprocess.Popen(
                 command,
@@ -567,7 +539,11 @@ class ProcessTracker:
                 text=True,
                 bufsize=1,
             )
-            self.processes[tab_id] = process
+            # Store metadata dictionary in self.processes
+            self.processes[tab_id] = {
+                "process": process,
+                "script_name": script_name or "Unknown",
+            }
 
             # Submit tasks to read stdout and stderr asynchronously
             if process.stdout:
@@ -578,12 +554,7 @@ class ProcessTracker:
             print(f"Failed to start process for Tab ID {tab_id}: {e}")
 
     def _read_output(self, stream, callback: Callable[[str], None]) -> None:
-        """Read the output from a stream line by line and invoke a callback.
-
-        Args:
-            stream: The output stream to read from (stdout or stderr).
-            callback: A function to call with each line of output.
-        """
+        """Read the output from a stream line by line and invoke a callback. """
         try:
             for line in iter(stream.readline, ""):
                 callback(line)
@@ -592,16 +563,13 @@ class ProcessTracker:
             print(f"Error reading output: {e}")
 
     def terminate_process(self, tab_id: int) -> None:
-        """Terminate the process associated with a given tab ID.
-
-        Args:
-            tab_id (int): The ID of the tab whose process should be terminated.
-        """
-        process = self.processes.pop(tab_id, None)
-        if not process:
+        """Terminate the process associated with a given tab ID."""
+        metadata = self.processes.pop(tab_id, None)
+        if not metadata:
             print(f"No process found for Tab ID {tab_id}. It may have already been terminated.")
             return
 
+        process = metadata["process"]  # Extract the Popen object
         try:
             if process.poll() is None:  # Process is still running
                 print(f"Terminating process for Tab ID {tab_id}.")
@@ -615,12 +583,7 @@ class ProcessTracker:
             self.terminate_process(tab_id)
 
     def _terminate_process_tree(self, pid: int, force: bool = False) -> None:
-        """Terminate a process and all its child processes.
-
-        Args:
-            pid (int): The PID of the process to terminate.
-            force (bool): Whether to forcefully kill the process.
-        """
+        """Terminate a process and all its child processes."""
         try:
             parent = psutil.Process(pid)
             children = parent.children(recursive=True)  # Get all child processes
@@ -642,13 +605,15 @@ class ProcessTracker:
         except Exception as e:
             print(f"Error terminating process tree for PID {pid}: {e}")
 
-    def list_processes(self) -> Dict[int, subprocess.Popen]:
-        """List all tracked processes.
-
-        Returns:
-            Dict[int, subprocess.Popen]: A dictionary mapping tab IDs to processes.
-        """
-        return self.processes.copy()
+    def list_processes(self) -> Dict[int, Dict]:
+        """List all tracked processes and their metadata."""
+        return {
+            tab_id: {
+                "process": metadata["process"],
+                "script_name": metadata.get("script_name", "Unknown"),
+            }
+            for tab_id, metadata in self.processes.items()
+        }
 
 # Create the main window (root) for the UI with a dark theme
 root = ThemedTk(theme="black")  # Applying dark theme using ThemedTk
