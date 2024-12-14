@@ -10,12 +10,14 @@ typedef BOOL (*SetForegroundWindow_t)(HWND);
 
 // Load necessary functions from kernel32.dll and user32.dll to manage console window behavior.
 // Returns TRUE if all functions are successfully loaded, otherwise FALSE.
-BOOL loadConsoleFunctions(GetConsoleWindow_t* getConsoleWindow, ShowWindow_t* showWindow, SetForegroundWindow_t* setForegroundWindow) {
+BOOL loadConsoleFunctions(GetConsoleWindow_t *getConsoleWindow, ShowWindow_t *showWindow, SetForegroundWindow_t *setForegroundWindow)
+{
     HMODULE kernel32 = GetModuleHandle("kernel32.dll");
     HMODULE user32 = LoadLibrary("user32.dll");
 
     // Check if the DLLs were successfully loaded
-    if (!kernel32 || !user32) return FALSE;
+    if (!kernel32 || !user32)
+        return FALSE;
 
     // Retrieve the function addresses and assign them to the function pointers.
     *getConsoleWindow = (GetConsoleWindow_t)GetProcAddress(kernel32, "GetConsoleWindow");
@@ -27,14 +29,38 @@ BOOL loadConsoleFunctions(GetConsoleWindow_t* getConsoleWindow, ShowWindow_t* sh
 }
 
 // Print an error message and restore the console window if it was minimized.
-void displayErrorAndRestoreConsole(const char* message, HWND hConsole, ShowWindow_t showWindow) {
+void displayErrorAndRestoreConsole(const char *message, HWND hConsole, ShowWindow_t showWindow)
+{
     printf("Error: %s Error code: %lu\n", message, GetLastError());
-    if (hConsole) showWindow(hConsole, SW_RESTORE);
+    if (hConsole)
+        showWindow(hConsole, SW_RESTORE);
+}
+
+// Global handle for the shutdown pipe
+HANDLE g_hShutdownPipe = NULL;
+
+// Console control handler to send a shutdown signal to the Python script.
+BOOL WINAPI ConsoleHandler(DWORD dwCtrlType)
+{
+    if (dwCtrlType == CTRL_CLOSE_EVENT || dwCtrlType == CTRL_C_EVENT || dwCtrlType == CTRL_SHUTDOWN_EVENT)
+    {
+        if (g_hShutdownPipe)
+        {
+            const char *shutdownMessage = "shutdown\n";
+            DWORD bytesWritten;
+            WriteFile(g_hShutdownPipe, shutdownMessage, strlen(shutdownMessage), &bytesWritten, NULL);
+            CloseHandle(g_hShutdownPipe);
+            g_hShutdownPipe = NULL;
+        }
+        return TRUE; // Prevent further handling
+    }
+    return FALSE;
 }
 
 // Execute a Python script using the specified interpreter path and script file path
 // Returns the exit code from the Python process, or -1 if there was an error
-int run_script(const char *pythonPath, const char *scriptPath) {
+int run_script(const char *pythonPath, const char *scriptPath)
+{
     char commandLine[512];
     snprintf(commandLine, sizeof(commandLine), "\"%s\" -u \"%s\"", pythonPath, scriptPath);
 
@@ -46,14 +72,16 @@ int run_script(const char *pythonPath, const char *scriptPath) {
     ShowWindow_t showWindow;
     SetForegroundWindow_t setForegroundWindow;
 
-    if (!loadConsoleFunctions(&getConsoleWindow, &showWindow, &setForegroundWindow)) {
+    if (!loadConsoleFunctions(&getConsoleWindow, &showWindow, &setForegroundWindow))
+    {
         printf("Error: Could not load necessary functions for managing the console window.\n");
         return -1;
     }
 
     // Retrieve the console window handle
     HWND hConsole = getConsoleWindow();
-    if (!hConsole) {
+    if (!hConsole)
+    {
         displayErrorAndRestoreConsole("Could not get console window handle.", NULL, NULL);
         return -1;
     }
@@ -71,51 +99,83 @@ int run_script(const char *pythonPath, const char *scriptPath) {
     DWORD pid = GetCurrentProcessId();
     srand((unsigned int)time(NULL)); // Seed the random number generator
     int randomSuffix = rand();       // Generate a random number
-    char pipeName[256];
-    snprintf(pipeName, sizeof(pipeName), "\\\\.\\pipe\\PythonOutputPipe_%lu_%d", pid, randomSuffix);
+
+    char outputPipeName[256];
+    snprintf(outputPipeName, sizeof(outputPipeName), "\\\\.\\pipe\\PythonOutputPipe_%lu_%d", pid, randomSuffix);
 
     HANDLE hNamedPipe = CreateNamedPipe(
-        pipeName,                 // Pipe name
-        PIPE_ACCESS_INBOUND,      // Read-only pipe
+        outputPipeName,             // Pipe name
+        PIPE_ACCESS_INBOUND,        // Read-only pipe
         PIPE_TYPE_BYTE | PIPE_WAIT, // Byte stream pipe, blocking mode
-        1,                        // Max instances
-        4096,                     // Output buffer size
-        4096,                     // Input buffer size
-        0,                        // Default timeout
-        &sa                       // Security attributes
+        1,                          // Max instances
+        4096,                       // Output buffer size
+        4096,                       // Input buffer size
+        0,                          // Default timeout
+        &sa                         // Security attributes
     );
 
-    if (hNamedPipe == INVALID_HANDLE_VALUE) {
+    if (hNamedPipe == INVALID_HANDLE_VALUE)
+    {
         displayErrorAndRestoreConsole("Failed to create named pipe.", hConsole, showWindow);
         return -1;
     }
 
-    STARTUPINFO si = { sizeof(si), 0 };
+    // Generate a unique pipe name for shutdown signaling
+    char shutdownPipeName[256];
+    snprintf(shutdownPipeName, sizeof(shutdownPipeName), "\\\\.\\pipe\\PythonShutdownPipe_%lu_%d", pid, randomSuffix);
+
+    g_hShutdownPipe = CreateNamedPipe(
+        shutdownPipeName,           // Shutdown pipe name
+        PIPE_ACCESS_OUTBOUND,       // Write-only pipe
+        PIPE_TYPE_BYTE | PIPE_WAIT, // Byte stream pipe, blocking mode
+        1,                          // Max instances
+        4096,                       // Output buffer size
+        4096,                       // Input buffer size
+        0,                          // Default timeout
+        &sa                         // Security attributes
+    );
+
+    if (g_hShutdownPipe == INVALID_HANDLE_VALUE)
+    {
+        displayErrorAndRestoreConsole("Failed to create shutdown named pipe.", hConsole, showWindow);
+        CloseHandle(hNamedPipe);
+        return -1;
+    }
+
+    // Pass the pipe names as arguments to the Python script
+    snprintf(commandLine, sizeof(commandLine),
+             "\"%s\" -u \"%s\" --output-pipe \"%s\" --shutdown-pipe \"%s\"",
+             pythonPath, scriptPath, outputPipeName, shutdownPipeName);
+
+    STARTUPINFO si = {sizeof(si), 0};
     si.dwFlags = STARTF_USESTDHANDLES;
 
     si.hStdOutput = CreateFile(
-        pipeName,
+        outputPipeName,
         GENERIC_WRITE,
         0,
         &sa,
         OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL,
-        NULL
-    );
+        NULL);
     si.hStdError = si.hStdOutput;
 
-    if (si.hStdOutput == INVALID_HANDLE_VALUE) {
+    if (si.hStdOutput == INVALID_HANDLE_VALUE)
+    {
         displayErrorAndRestoreConsole("Failed to open named pipe for the Python process.", hConsole, showWindow);
         CloseHandle(hNamedPipe);
+        CloseHandle(g_hShutdownPipe);
         return -1;
     }
 
-    PROCESS_INFORMATION pi = { 0 };
+    PROCESS_INFORMATION pi = {0};
 
     // Launch the Python process
-    if (!CreateProcess(NULL, commandLine, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+    if (!CreateProcess(NULL, commandLine, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
+    {
         displayErrorAndRestoreConsole("CreateProcess failed.", hConsole, showWindow);
         CloseHandle(hNamedPipe);
+        CloseHandle(g_hShutdownPipe);
         CloseHandle(si.hStdOutput);
         return -1;
     }
@@ -125,7 +185,7 @@ int run_script(const char *pythonPath, const char *scriptPath) {
 
     // Read the Python process's output
     printf("Reading Python script output...\n\n");
-    printf("Keep this window open to monitor launcher.py output, otherwise it is safe to close.\n");
+    printf("NOTE: Closing this window will close MSFS-PyScriptManager\n");
     printf("-------------------------------------------------------------------------------------------\n\n");
 
     // Bring the console window to the foreground and minimize it
@@ -136,9 +196,11 @@ int run_script(const char *pythonPath, const char *scriptPath) {
     char buffer[4096];
     DWORD bytesRead;
 
-    while (1) {
+    while (1)
+    {
         BOOL result = ReadFile(hNamedPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL);
-        if (!result || bytesRead == 0) break;
+        if (!result || bytesRead == 0)
+            break;
 
         buffer[bytesRead] = '\0';
         printf("%s", buffer);
@@ -149,31 +211,43 @@ int run_script(const char *pythonPath, const char *scriptPath) {
     DWORD exitCode;
     GetExitCodeProcess(pi.hProcess, &exitCode);
 
-    if (exitCode != 0) {
+    if (exitCode != 0)
+    {
         showWindow(hConsole, SW_RESTORE);
         printf("\nPython script exited with error code: %lu\n", exitCode);
-    } else {
+    }
+    else
+    {
         printf("Python script completed successfully.\n");
     }
 
     // Clean up
     CloseHandle(hNamedPipe);
+    if (g_hShutdownPipe)
+    {
+        CloseHandle(g_hShutdownPipe);
+    }
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
 
     return exitCode;
 }
 
-int main() {
+int main()
+{
     // Specify the path to the Python interpreter and the script to be executed.
-    const char* pythonPath = ".\\WinPython\\python-3.13.0rc1.amd64\\pythonw.exe";
-    const char* scriptPath = ".\\Launcher\\LauncherScript\\launcher.py";
+    const char *pythonPath = ".\\WinPython\\python-3.13.0rc1.amd64\\pythonw.exe";
+    const char *scriptPath = ".\\Launcher\\LauncherScript\\launcher.py";
+
+    // Register the console control handler
+    SetConsoleCtrlHandler(ConsoleHandler, TRUE);
 
     // Run the Python script and retrieve the exit code.
     int result = run_script(pythonPath, scriptPath);
 
     // If there was an error, prompt the user to press a key before exiting.
-    if (result != 0) {
+    if (result != 0)
+    {
         printf("Press any key to exit...\n");
         getchar();
     }
