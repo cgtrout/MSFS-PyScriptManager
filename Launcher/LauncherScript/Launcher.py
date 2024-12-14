@@ -43,7 +43,7 @@ class Tab:
     def insert_output(self, text):
         """Insert text into the tab's text widget in a thread-safe way."""
         if not hasattr(self, 'text_widget') or not self.text_widget:
-            print(f"[WARNING]Text widget not found in tab '{self.title}'. Skipping output.")
+            print(f"[WARNING] Text widget not found in tab '{self.title}'. Skipping output.")
             return
 
         if self.text_widget.winfo_exists():
@@ -56,13 +56,13 @@ class Tab:
             self.text_widget.insert(tk.END, text)
             self.text_widget.see(tk.END)  # Scroll to the end
         except Exception as e:
-            print(f"[ERROR]Issue inserting text into widget: {e}")
+            print(f"[ERROR] Issue inserting text into widget: {e}")
 
     def close(self):
         """Clean up resources associated with the tab."""
         if self.frame:
             self.frame.destroy()
-        print(f"[INFO]Tab '{self.title}' closed.")
+        print(f"[INFO] Tab '{self.title}' closed.")
 
 class TabManager:
     """ Manages the Notebook and all tabs."""
@@ -106,7 +106,7 @@ class TabManager:
         """Close a tab and clean up resources."""
         tab = self.tabs.pop(tab_id, None)
         if not tab:
-            print(f"[WARNING]Tab with ID {tab_id} not found.")
+            print(f"[WARNING] Tab with ID {tab_id} not found.")
             return
 
         tab.close()  
@@ -117,7 +117,7 @@ class TabManager:
             clicked_tab_index = self.notebook.index(f"@{event.x},{event.y}")
             self.close_tab_by_index(clicked_tab_index)
         except TclError:
-            print("[ERROR]Right-click did not occur on a valid tab. Ignoring.")
+            print("[ERROR] Right-click did not occur on a valid tab. Ignoring.")
 
     def close_tab_by_index(self, index):
         """Close a tab by its notebook index."""
@@ -128,7 +128,7 @@ class TabManager:
                     self.close_tab(tab_id)  # Use the standard close logic
                     return
         except Exception as e:
-            print(f"[ERROR]Issue closing tab by index {index}: {e}")
+            print(f"[ERROR] Issue closing tab by index {index}: {e}")
 
 class ScriptTab(Tab):
     def __init__(self, title, script_path, process_tracker):
@@ -226,11 +226,11 @@ class ScriptTab(Tab):
             stop_event = process_info.get("stop_event")
 
             if process and process.poll() is None:  # Check if the process is running
-                print(f"[INFO]Terminating process for Tab ID {self.id}.")
+                print(f"[INFO] Terminating process for Tab ID {self.id}.")
                 stop_event.set()  # Signal the threads to stop
                 self.process_tracker.terminate_process(self.id)  # Delegate cleanup to ProcessTracker
         else:
-            print(f"[WARNING]Process for Tab ID {self.id} not found. It may have already been removed.")
+            print(f"[WARNING] Process for Tab ID {self.id} not found. It may have already been removed.")
 
 class PerfTab(Tab):
     def __init__(self, title, process_tracker):
@@ -260,7 +260,7 @@ class PerfTab(Tab):
                     for child in proc.children(recursive=True):
                         child.cpu_percent(interval=0)  # Initialize for child processes
         except Exception as e:
-            print(f"[ERROR]Issue initializing CPU metrics: {e}")
+            print(f"[ERROR] Issue initializing CPU metrics: {e}")
 
     def start_monitoring(self):
         """Start monitoring performance metrics using tkinter's after."""
@@ -403,7 +403,7 @@ class ScriptLauncherApp:
     def select_and_run_script(self):
         file_path = filedialog.askopenfilename(title="Select Python Script", filetypes=[("Python Files", "*.py")])
         if not file_path:
-            print("[INFO]No file selected. Operation cancelled.")
+            print("[INFO] No file selected. Operation cancelled.")
             return
         self.load_script(Path(file_path))
 
@@ -435,10 +435,10 @@ class ScriptLauncherApp:
         
         # Check if the file exists and load it if it does
         if autoplay_path.exists():
-            print(f"[INFO]Autoplay: Loading script group from {autoplay_path}")
+            print(f"[INFO] Autoplay: Loading script group from {autoplay_path}")
             self.load_script_group_from_path(autoplay_path)
         else:
-            print("[INFO]Autoplay: No '_autoplay.script_group' file found at startup. Skipping autoplay.")
+            print("[INFO] Autoplay: No '_autoplay.script_group' file found at startup. Skipping autoplay.")
 
     def save_script_group(self):
         """Save the currently open tabs (scripts) to a .script_group file with relative paths."""
@@ -469,7 +469,7 @@ class ScriptLauncherApp:
         script_path = Path(script_path_str)
 
         if not script_path.exists():
-            print(f"[ERROR]Script '{script_path}' not found.")
+            print(f"[ERROR] Script '{script_path}' not found.")
             return
 
         # Add the script as a new tab
@@ -494,7 +494,7 @@ class ScriptLauncherApp:
         group_dir = file_path.parent
 
         if not file_path.exists():
-            print(f"[ERROR]Script group file '{file_path}' not found.")
+            print(f"[ERROR] Script group file '{file_path}' not found.")
             return
 
         with open(file_path, 'r') as f:
@@ -551,7 +551,7 @@ class ProcessTracker:
             if process.stderr:
                 self.executor.submit(self._read_output, process.stderr, stderr_callback)
         except Exception as e:
-            print(f"[ERROR]Failed to start process for Tab ID {tab_id}: {e}")
+            print(f"[ERROR] Failed to start process for Tab ID {tab_id}: {e}")
 
     def _read_output(self, stream, callback: Callable[[str], None]) -> None:
         """Read the output from a stream line by line and invoke a callback. """
@@ -560,7 +560,7 @@ class ProcessTracker:
                 callback(line)
             stream.close()
         except Exception as e:
-            print(f"[ERROR]Error reading output: {e}")
+            print(f"[ERROR] Error reading output: {e}")
 
     def terminate_process(self, tab_id: int) -> None:
         """Terminate the process associated with a given tab ID."""
