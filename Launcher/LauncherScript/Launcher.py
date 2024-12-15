@@ -1,21 +1,16 @@
-import msvcrt
 import os
 import sys
 import threading
 import time  
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Callable, Optional
 import subprocess  
 import logging
-import ctypes
 import psutil  
 import tkinter as tk
 from tkinter import filedialog, scrolledtext, TclError
 from tkinter import ttk  
 import queue
-from queue import Queue
-from queue import Empty
 from multiprocessing import Process, Event
 from ttkthemes import ThemedTk  
 
