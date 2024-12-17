@@ -15,7 +15,7 @@ def set_and_get_lvar(mf_requests, lvar, value):
     """Sets an LVAR to a specified value and retrieves the updated value."""
     req_str = f"{value} (> {lvar})"
     mf_requests.set(req_str)
-    result = mf_requests.get(f"{lvar}")
+    result = mf_requests.get(f"({lvar})")
     print(f"{lvar} set to {value}. Current value: {result}")
     return result
 

@@ -67,6 +67,14 @@ def create_lcd_text_image(text, font_size, fg_color="#FFDDAA", bg_color="#0D0705
     
     return ImageTk.PhotoImage(image)
 
+def set_and_get_lvar(mf_requests, lvar, value):
+    """Sets an LVAR to a specified value and retrieves the updated value."""
+    req_str = f"{value} (> {lvar})"
+    mf_requests.set(req_str)
+    result = mf_requests.get(f"{lvar}")
+    print(f"{lvar} set to {value}. Current value: {result}")
+    return result
+
 # Function to fetch and update frequency values for RMP1
 def fetch_values(mf_requests, label_active_value, label_stby_value):
     while True:
