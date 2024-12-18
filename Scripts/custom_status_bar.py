@@ -184,24 +184,27 @@ def initialize_simconnect():
     except Exception:
         sim_connected = False
 
-def get_simconnect_value(variable_name, default_value="N/A"):
-    """
-    Fetch a SimConnect variable from the cache.
-    If not present, add it to the tracking list and return the default value.
-    """
-
+def get_simconnect_value(variable_name, default_value="N/A", retries=10, retry_interval=0.2):
+    """ Fetch a SimConnect variable from the cache with retry logic. """
     if not sim_connected or not sm.ok:
         return "Sim Not Running"
 
-    with cache_lock:
-        if variable_name in simconnect_cache:
-            value = simconnect_cache[variable_name]
-        else:
-            variables_to_track.add(variable_name)
-            simconnect_cache[variable_name] = default_value
-            value = default_value  
+    for attempt in range(retries):
+        with cache_lock:
+            if variable_name in simconnect_cache:
+                value = simconnect_cache[variable_name]
+                if value != default_value:  # If value has been updated, return it
+                    return value
+            else:
+                print(f"DEBUG get_simconnect_value: get_simconnect_value Attempt {attempt+1}/{retries} - Adding '{variable_name}' to track list.")
+                variables_to_track.add(variable_name)
+                simconnect_cache[variable_name] = default_value
 
-    return value
+        print(f"DEBUG get_simconnect_value: Attempt {attempt+1}/{retries} - Value for '{variable_name}' not updated yet. Retrying...")
+        time.sleep(retry_interval)
+
+    print(f"DEBUG: All {retries} retries failed for '{variable_name}'. Returning default: {default_value}")
+    return default_value
 
 def simconnect_background_updater():
     """Background thread to update SimConnect variables with retry logic, including retries for 'None' values."""
