@@ -1,12 +1,15 @@
 # fenix_radio.py: shows draggable radio panel on screen showing currently set radio channels on RMP1.  
 
+import os
+print(f"Current Working Directory: {os.getcwd()}")
+
 import tkinter as tk
 import json
 import os
 from time import sleep
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
-from lib.extended_mobiflight_variable_requests import ExtendedMobiFlightVariableRequests  
+from Lib.extended_mobiflight_variable_requests import ExtendedMobiFlightVariableRequests  
 import logging
 from threading import Thread
 

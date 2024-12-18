@@ -202,13 +202,23 @@ class ScriptTab(Tab):
 
     def run_script(self):
         """Run the script using ProcessTracker."""
+        # Define the custom library path
+        lib_path = str((Path(__file__).resolve().parents[1] / "Lib").resolve())
+
+        # Set the PYTHONPATH environment variable dynamically
+        env = os.environ.copy()
+        env["PYTHONPATH"] = f"{lib_path};{env.get('PYTHONPATH', '')}"  # Add lib_path to PYTHONPATH
+
+        # Build the command
         command = [str(pythonw_path.resolve()), "-u", str(self.script_path.resolve())]
+
+        # Start the process with the updated environment
         self.process_tracker.start_process(
             tab_id=self.tab_id,
             command=command,
             stdout_callback=self._insert_stdout,
             stderr_callback=self._insert_stderr,
-            script_name=self.script_path.name,
+            script_name=self.script_path.name
         )
 
     # TODO may not be best place for these
@@ -549,6 +559,13 @@ class ProcessTracker:
     
     def start_process(self, tab_id, command, stdout_callback, stderr_callback, script_name=None):
         """Start a subprocess and manage its I/O."""
+       
+        lib_path = str((Path(__file__).resolve().parents[1] / "Lib").resolve())
+        custom_env = os.environ.copy()  # Create a local environment copy
+        custom_env["PYTHONPATH"] = f"{lib_path};{custom_env.get('PYTHONPATH', '')}"  # Add 'Lib' path
+
+
+       
         try:
             process = subprocess.Popen(
                 command,
@@ -556,6 +573,7 @@ class ProcessTracker:
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
+                env=custom_env, 
             )
             print(f"[INFO] Started process: {script_name}, PID: {process.pid}, Tab ID: {tab_id}")
 

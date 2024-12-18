@@ -3,7 +3,7 @@
 # - uses https://github.com/Koseng/MSFSPythonSimConnectMobiFlightExtension/ extension library for reading from Mobiflight
 from time import sleep
 from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
-from lib.extended_mobiflight_variable_requests import ExtendedMobiFlightVariableRequests  
+from Lib.extended_mobiflight_variable_requests import ExtendedMobiFlightVariableRequests  
 
 # Constants for LVARs
 EFB_VISIBLE_CAPT = "L:S_EFB_VISIBLE_CAPT"
