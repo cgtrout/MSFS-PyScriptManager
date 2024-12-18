@@ -12,6 +12,7 @@ import requests
 import time
 
 import threading
+from enum import Enum
 
 # Print initial message
 print("custom_status_bar: Close this window to close status bar")
@@ -40,6 +41,7 @@ DISPLAY_TEMPLATE = (
     "VAR(Zulu:, get_real_world_time, white) |" 
     "VARIF(Sim Rate:, get_sim_rate, white, is_sim_rate_accelerated) VARIF(|, '', white, is_sim_rate_accelerated)  " # Use VARIF on | to show conditionally
     "VAR(remain_label##, get_time_to_future, red) | "
+    "VAR(State:, get_simulator_state_display, green) | "
     "VAR(, get_temp, cyan)"
 )
 
@@ -68,6 +70,15 @@ future_time = None  # Time for countdown in seconds
 is_future_time_manually_set = False
 last_simbrief_generated_time = None  # Store the last loaded SimBrief time for update checks
 last_entered_time = None  # Last entered future time in HHMM format
+
+class SimulatorState(Enum):
+    MENU = "Menu"
+    IN_FLIGHT = "In Flight"
+    PAUSED = "Paused"
+    ERROR = "Error"
+
+# Global variable for current simulator state
+current_simulator_state = SimulatorState.ERROR
 
 # Shared data structures for threading
 simconnect_cache = {}
@@ -114,6 +125,10 @@ def is_sim_rate_accelerated():
         return float(rate) != 1.0  # True if the rate is not 1.0
     except Exception:
         return False  # Default to False in case of an error
+
+def get_simulator_state_display():
+    """Return the current simulator state as a string for display."""
+    return get_simulator_state()
 
 def get_temp():
     """Fetch both TAT and SAT temperatures from SimConnect, formatted with labels."""
@@ -206,6 +221,39 @@ def get_simconnect_value(variable_name, default_value="N/A", retries=10, retry_i
     print(f"DEBUG: All {retries} retries failed for '{variable_name}'. Returning default: {default_value}")
     return default_value
 
+# --- Simulator State  ---
+
+
+def update_simulator_state():
+    """
+    Use `CAMERA_STATE` to determine if the simulator is in the menu or in flight.
+    """
+    global current_simulator_state
+
+    try:
+        # Query CAMERA_STATE
+        camera_state = get_simconnect_value("CAMERA_STATE", default_value=-1)
+
+        # Determine state based on CAMERA_STATE
+        if camera_state >= 0:  # Ensure valid data
+            if camera_state <= 6:
+                current_simulator_state = SimulatorState.IN_FLIGHT
+            else:
+                current_simulator_state = SimulatorState.MENU
+        else:
+            current_simulator_state = SimulatorState.ERROR
+    except Exception as e:
+        print(f"Error querying CAMERA_STATE: {e}")
+        current_simulator_state = SimulatorState.ERROR
+
+
+
+def get_simulator_state():
+    """
+    Return the current state of the simulator.
+    """
+    return current_simulator_state.value  # Return the enum value (string)
+
 def simconnect_background_updater():
     """Background thread to update SimConnect variables with retry logic, including retries for 'None' values."""
     global sim_connected, aq
@@ -215,6 +263,8 @@ def simconnect_background_updater():
 
     while True:
         try:
+            update_simulator_state()
+
             if not sim_connected:
                 initialize_simconnect()
                 continue
@@ -250,6 +300,7 @@ def simconnect_background_updater():
                         # If all retries fail, set a default or error value
                         with cache_lock:
                             simconnect_cache[variable_name] = "Err"
+
             else:
                 print("DEBUG: SimConnect not connected. Retrying in {RECONNECT_INTERVAL}ms.")
                 time.sleep(RECONNECT_INTERVAL / 1000.0)
