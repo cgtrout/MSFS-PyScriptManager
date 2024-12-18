@@ -4,7 +4,8 @@
 
 import tkinter as tk
 from tkinter import simpledialog, messagebox
-from SimConnect import SimConnect, AircraftRequests
+from SimConnect import SimConnect
+from Lib.extended_simconnect_requests import ExtendedAircraftRequests  # Use the subclass instead
 from datetime import datetime, timezone, timedelta
 import os
 import json
@@ -194,7 +195,7 @@ def initialize_simconnect():
     global sm, aq, sim_connected
     try:
         sm = SimConnect()  # Connect to SimConnect
-        aq = AircraftRequests(sm, _time=0)
+        aq = ExceptionAircraftRequests(sm, _time=0)
         sim_connected = True
     except Exception:
         sim_connected = False
