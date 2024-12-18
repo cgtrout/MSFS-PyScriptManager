@@ -84,11 +84,11 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         # determine id and return value
         variable_id = self.sim_var_name_to_id[variableString]
         float_value = self.sim_vars[variable_id].float_value
-        print("get: %s. Return=%s", variableString, float_value)
+        #print("get: %s. Return=%s", variableString, float_value)
         return float_value
 
     def set(self, variableString):
-        print("set: %s", variableString)
+        #print("set: %s", variableString)
         self.send_command(("MF.SimVars.Set." + variableString), self.my_client)
 
     def subscribe_to_mobiflight_response(self):
