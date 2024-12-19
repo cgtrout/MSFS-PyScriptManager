@@ -670,6 +670,12 @@ class ProcessTracker:
                 print(f"[INFO] Terminating process for Tab ID {tab_id} (PID {process.pid}).")
                 self._terminate_process_tree(process.pid)
 
+            # Close the process's I/O streams
+            if process.stdout:
+                process.stdout.close()
+            if process.stderr:
+                process.stderr.close()
+
             # Signal threads to stop
             self.queues[tab_id]["stop_event"].set()
             print(f"[INFO] Stop event set for Tab ID: {tab_id}")
