@@ -228,6 +228,10 @@ def start_virtual_printer_server(printer_message_queue):
                 data += part
 
             decoded_data = data.decode('utf-8')
+            print("DEBUG: decoded_data------------\n\n")
+            print(decoded_data)
+            print("DEBUG: decoded_data------------  END \n\n")
+
             cleaned_data = re.sub(r'[\r\n]+', '\n', decoded_data)
             cleaned_data = cleaned_data.replace('\x0c', '')
             acars_message = extract_acars_message(cleaned_data)
