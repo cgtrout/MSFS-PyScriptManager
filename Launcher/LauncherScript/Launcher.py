@@ -233,7 +233,7 @@ class ScriptTab(Tab):
     def edit_script(self):
         """Open the script in VSCode for editing."""
         try:
-            subprocess.Popen([str(self.vscode_path.resolve()), str(self.script_path)])
+            subprocess.Popen([str(vscode_path.resolve()), str(self.script_path)])
             self.insert_output(f"Opening script {self.script_path} for editing in VS Code...\n")
         except Exception as e:
             self.insert_output(f"Error opening script for editing: {e}\n")
