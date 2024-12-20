@@ -234,6 +234,10 @@ def start_virtual_printer_server(printer_message_queue):
 
             cleaned_data = re.sub(r'[\r\n]+', '\n', decoded_data)
             cleaned_data = cleaned_data.replace('\x0c', '')
+            if not cleaned_data.strip():
+                print("DEBUG: Cleaned print job is empty after removing Form Feed and whitespace, ignoring.")
+                continue
+            
             acars_message = extract_acars_message(cleaned_data)
             printer_message_queue.put(acars_message)
 
