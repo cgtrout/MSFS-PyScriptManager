@@ -47,7 +47,7 @@ DISPLAY_TEMPLATE = (
 # VAR(Altitude:, get_altitude, tomato)
 
 # Configurable Variables
-SIMBRIEF_USERNAME = ""  # Enter your SimBrief username here to enable automatic lookup of flight arrival times for the countdown timer. Leave blank to disable SimBrief integration.
+SIMBRIEF_USERNAME = "cgtrout"  # Enter your SimBrief username here to enable automatic lookup of flight arrival times for the countdown timer. Leave blank to disable SimBrief integration.
 USE_SIMBRIEF_ADJUSTED_TIME = False  # Set to True for simulator-adjusted time, False for real-world time
 
 alpha_transparency_level = 0.95  # Set transparency (0.0 = fully transparent, 1.0 = fully opaque)
@@ -742,48 +742,50 @@ def save_settings(settings):
     except Exception as e:
         print(f"Error saving settings: {e}")
 
-# --- Load initial settings ---
-settings = load_settings()
-initial_x = settings.get("x", 0)
-initial_y = settings.get("y", 0)
+# Define the main function
+def main():
+    global root, display_frame
 
-print(f"DEBUG: Loaded settings - x: {initial_x}, y: {initial_y}")
+    # --- GUI Setup ---
+    root = tk.Tk()
+    root.title(WINDOW_TITLE)
+    root.overrideredirect(True)
+    root.attributes("-topmost", True)
+    root.attributes("-alpha", alpha_transparency_level)
+    root.configure(bg=DARK_BG)
 
-# --- GUI Setup ---
-root = tk.Tk()
-root.title(WINDOW_TITLE)
-root.overrideredirect(True)
-root.attributes("-topmost", True)
-root.attributes("-alpha", alpha_transparency_level)
-root.configure(bg=DARK_BG)
+    # Apply initial geometry after creating the root window
+    try:
+        # Set initial position
+        root.geometry(f"+{initial_x}+{initial_y}")
+        print(f"DEBUG: Applied geometry - x: {initial_x}, y: {initial_y}")
+    except Exception as e:
+        print(f"DEBUG: Failed to apply geometry - {e}")
 
-# Apply initial geometry after creating the root window
-try:
-    # Set initial position
-    root.geometry(f"+{initial_x}+{initial_y}")
-    print(f"DEBUG: Applied geometry - x: {initial_x}, y: {initial_y}")
-except Exception as e:
-    print(f"DEBUG: Failed to apply geometry - {e}")
+    # Bind mouse events to enable dragging of the window
+    root.bind("<Button-1>", start_move)
+    root.bind("<B1-Motion>", do_move)
+    root.bind("<ButtonRelease-1>", stop_move)
 
-# Bind mouse events to enable dragging of the window
-root.bind("<Button-1>", start_move)
-root.bind("<B1-Motion>", do_move)
-root.bind("<ButtonRelease-1>", stop_move)
+    # Frame to hold the labels
+    display_frame = tk.Frame(root, bg=DARK_BG)
+    display_frame.pack(padx=10, pady=5)
 
-# Frame to hold the labels
-display_frame = tk.Frame(root, bg=DARK_BG)
-display_frame.pack(padx=10, pady=5)
+    # --- Double click functionality for setting timer ---
+    root.bind("<Double-1>", lambda event: set_future_time())
 
-# --- Double click functionality for setting timer ---
-root.bind("<Double-1>", lambda event: set_future_time())
+    # Start the background thread
+    background_thread = threading.Thread(target=simconnect_background_updater, daemon=True)
+    background_thread.start()
 
-# Start the background thread
-background_thread = threading.Thread(target=simconnect_background_updater, daemon=True)
-background_thread.start()
+    # Start the time update loop
+    periodic_simbrief_update()
+    update_display()
 
-# Start the time update loop
-periodic_simbrief_update()
-update_display()
+    # Run the GUI event loop
+    root.mainloop()
 
-# Run the GUI event loop
-root.mainloop()
+
+# Ensure the script only runs when executed directly
+if __name__ == "__main__":
+    main()
