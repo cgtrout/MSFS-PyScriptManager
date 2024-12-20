@@ -573,7 +573,7 @@ def get_latest_simbrief_ofp_json(username):
 
     simbrief_url = f"https://www.simbrief.com/api/xml.fetcher.php?username={username}&json=1"
     try:
-        response = requests.get(simbrief_url)
+        response = requests.get(simbrief_url, timeout=5)
         if response.status_code == 200:
             return response.json()
         print(f"DEBUG: SimBrief API call failed with status code {response.status_code}")
