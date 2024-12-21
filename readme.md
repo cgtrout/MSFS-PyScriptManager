@@ -41,9 +41,9 @@
   - Uses an easily modifiable 'template' system to define variables that show on the bar.  See source file for more details.
   ![image](https://github.com/user-attachments/assets/05786688-b542-4050-95eb-1e85bf8d673d) 
 
-- **fbw_a380_checklist.py** Allows keyboard control of built in A380 checklist.
-- **fenix_disable_efb.py:** Example script that shows how LVARS can be automated.  This script will hide the EFBs on the Fenix A32x.  This script requires a Mobiflight "Wasm" module installation.
-- **fenix_radio.py:** Shows a draggable radio panel that shows RMP1 active/standby channels.
+- **fbw_a380_checklist.py** Allows keyboard control of built in A380 checklist.  This script requires a Mobiflight "Wasm" module installation.
+- **fenix_disable_efb.py:** Example script that shows how LVARS can be automated.  This script will hide the EFBs on the Fenix A32x. (Requires Mobiflight "Wasm" module).
+- **fenix_radio.py:** Shows a draggable radio panel that shows RMP1 active/standby channels. (Requires Mobiflight "Wasm" module).
 - **plot_altitude.py:** Shows a draggable graph panel of altitude - can easily be changed to other SimConnect variables.
 - **plot_joystick.py:** Show visualization of joystick and trim values state.
 
