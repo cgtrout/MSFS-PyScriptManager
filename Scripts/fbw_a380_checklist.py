@@ -1,3 +1,5 @@
+# fbw_a380_checklist - allows control of FBW A380 ECAM checklist using shift+arrow keys
+
 import keyboard  # For global key detection
 import pygetwindow as gw  # For window detection
 from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
