@@ -1,7 +1,7 @@
 import keyboard  # For global key detection
 import pygetwindow as gw  # For window detection
-from simconnect_mobiflight.mobiflight_variable_requests import MobiFlightVariableRequests
 from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
+from Lib.extended_mobiflight_variable_requests import ExtendedMobiFlightVariableRequests
 from time import sleep
 
 # Constants for LVARs (Logical Variables)
@@ -36,7 +36,7 @@ def main():
     try:
         # Initialize the SimConnect connection
         sm = SimConnectMobiFlight()
-        mf_requests = MobiFlightVariableRequests(sm)
+        mf_requests = ExtendedMobiFlightVariableRequests(sm, "fbw_a380_checklist")
 
         # Prime the library - possibly necessary to ensure the connection works properly
         altitude = mf_requests.get("(A:PLANE ALTITUDE,Feet)")
