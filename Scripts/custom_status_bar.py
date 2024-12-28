@@ -37,7 +37,7 @@ print("custom_status_bar: Close this window to close status bar")
 
 DISPLAY_TEMPLATE = (
     "VAR(Sim:, get_sim_time, yellow) | "
-    "VAR(Zulu:, get_real_world_time, white) |" 
+    "VAR(Zulu:, get_real_world_time, white) |"
     "VARIF(Sim Rate:, get_sim_rate, white, is_sim_rate_accelerated) VARIF(|, '', white, is_sim_rate_accelerated)  " # Use VARIF on | to show conditionally
     "VAR(remain_label##, get_time_to_future, red) | "
     "VAR(, get_temp, cyan)"
@@ -54,9 +54,9 @@ alpha_transparency_level = 0.95  # Set transparency (0.0 = fully transparent, 1.
 WINDOW_TITLE = "Simulator Time"
 DARK_BG = "#000000"
 FONT = ("Helvetica", 16)
-UPDATE_INTERVAL = 1000  # in milliseconds 
-RECONNECT_INTERVAL = 1000  # in milliseconds 
-SIMBRIEF_UPDATE_INTERVAL = 15000  # in milliseconds 
+UPDATE_INTERVAL = 1000  # in milliseconds
+RECONNECT_INTERVAL = 1000  # in milliseconds
+SIMBRIEF_UPDATE_INTERVAL = 15000  # in milliseconds
 
 PADDING_X = 20  # Horizontal padding for each label
 PADDING_Y = 10  # Vertical padding for the window
@@ -72,18 +72,18 @@ last_entered_time = None  # Last entered future time in HHMM format
 # Shared data structures for threading
 simconnect_cache = {}
 variables_to_track = set()
-cache_lock = threading.Lock()  
+cache_lock = threading.Lock()
 
 # --- SimConnect Lookup  ---
 def get_sim_time():
     """Fetch the simulator time from SimConnect, formatted as HH:MM:SS."""
     try:
 
-        if not sim_connected: 
+        if not sim_connected:
             return "Sim Not Running"
 
         sim_time_seconds = get_simconnect_value("ZULU_TIME")
-        
+
         if sim_time_seconds == "N/A":
             return "Loading..."
 
@@ -221,7 +221,7 @@ def simconnect_background_updater():
 
             if sim_connected:
                 # Check to see if in flight
-                if not sm.ok or sm.quit == 1: 
+                if not sm.ok or sm.quit == 1:
                     sim_connected = False
                     continue
 
@@ -264,19 +264,18 @@ def simconnect_background_updater():
         # Sleep for the update interval
         time.sleep(UPDATE_INTERVAL / 1000.0)
 
-
 def get_formatted_value(variable_names, format_string=None):
     """
     Fetch one or more SimConnect variables, apply optional formatting if provided.
-    
+
     Parameters:
     - variable_names: The SimConnect variable name(s) to retrieve (can be a single name or a list).
     - format_string: An optional string format to apply to the retrieved values.
-    
+
     Returns:
     - The formatted string, or an error message if retrieval fails.
     """
-    
+
     if not sim_connected or not sm.ok:
         return "Sim Not Running"
 
@@ -450,7 +449,7 @@ def set_future_time():
     except Exception as e:
         messagebox.showerror("Error", f"Failed to set future time: {str(e)}")
 
-# --- Template Parsing  ---
+# --- Display Update  ---
 def get_dynamic_value(function_name):
     try:
         if not function_name.strip():  # If function name is empty, return an empty string
@@ -463,7 +462,6 @@ def get_dynamic_value(function_name):
     except Exception as e:
         return "Err"
 
-# --- Display Update  ---
 def update_display():
     """Update the display based on the user-defined template."""
     global is_moving  # Ensure dragging doesn't interrupt updates
@@ -582,7 +580,6 @@ def get_latest_simbrief_ofp_json(username):
         print(f"DEBUG: Error fetching SimBrief OFP: {str(e)}")
         return None
 
-    
 def decode_timestamps(ofp_json):
     """
     Decode relevant SimBrief timestamps into datetime objects.
@@ -679,7 +676,7 @@ def periodic_simbrief_update():
                     print("DEBUG: Unable to determine SimBrief flight plan generation time.")
                 elif current_generated_time != last_simbrief_generated_time:
                     print(f"DEBUG: New SimBrief flight plan detected. Generation Time: {current_generated_time}")
-                    
+
                     # Try to reload SimBrief future time
                     if load_simbrief_future_time():  # Update only if successful
                         last_simbrief_generated_time = current_generated_time
@@ -742,7 +739,6 @@ def save_settings(settings):
     except Exception as e:
         print(f"Error saving settings: {e}")
 
-# Define the main function
 def main():
     global root, display_frame
 
@@ -784,7 +780,6 @@ def main():
 
     # Run the GUI event loop
     root.mainloop()
-
 
 # Ensure the script only runs when executed directly
 if __name__ == "__main__":
