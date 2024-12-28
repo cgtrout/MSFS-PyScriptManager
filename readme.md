@@ -18,8 +18,7 @@
 - Click the "Run Script" button to open a script. Running scripts are each shown in their own individual tabs.
 - Right click the tab header for a given script to close it.
 - Further details on the provided scripts are included further down.
-
-  <img src="https://github.com/user-attachments/assets/6dbde597-67e0-453b-8478-b096e44edd1d" alt="Description of image" width="500">
+![image](https://github.com/user-attachments/assets/b8e12084-afad-4cd8-9b4c-2ea9cbb59ff1)
 
 # Included Scripts
 - **virtual_pos_printer.py:** Allows print jobs from the Fenix A32x to show as popup 'notes' on the screen.
