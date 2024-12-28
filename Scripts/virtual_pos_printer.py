@@ -60,8 +60,8 @@ def load_settings():
     if "play_sound" not in settings:
         settings["play_sound"] = "../Data/receipt-printer-01-43872.mp3"
         updated = True
-    if "play_volume" not in settings:  
-        settings["play_volume"] = 0.5  
+    if "play_volume" not in settings:
+        settings["play_volume"] = 0.5
         updated = True
     else:
         # Ensure play_volume is within the valid range (0.0 to 1.0)
@@ -120,10 +120,10 @@ def capture_mouse_position():
     x = root.winfo_pointerx()
     y = root.winfo_pointery()
     spawn_position = (x, y)
-    
+
     settings["spawn_position"] = spawn_position
     save_settings(settings)
-    
+
     messagebox.showinfo("Position Set", f"Spawn position set to: {spawn_position}")
     print(f"Spawn position set to: {spawn_position}")
 
@@ -197,7 +197,7 @@ def process_print_queue(default_font):
             print(f"Processing message from printer queue: {message}")
             if play_sound_path:
                 play_print_sound()
-        
+
     except queue.Empty:
         pass
     except Exception as e:
@@ -214,7 +214,7 @@ def start_virtual_printer_server(printer_message_queue):
     server_socket.listen(5)
 
     print(f"Printer server is listening on {PRINTER_SERVER_ADDRESS}:{PRINTER_SERVER_PORT}\n")
-    
+
     while True:
         connection, client_address = server_socket.accept()
         print(f'Printer connection from {client_address}')
@@ -237,7 +237,7 @@ def start_virtual_printer_server(printer_message_queue):
             if not cleaned_data.strip():
                 print("DEBUG: Cleaned print job is empty after removing Form Feed and whitespace, ignoring.")
                 continue
-            
+
             acars_message = extract_acars_message(cleaned_data)
             printer_message_queue.put(acars_message)
 
@@ -337,7 +337,7 @@ def setup_printer():
         }}
 
         Write-Host " "
-        
+
         # Final sanity check: verify that the printer is assigned to the correct port
         Write-Host "Performing final check to ensure correct port assignment..."
         $assignedPort = (Get-Printer -Name $printerName).PortName
@@ -354,25 +354,27 @@ def setup_printer():
     """
 
     try:
-        # Run the PowerShell script inline (no temp file)
-        result = subprocess.run(
+        # Start the PowerShell process and capture output line by line
+        process = subprocess.Popen(
             ["powershell", "-ExecutionPolicy", "Bypass", "-Command", powershell_script],
-            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW
         )
 
-        # Output the result of the PowerShell script to the user (filtered)
-        if result.returncode == 0:
-            print(result.stdout.strip())
-        else:
-            print("An error occurred during setup. Please try again.")
-            print(f"Error details: {result.stderr}")
+        # Read output line by line as the script executes
+        for line in process.stdout:
+            print(line.strip())  # Print each line immediately
 
-    except subprocess.CalledProcessError:
-        print("An error occurred during the process. Please try again.")
+        process.wait()  # Wait for the process to complete
+        if process.returncode != 0:
+            print("An error occurred during setup. Please check the details above.")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
 
     print("----------------------------------------------------------------")
+
 
 # Initialize Tkinter
 root = tk.Tk()
@@ -402,15 +404,6 @@ root.after(100, process_print_queue, default_font)
 
 # Global keyboard shortcut for setting spawn position
 keyboard.add_hotkey('ctrl+shift+p', capture_mouse_position)
-
-# Handle termination signals (SIGINT and SIGTERM) for a graceful shutdown
-def signal_handler(sig, frame):
-    print("Shutting down...")
-    root.quit()
-    sys.exit(0)
-
-signal.signal(signal.SIGINT, signal_handler)  # Capture SIGINT (Ctrl+C)
-signal.signal(signal.SIGTERM, signal_handler)  # Capture SIGTERM
 
 # Start Tkinter main loop
 root.mainloop()
