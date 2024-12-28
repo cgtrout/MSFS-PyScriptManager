@@ -1,25 +1,27 @@
+import logging
 import os
+import queue
+import subprocess
 import sys
 import threading
-import time  
+import time
+from multiprocessing import Process, Event
 from pathlib import Path
-from typing import Dict, Callable, Optional
-import subprocess  
-import logging
-import psutil  
+from typing import Dict
+
 import tkinter as tk
 from tkinter import filedialog, scrolledtext, TclError
-from tkinter import ttk  
-import queue
-from multiprocessing import Process, Event
-from ttkthemes import ThemedTk  
+from tkinter import ttk
+
+import psutil
+from ttkthemes import ThemedTk
 
 # Path to the WinPython Python executable and VS Code.exe
 current_dir = Path(__file__).resolve().parent
 project_root = current_dir.parents[1]
 python_path = project_root / "WinPython" / "python-3.13.0rc1.amd64" / "python.exe"
-pythonw_path = python_path.with_name("pythonw.exe")  # Use pythonw.exe to prevent console window
-vscode_path = project_root / "WinPython" / "VS Code.exe"  # Dynamically calculated path to VS Code.exe
+pythonw_path = python_path.with_name("pythonw.exe")
+vscode_path = project_root / "WinPython" / "VS Code.exe"
 scripts_path = project_root / "Scripts"
 
 # Define color constants
@@ -37,12 +39,13 @@ class Tab:
     """Manages the content and behavior of an individual tab (its frame, widgets, etc.)."""
     def __init__(self, title):
         self.title = title
+        self.text_widget = None
+        self.frame = None
 
     def initialize_frame(self, notebook):
         """Create the frame for this tab within the given notebook."""
         self.frame = ttk.Frame(notebook)
 
-    
     def insert_output(self, text):
         """Insert text into the tab's text widget in a thread-safe way."""
         if not hasattr(self, 'text_widget') or not self.text_widget:
@@ -68,16 +71,12 @@ class Tab:
         print(f"[INFO] Tab '{self.title}' closed.")
 
 class TabManager:
-    """ Manages the Notebook and all tabs."""
+    """Manages the Notebook and all tabs."""
     def __init__(self, root):
         self.notebook = ttk.Notebook(root)
         self.configure_notebook()
         self.notebook.pack(expand=True, fill="both", padx=5, pady=5)
         self.tabs = {}
-        self.current_tab_id = 0
-
-        self.processes = {}  # Stores subprocess details by tab ID
-        self.stop_events = {}  # Stores threading stop events by tab ID
         self.current_tab_id = 0  # Counter for unique tab IDs
 
     def generate_tab_id(self):
@@ -97,22 +96,28 @@ class TabManager:
 
     def add_tab(self, tab):
         """Add a new tab to the notebook."""
-        tab_id = self.generate_tab_id()
-        tab.tab_id = tab_id
-        tab.initialize_frame(self.notebook)
-        tab.build_content()
-        self.notebook.add(tab.frame, text=tab.title)
-        self.tabs[tab_id] = tab
-        self.notebook.select(tab.frame)  
-    
+
+        def _add_tab():
+            tab_id = self.generate_tab_id()  # Generate tab ID on the main thread
+            tab.tab_id = tab_id
+            tab.initialize_frame(self.notebook)
+            tab.build_content()
+            self.notebook.add(tab.frame, text=tab.title)
+            self.tabs[tab_id] = tab
+            self.notebook.select(tab.frame)
+
+        self.notebook.after(0, _add_tab)  # Schedule the entire operation on the main thread
+
     def close_tab(self, tab_id):
         """Close a tab and clean up resources."""
-        tab = self.tabs.pop(tab_id, None)
-        if not tab:
-            print(f"[WARNING] Tab with ID {tab_id} not found.")
-            return
+        def _close_tab():
+            tab = self.tabs.pop(tab_id, None)
+            if not tab:
+                print(f"[WARNING] Tab with ID {tab_id} not found.")
+                return
+            tab.close()
 
-        tab.close()  
+        self.notebook.after(0, _close_tab)  # Schedule operation on the main thread
 
     def close_all_tabs(self):
         """Close all tabs and clean up resources."""
@@ -124,24 +129,31 @@ class TabManager:
 
     def on_tab_right_click(self, event):
         """Handle right-click to close a tab."""
-        try:
-            clicked_tab_index = self.notebook.index(f"@{event.x},{event.y}")
-            self.close_tab_by_index(clicked_tab_index)
-        except TclError:
-            print("[ERROR] Right-click did not occur on a valid tab. Ignoring.")
+        def _close_tab_on_click():
+            try:
+                clicked_tab_index = self.notebook.index(f"@{event.x},{event.y}")
+                self.close_tab_by_index(clicked_tab_index)
+            except TclError:
+                print("[ERROR] Right-click did not occur on a valid tab. Ignoring.")
+
+        self.notebook.after(0, _close_tab_on_click)  # Schedule operation on the main thread
 
     def close_tab_by_index(self, index):
         """Close a tab by its notebook index."""
-        try:
-            frame = self.notebook.winfo_children()[index]
-            for tab_id, tab in self.tabs.items():
-                if tab.frame == frame:
-                    self.close_tab(tab_id)  # Use the standard close logic
-                    return
-        except Exception as e:
-            print(f"[ERROR] Issue closing tab by index {index}: {e}")
+        def _close_by_index():
+            try:
+                frame = self.notebook.winfo_children()[index]
+                for tab_id, tab in list(self.tabs.items()):
+                    if tab.frame == frame:
+                        self.close_tab(tab_id)  # Use the standard close logic
+                        return
+            except Exception as e:
+                print(f"[ERROR] Issue closing tab by index {index}: {e}")
+
+        self.notebook.after(0, _close_by_index)  # Schedule operation on the main thread
 
 class ScriptTab(Tab):
+    """Represents one running script in a tab"""
     def __init__(self, title, script_path, process_tracker):
         super().__init__(title)
         self.script_path = script_path
@@ -152,9 +164,9 @@ class ScriptTab(Tab):
         """Build the content of the ScriptTab."""
         # Create the text widget for script output
         self.text_widget = scrolledtext.ScrolledText(
-            self.frame, 
-            wrap="word", 
-            bg=TEXT_WIDGET_BG_COLOR, 
+            self.frame,
+            wrap="word",
+            bg=TEXT_WIDGET_BG_COLOR,
             fg=TEXT_WIDGET_FG_COLOR,
             insertbackground=TEXT_WIDGET_INSERT_COLOR
         )
@@ -166,28 +178,28 @@ class ScriptTab(Tab):
 
         # Add the "Edit Script" button
         edit_button = tk.Button(
-            button_frame, 
-            text="Edit Script", 
+            button_frame,
+            text="Edit Script",
             command=self.edit_script,
-            bg=BUTTON_BG_COLOR, 
+            bg=BUTTON_BG_COLOR,
             fg=BUTTON_FG_COLOR,
             activebackground=BUTTON_ACTIVE_BG_COLOR,
             activeforeground=BUTTON_ACTIVE_FG_COLOR,
-            relief="flat", 
+            relief="flat",
             highlightthickness=0
         )
         edit_button.pack(side="left", padx=5, pady=2)
 
         # Add the "Reload Script" button
         reload_button = tk.Button(
-            button_frame, 
-            text="Reload Script", 
+            button_frame,
+            text="Reload Script",
             command=self.reload_script,
-            bg=BUTTON_BG_COLOR, 
+            bg=BUTTON_BG_COLOR,
             fg=BUTTON_FG_COLOR,
             activebackground=BUTTON_ACTIVE_BG_COLOR,
             activeforeground=BUTTON_ACTIVE_FG_COLOR,
-            relief="flat", 
+            relief="flat",
             highlightthickness=0
         )
         reload_button.pack(side="left", padx=5, pady=2)
@@ -218,17 +230,34 @@ class ScriptTab(Tab):
             command=command,
             stdout_callback=self._insert_stdout,
             stderr_callback=self._insert_stderr,
+            scheduler=self.frame.after,
             script_name=self.script_path.name
         )
 
     # TODO may not be best place for these
     def _insert_stdout(self, text):
-        """Safely insert stdout text into the widget."""
-        self.frame.after(0, lambda: self.text_widget.insert(tk.END, text))
+        self._insert_text(text)
 
     def _insert_stderr(self, text):
-        """Safely insert stderr text into the widget."""
-        self.frame.after(0, lambda: self.text_widget.insert(tk.END, text))
+        self._insert_text(text)
+
+    def _insert_text(self, text):
+        """Safely insert text into the widget, handling both stdout and stderr."""
+        if self.text_widget and self.text_widget.winfo_exists():
+            self.frame.after(0, lambda: self._safe_insert(text))
+        else:
+            print(f"[WARNING] Attempt to write to a destroyed widget for Tab ID: {self.tab_id}")
+
+    def _safe_insert(self, text):
+        """Safely insert text into the text widget"""
+        try:
+            if self.text_widget and self.text_widget.winfo_exists():
+                self.text_widget.insert(tk.END, text)
+                self.text_widget.see(tk.END)  # Scroll to the end
+        except TclError as e:
+            print(f"[WARNING] _safe_insert: TclError encountered while writing to the widget: {e}")
+        except Exception as e:
+            print(f"[ERROR] _safe_insert: Unexpected exception while writing to the widget: {e}")
 
     def edit_script(self):
         """Open the script in VSCode for editing."""
@@ -243,54 +272,24 @@ class ScriptTab(Tab):
         self.process_tracker.terminate_process(self.tab_id)
         self.run_script()
 
-    def _insert_output(self, text):
-        """Insert text into the text widget."""
-        if self.text_widget and self.text_widget.winfo_exists():
-            self.frame.after(0, lambda: self.text_widget.insert(tk.END, text))
-
-    def stop_script(self):
-        """Stop the script process."""
-        process_info = self.process_tracker.get_process(self.id)
-        if process_info:
-            process = process_info.get("process")
-            stop_event = process_info.get("stop_event")
-
-            if process and process.poll() is None:  # Check if the process is running
-                print(f"[INFO] Terminating process for Tab ID {self.id}.")
-                stop_event.set()  # Signal the threads to stop
-                self.process_tracker.terminate_process(self.id)  # Delegate cleanup to ProcessTracker
-        else:
-            print(f"[WARNING] Process for Tab ID {self.id} not found. It may have already been removed.")
-
 class PerfTab(Tab):
+    """PerfTab - represents performance tab"""
     def __init__(self, title, process_tracker):
         super().__init__(title)
         self.process_tracker = process_tracker
         self.performance_metrics_open = True
         self.text_widget = None
+        self.cpu_stats = {}
 
     def build_content(self):
         """Add widgets to the performance tab."""
         self.text_widget = scrolledtext.ScrolledText(
-            self.frame, wrap="word", 
+            self.frame, wrap="word",
             bg=TEXT_WIDGET_BG_COLOR, fg=TEXT_WIDGET_FG_COLOR,
             insertbackground=TEXT_WIDGET_INSERT_COLOR
         )
         self.text_widget.pack(expand=True, fill="both")
         self.start_monitoring()
-
-    def initialize_cpu_percent(self):
-        """Initialize CPU percent measurement for each process and its children."""
-        try:
-            for tab_id, process_info in self.process_tracker.list_processes().items():
-                process = process_info.get("process")
-                if process and process.pid:
-                    proc = psutil.Process(process.pid)
-                    proc.cpu_percent(interval=0)  # Initialize CPU tracking for the parent process
-                    for child in proc.children(recursive=True):
-                        child.cpu_percent(interval=0)  # Initialize for child processes
-        except Exception as e:
-            print(f"[ERROR] Issue initializing CPU metrics: {e}")
 
     def start_monitoring(self):
         """Start monitoring performance metrics using tkinter's after."""
@@ -309,13 +308,6 @@ class PerfTab(Tab):
         if self.text_widget and self.text_widget.winfo_exists():
             self.text_widget.delete('1.0', tk.END)
             self.text_widget.insert(tk.END, text)
-
-    def safe_refresh_performance_metrics(self, text):
-        # Only update if tab and widget still exist
-        if self.performance_metrics_open and hasattr(self, 'performance_text_widget'):
-            if self.performance_text_widget.winfo_exists():
-                self.performance_text_widget.delete('1.0', tk.END)
-                self.performance_text_widget.insert(tk.END, text)
 
     def generate_metrics_text(self):
         """Generate a text representation of performance metrics with average CPU time."""
@@ -353,7 +345,8 @@ class PerfTab(Tab):
 
                         # Calculate average CPU usage
                         avg_cpu_usage = (
-                            self.cpu_stats[tab_id]["cumulative_cpu"] / self.cpu_stats[tab_id]["count"]
+                            self.cpu_stats[tab_id]["cumulative_cpu"]
+                                / self.cpu_stats[tab_id]["count"]
                         )
 
                         # Add metrics to the output
@@ -382,8 +375,9 @@ class PerfTab(Tab):
         text_widget = tk.Text(self.frame, wrap="word")
         text_widget.pack(expand=True, fill="both")
         return text_widget
-    
+
 class ScriptLauncherApp:
+    """Represents the main application for launching and managing scripts."""
     def __init__(self, root):
         # Root Window Setup
         self.root = root
@@ -431,7 +425,9 @@ class ScriptLauncherApp:
             button.pack(side=side, padx=5, pady=2)
 
     def select_and_run_script(self):
-        file_path = filedialog.askopenfilename(title="Select Python Script", filetypes=[("Python Files", "*.py")])
+        """Opens file dialog for script selection and then runs it"""
+        file_path = filedialog.askopenfilename(title="Select Python Script",
+                                               filetypes=[("Python Files", "*.py")])
         if not file_path:
             print("[INFO] No file selected. Operation cancelled.")
             return
@@ -459,16 +455,20 @@ class ScriptLauncherApp:
         self.tab_manager.add_tab(perf_tab)
 
     def autoplay_script_group(self):
-        """Automatically load a script group file named '_autoplay.script_group' located in the Scripts directory."""
+        """
+        Automatically load a script group file named '_autoplay.script_group' located in the
+        'Scripts' directory.
+        """
         # Set path to '_autoplay.script_group' within the Scripts directory
         autoplay_path = scripts_path / "_autoplay.script_group"
-        
+
         # Check if the file exists and load it if it does
         if autoplay_path.exists():
             print(f"[INFO] Autoplay: Loading script group from {autoplay_path}")
             self.load_script_group_from_path(autoplay_path)
         else:
-            print("[INFO] Autoplay: No '_autoplay.script_group' file found at startup. Skipping autoplay.")
+            print("[INFO] Autoplay: No '_autoplay.script_group' file found at startup. "
+                  "Skipping autoplay.")
 
     def save_script_group(self):
         """Save the currently open tabs (scripts) to a .script_group file with relative paths."""
@@ -491,7 +491,7 @@ class ScriptLauncherApp:
                 script_paths.append(relative_path)
 
         # Write the relative paths to the .script_group file
-        with open(file_path, 'w') as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             f.writelines(f"{path}\n" for path in script_paths)
 
     def load_script_from_path(self, script_path_str):
@@ -527,8 +527,9 @@ class ScriptLauncherApp:
             print(f"[ERROR] Script group file '{file_path}' not found.")
             return
 
-        with open(file_path, 'r') as f:
-            script_paths = [group_dir / Path(line.strip()) for line in f.readlines() if line.strip()]
+        with open(file_path, 'r', encoding="utf-8") as f:
+            script_paths = [group_dir / Path(line.strip())
+                            for line in f.readlines() if line.strip()]
 
         # Use a set to avoid loading duplicate scripts
         loaded_scripts = set()
@@ -543,29 +544,34 @@ class ScriptLauncherApp:
         """Terminate any remaining processes on app close."""
         self.process_tracker.terminate_all_processes()
 
-    def on_close(self):
+    def on_close(self, callback=None):
         """Handle application shutdown."""
         print("[INFO] Shutting down application.")
-        self.tab_manager.close_all_tabs()  # Close all tabs first
-        self.root.destroy()  # Destroy the main window
-        print("[INFO] Application closed successfully.")
+        self.tab_manager.close_all_tabs()
+
+        def finalize_shutdown():
+            print("[INFO] Application closed successfully.")
+            if callback:
+                callback()  # Execute the callback after shutdown is fully complete.
+
+        self.root.after(0, lambda: (self.root.destroy(), finalize_shutdown()))
 
 class ProcessTracker:
+    """Manages collection of processes"""
     def __init__(self):
         """Initialize the ProcessTracker with a thread pool executor."""
         self.processes = {}  # Maps tab_id to process metadata
         self.queues = {}  # Maps tab_id to queues for stdout and stderr
         self.lock = threading.Lock()
-    
-    def start_process(self, tab_id, command, stdout_callback, stderr_callback, script_name=None):
+
+    def start_process(self, tab_id, command, stdout_callback, stderr_callback, scheduler=None, script_name=None):
         """Start a subprocess and manage its I/O."""
-       
+
+        # Add Lib path
         lib_path = str((Path(__file__).resolve().parents[1] / "Lib").resolve())
         custom_env = os.environ.copy()  # Create a local environment copy
-        custom_env["PYTHONPATH"] = f"{lib_path};{custom_env.get('PYTHONPATH', '')}"  # Add 'Lib' path
+        custom_env["PYTHONPATH"] = f"{lib_path};{custom_env.get('PYTHONPATH', '')}"
 
-
-       
         try:
             process = subprocess.Popen(
                 command,
@@ -573,12 +579,12 @@ class ProcessTracker:
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
-                env=custom_env, 
+                env=custom_env,
             )
             print(f"[INFO] Started process: {script_name}, PID: {process.pid}, Tab ID: {tab_id}")
 
             self.processes[tab_id] = {"process": process, "script_name": script_name or "Unknown"}
-            
+
             # Create queues for communication
             self.queues[tab_id] = {
                 "stdout": queue.Queue(),
@@ -604,14 +610,14 @@ class ProcessTracker:
             # Start dispatcher threads to process queues and invoke callbacks
             threading.Thread(
                 target=self._dispatch_queue,
-                args=(self.queues[tab_id]["stdout"], stdout_callback),
+                args=(self.queues[tab_id]["stdout"], stdout_callback, scheduler),
                 daemon=True,
                 name=f"DispatcherStdout-{tab_id}"
             ).start()
 
             threading.Thread(
                 target=self._dispatch_queue,
-                args=(self.queues[tab_id]["stderr"], stderr_callback),
+                args=(self.queues[tab_id]["stderr"], stderr_callback, scheduler),
                 daemon=True,
                 name=f"DispatcherStderr-{tab_id}"
             ).start()
@@ -620,23 +626,30 @@ class ProcessTracker:
             print(f"[ERROR] Failed to start process for Tab ID {tab_id}: {e}")
 
     def _read_output(self, stream, q, tab_id, stream_name):
-        """Read subprocess output and write lines to a queue."""
+        """Read subprocess output line-by-line for real-time updates."""
         print(f"[INFO] Starting output reader for {stream_name}, Tab ID: {tab_id}")
         try:
-            for line in iter(stream.readline, ""):
-                if self.queues[tab_id]["stop_event"].is_set():
-                    print(f"[INFO] Stop event triggered for {stream_name}, Tab ID: {tab_id}")
+            while not self.queues[tab_id]["stop_event"].is_set():
+                line = stream.readline()  # Read one line at a time
+                if not line:  # End of stream
+                    print(f"[INFO] End of stream detected for {stream_name}, Tab ID: {tab_id}")
                     break
-                #print(f"[DEBUG] {stream_name} line read (Tab ID {tab_id}): {line.strip()}")
-                q.put(line)
-            stream.close()
+
+                # print(f"[DEBUG] Line read for {stream_name}, Tab ID {tab_id}: {line.strip()}")
+                q.put(line)  # Add line to the queue
+
         except Exception as e:
             print(f"[ERROR] Error reading {stream_name} for Tab ID {tab_id}: {e}")
         finally:
             q.put(None)  # Sentinel to indicate EOF
+            try:
+                stream.close()  # Safely close the stream
+                print(f"[INFO] {stream_name} stream closed successfully, Tab ID: {tab_id}")
+            except Exception as e:
+                print(f"[WARNING] Error closing {stream_name}: {e}")
             print(f"[INFO] Output reader for {stream_name} finished, Tab ID: {tab_id}")
 
-    def _dispatch_queue(self, q, callback):
+    def _dispatch_queue(self, q, callback, scheduler):
         """Consume items from the queue and invoke the callback."""
         print("[INFO] Starting dispatcher thread.")
         while True:
@@ -654,7 +667,8 @@ class ProcessTracker:
                 print("[INFO] Dispatcher received EOF sentinel. Exiting.")
                 break
 
-            callback(line)
+            # Use the provided scheduler to safely invoke the callback
+            scheduler(0, lambda l=line: callback(l))
 
     def terminate_process(self, tab_id):
         """Terminate the process for a given tab ID."""
@@ -664,7 +678,7 @@ class ProcessTracker:
             if not metadata:
                 print(f"[INFO] No process found for Tab ID {tab_id}.")
                 return
-            
+
             process = metadata["process"]
             if process.poll() is None:  # Still running
                 print(f"[INFO] Terminating process for Tab ID {tab_id} (PID {process.pid}).")
@@ -691,45 +705,90 @@ class ProcessTracker:
             # Signal all threads to stop
             for q in self.queues.values():
                 q["stop_event"].set()
-            
+
             # Clear any remaining items in the queues to unblock `Queue.get()`
             for q in self.queues.values():
                 q["stdout"].put(None)
                 q["stderr"].put(None)
 
         print("[INFO] All processes and threads terminated.")
-    
+
     def _terminate_process_tree(self, pid, timeout=5, force=True):
         """Terminate a process tree."""
         print(f"[INFO] Terminating process tree for PID: {pid}")
         try:
             parent = psutil.Process(pid)
+        except psutil.NoSuchProcess:
+            print(f"[INFO] Process with PID {pid} already terminated. "
+                  "Checking for orphaned children.")
+            # Attempt to clean up orphaned child processes
+            self._terminate_orphaned_children(pid)
+            return
+        except Exception as e:
+            print(f"[ERROR] Failed to initialize process PID {pid}: {e}")
+            return
+
+        try:
             children = parent.children(recursive=True)
+            print(f"[INFO] Found {len(children)} child processes for PID {pid}."
+                  f"Terminating children first.")
+
             for child in children:
                 try:
                     child.terminate()
                 except psutil.NoSuchProcess:
                     continue
+                except psutil.AccessDenied:
+                    print(f"[WARNING] Access denied to terminate child PID {child.pid}.")
 
-            parent.terminate()
-            gone, alive = psutil.wait_procs([parent] + children, timeout=timeout)
+            # Wait for all children to terminate
+            _, alive = psutil.wait_procs(children, timeout=timeout)
+
             if alive and force:
+                print(f"[WARNING] {len(alive)} child processes did not terminate. "
+                      "Forcing termination.")
                 for proc in alive:
-                    print(f"[WARNING] Forcing termination for PID: {proc.pid}")
-                    proc.kill()
-        except psutil.NoSuchProcess:
-            print(f"[INFO] Process with PID {pid} already terminated.")
-        except Exception as e:
-            print(f"[ERROR] Error terminating process tree for PID {pid}: {e}")
+                    try:
+                        proc.kill()
+                    except psutil.NoSuchProcess:
+                        continue
+                    except psutil.AccessDenied:
+                        print(f"[WARNING] Access denied to kill child PID {proc.pid}.")
 
-    def _wait_for_process_termination(self, process, timeout):
-        """Wait for process termination."""
+            # Terminate the parent process
+            parent.terminate()
+            _, alive = psutil.wait_procs([parent], timeout=timeout)
+
+            if alive and force:
+                print(f"[WARNING] Parent process PID {parent.pid} did not terminate. Forcing kill.")
+                for proc in alive:
+                    try:
+                        proc.kill()
+                    except psutil.NoSuchProcess:
+                        continue
+                    except psutil.AccessDenied:
+                        print(f"[WARNING] Access denied to kill PID {proc.pid}.")
+        except psutil.NoSuchProcess:
+            print(f"[INFO] Parent process PID {pid} already terminated during cleanup.")
+        except Exception as e:
+            print(f"[ERROR] Unexpected error terminating process tree for PID {pid}: {e}")
+
+    def _terminate_orphaned_children(self, parent_pid):
+        """Terminate orphaned children of a non-existent parent process."""
         try:
-            process.wait(timeout)
-            return True
-        except psutil.TimeoutExpired:
-            return False
-        
+            for proc in psutil.process_iter(attrs=["pid", "ppid"]):
+                if proc.info["ppid"] == parent_pid:
+                    try:
+                        proc.terminate()
+                        proc.wait(timeout=5)
+                    except psutil.NoSuchProcess:
+                        continue
+                    except Exception as e:
+                        print(f"[ERROR] Failed to terminate orphaned child PID"
+                              f"{proc.info['pid']}: {e}")
+        except Exception as e:
+            print(f"[ERROR] Error scanning for orphaned children of PID {parent_pid}: {e}")
+
     def list_processes(self) -> Dict[int, Dict]:
         """List all tracked processes and their metadata."""
         return {
@@ -752,7 +811,7 @@ logging.basicConfig(
 
 def monitor_shutdown_pipe(pipe_name, shutdown_event):
     """Monitor the named pipe for shutdown signals."""
-    logging.info(f"Monitoring shutdown pipe in subprocess. Pipe: {pipe_name}")
+    logging.info("Monitoring shutdown pipe in subprocess. Pipe: %s", pipe_name)
     try:
         with open(pipe_name, "r", encoding="utf-8") as pipe:
             logging.info("Successfully connected to the shutdown pipe.")
@@ -766,30 +825,29 @@ def monitor_shutdown_pipe(pipe_name, shutdown_event):
                         time.sleep(0.1)
                         continue
 
-                    logging.debug(f"Read line from pipe: {line}")
+                    logging.debug("Read line from pipe: %s", line)
                     if line == "shutdown":
                         logging.info("Shutdown signal received in subprocess.")
                         shutdown_event.set()  # Notify the parent process
                         return
                 except Exception as e:
-                    logging.error(f"Exception while reading pipe: {e}")
+                    logging.error("Exception while reading pipe: %s", e)
                     break
     except Exception as e:
-        logging.error(f"Failed to monitor shutdown pipe: {e}")
+        logging.error("Failed to monitor shutdown pipe: %s", e)
     finally:
         logging.info("Exiting monitor_shutdown_pipe subprocess.")
-
 
 def main():
     """Main entry point for the script."""
     args = sys.argv
-    logging.debug(f"args={args}")
+    logging.debug("args=%s", args)
 
     # Parse the --shutdown-pipe argument
     shutdown_pipe = None
     if "--shutdown-pipe" in args:
         shutdown_pipe = args[args.index("--shutdown-pipe") + 1]
-        logging.debug(f"shutdown_pipe={shutdown_pipe}")
+        logging.debug("shutdown_pipe=%s", shutdown_pipe)
     else:
         logging.info("No --shutdown-pipe argument provided. Skipping pipe-based shutdown logic.")
 
@@ -799,7 +857,8 @@ def main():
     # Start the shutdown monitoring subprocess if a pipe is provided
     monitor_process = None
     if shutdown_pipe:
-        monitor_process = Process(target=monitor_shutdown_pipe, args=(shutdown_pipe, shutdown_event))
+        monitor_process = Process(target=monitor_shutdown_pipe,
+                                  args=(shutdown_pipe, shutdown_event))
         monitor_process.start()
         logging.info("Started shutdown monitoring process.")
 
@@ -842,7 +901,6 @@ def main():
                 monitor_process.terminate()
 
         logging.info("Application closed successfully.")
-
 
 if __name__ == "__main__":
     main()
