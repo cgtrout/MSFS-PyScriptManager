@@ -79,10 +79,18 @@ class TabManager:
         self.tabs = {}
         self.current_tab_id = 0  # Counter for unique tab IDs
 
-    def generate_tab_id(self):
-        """Generate a unique tab ID."""
-        self.current_tab_id += 1
-        return self.current_tab_id
+        # Track the original name of the currently highlighted tab
+        self.current_highlighted_tab = None
+        self.original_tab_name = None
+
+        # Store drag state
+        self.drag_start_tab = None
+        self.drag_target_tab = None
+
+        # Bind events for drag-and-drop
+        self.notebook.bind("<ButtonPress-1>", self.on_tab_drag_start)
+        self.notebook.bind("<B1-Motion>", self.on_tab_drag_motion)
+        self.notebook.bind("<ButtonRelease-1>", self.on_tab_drag_release)
 
     def configure_notebook(self):
         """Configure notebook style and behavior."""
@@ -93,6 +101,85 @@ class TabManager:
 
         # Bind right-click to close tabs
         self.notebook.bind("<Button-3>", self.on_tab_right_click)
+
+    def on_tab_drag_start(self, event):
+        """Record the index of the tab being dragged."""
+        try:
+            self.drag_start_tab = self.notebook.index(f"@{event.x},{event.y}")
+            print(f"[DEBUG] Drag started on tab index: {self.drag_start_tab}")
+        except TclError:
+            self.drag_start_tab = None
+            print("[DEBUG] Drag start: No tab found under the cursor.")
+
+    def on_tab_drag_motion(self, event):
+        """Dynamically highlight the tab under the cursor."""
+        try:
+            # Get the tab currently under the cursor
+            self.drag_target_tab = self.notebook.index(f"@{event.x},{event.y}")
+
+            # If the tab under the cursor has changed, update the highlight
+            if self.drag_target_tab != self.current_highlighted_tab:
+                # Restore the original name of the previously highlighted tab
+                if self.current_highlighted_tab is not None:
+                    self.notebook.tab(
+                        self.current_highlighted_tab, text=self.original_tab_name
+                    )
+
+                # Save the original name of the new target tab
+                self.current_highlighted_tab = self.drag_target_tab
+                self.original_tab_name = self.notebook.tab(
+                    self.current_highlighted_tab, "text"
+                )
+
+                # Highlight the new target tab
+                self.notebook.tab(
+                    self.current_highlighted_tab,
+                    text=f"< {self.original_tab_name} >",
+                )
+        except TclError:
+            pass  # Cursor is outside tabs
+
+    def on_tab_drag_release(self, event):
+        """Restore tab titles and perform the tab swap."""
+        try:
+            # Restore the original tab title if it was highlighted
+            if self.current_highlighted_tab is not None:
+                self.notebook.tab(
+                    self.current_highlighted_tab, text=self.original_tab_name
+                )
+
+            # Perform the tab swap if both start and target are valid
+            if self.drag_start_tab is not None and self.drag_target_tab is not None:
+                self.swap_tabs(self.drag_start_tab, self.drag_target_tab)
+
+            # Reset the drag state
+            self.current_highlighted_tab = None
+            self.original_tab_name = None
+            self.drag_start_tab = None
+            self.drag_target_tab = None
+        except TclError as e:
+            print(f"[ERROR] Drag release failed: {e}")
+
+    def swap_tabs(self, index1, index2):
+        """Swap two tabs in the notebook."""
+        if index1 == index2:
+            print("[DEBUG] Swap not needed: Dragged tab is already in the correct position.")
+            return
+
+        tab1_frame = self.notebook.tabs()[index1]
+        tab2_frame = self.notebook.tabs()[index2]
+
+        print(f"[DEBUG] Swapping tab frames: {tab1_frame} <-> {tab2_frame}")
+
+        self.notebook.insert(index2, tab1_frame)
+        self.notebook.insert(index1, tab2_frame)
+
+        print("[DEBUG] Tabs swapped successfully.")
+
+    def generate_tab_id(self):
+        """Generate a unique tab ID."""
+        self.current_tab_id += 1
+        return self.current_tab_id
 
     def add_tab(self, tab):
         """Add a new tab to the notebook."""
