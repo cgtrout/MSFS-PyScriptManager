@@ -35,6 +35,16 @@ TEXT_WIDGET_FG_COLOR = "#FFFFFF"
 TEXT_WIDGET_INSERT_COLOR = "#FFFFFF"
 FRAME_BG_COLOR = "#2E2E2E"
 
+# Configure logging globally
+logging.basicConfig(
+    level=logging.DEBUG,  # Change to logging.DEBUG for more detailed output
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(),  # Log to console
+        logging.FileHandler("shutdown_log.txt", mode="w")  # Log to file
+    ]
+)
+
 class Tab:
     """Manages the content and behavior of an individual tab (its frame, widgets, etc.)."""
     def __init__(self, title):
@@ -72,12 +82,14 @@ class Tab:
 
 class TabManager:
     """Manages the Notebook and all tabs."""
-    def __init__(self, root):
+    def __init__(self, root, scheduler):
         self.notebook = ttk.Notebook(root)
         self.configure_notebook()
         self.notebook.pack(expand=True, fill="both", padx=5, pady=5)
         self.tabs = {}
         self.current_tab_id = 0  # Counter for unique tab IDs
+
+        self.scheduler = scheduler
 
         # Track the original name of the currently highlighted tab
         self.current_highlighted_tab = None
@@ -193,18 +205,20 @@ class TabManager:
             self.tabs[tab_id] = tab
             self.notebook.select(tab.frame)
 
-        self.notebook.after(0, _add_tab)  # Schedule the entire operation on the main thread
+        self.scheduler(0, _add_tab)  # Schedule the entire operation on the main thread
 
     def close_tab(self, tab_id):
         """Close a tab and clean up resources."""
         def _close_tab():
+            logging.debug("close_tab inner")
             tab = self.tabs.pop(tab_id, None)
             if not tab:
                 print(f"[WARNING] Tab with ID {tab_id} not found.")
                 return
             tab.close()
 
-        self.notebook.after(0, _close_tab)  # Schedule operation on the main thread
+        logging.debug("Schedule: _close_tab")
+        self.scheduler(0, _close_tab)  # Schedule operation on the main thread
 
     def close_all_tabs(self):
         """Close all tabs and clean up resources."""
@@ -223,7 +237,7 @@ class TabManager:
             except TclError:
                 print("[ERROR] Right-click did not occur on a valid tab. Ignoring.")
 
-        self.notebook.after(0, _close_tab_on_click)  # Schedule operation on the main thread
+        self.scheduler(0, _close_tab_on_click)  # Schedule operation on the main thread
 
     def close_tab_by_index(self, index):
         """Close a tab by its notebook index."""
@@ -237,7 +251,7 @@ class TabManager:
             except Exception as e:
                 print(f"[ERROR] Issue closing tab by index {index}: {e}")
 
-        self.notebook.after(0, _close_by_index)  # Schedule operation on the main thread
+        self.scheduler(0, _close_by_index)  # Schedule operation on the main thread
 
 class ScriptTab(Tab):
     """Represents one running script in a tab"""
@@ -317,7 +331,6 @@ class ScriptTab(Tab):
             command=command,
             stdout_callback=self._insert_stdout,
             stderr_callback=self._insert_stderr,
-            scheduler=self.frame.after,
             script_name=self.script_path.name
         )
 
@@ -355,9 +368,14 @@ class ScriptTab(Tab):
             self.insert_output(f"Error opening script for editing: {e}\n")
 
     def reload_script(self):
-        """Reload the script by restarting the process."""
-        self.process_tracker.terminate_process(self.tab_id)
-        self.run_script()
+        """Reload the script by terminating and restarting the process."""
+        print(f"[INFO] Reloading script for Tab ID: {self.tab_id}")
+
+        def _reload():
+            self.process_tracker.terminate_process(self.tab_id)  # Now synchronous
+            self.run_script()
+
+        self.process_tracker.scheduler(0, _reload)  # Schedule the reload process
 
 class PerfTab(Tab):
     """PerfTab - represents performance tab"""
@@ -473,8 +491,8 @@ class ScriptLauncherApp:
         # Toolbar Setup
         self.create_toolbar()
 
-        self.tab_manager = TabManager(root)
-        self.process_tracker = ProcessTracker()
+        self.tab_manager = TabManager(root, self.root.after)
+        self.process_tracker = ProcessTracker(scheduler=self.root.after)
 
         # Bind Events
         self.bind_events()
@@ -627,31 +645,29 @@ class ScriptLauncherApp:
                 loaded_scripts.add(str(absolute_path))
                 self.load_script_from_path(absolute_path)
 
-    def terminate_tracked_processes_on_close(self):
-        """Terminate any remaining processes on app close."""
-        self.process_tracker.terminate_all_processes()
-
     def on_close(self, callback=None):
         """Handle application shutdown."""
         print("[INFO] Shutting down application.")
+        logging.info("Shutting down application")
         self.tab_manager.close_all_tabs()
 
         def finalize_shutdown():
             print("[INFO] Application closed successfully.")
+            logging.info("finalize_shutdown()")
             if callback:
                 callback()  # Execute the callback after shutdown is fully complete.
 
+        logging.debug("Schedule: finalize shutdown")
         self.root.after(0, lambda: (self.root.destroy(), finalize_shutdown()))
 
 class ProcessTracker:
     """Manages collection of processes"""
-    def __init__(self):
-        """Initialize the ProcessTracker with a thread pool executor."""
+    def __init__(self, scheduler):
         self.processes = {}  # Maps tab_id to process metadata
         self.queues = {}  # Maps tab_id to queues for stdout and stderr
-        self.lock = threading.Lock()
+        self.scheduler = scheduler  # Store the scheduler
 
-    def start_process(self, tab_id, command, stdout_callback, stderr_callback, scheduler=None, script_name=None):
+    def start_process(self, tab_id, command, stdout_callback, stderr_callback, script_name=None):
         """Start a subprocess and manage its I/O."""
 
         # Add Lib path
@@ -697,14 +713,14 @@ class ProcessTracker:
             # Start dispatcher threads to process queues and invoke callbacks
             threading.Thread(
                 target=self._dispatch_queue,
-                args=(self.queues[tab_id]["stdout"], stdout_callback, scheduler),
+                args=(self.queues[tab_id]["stdout"], stdout_callback),
                 daemon=True,
                 name=f"DispatcherStdout-{tab_id}"
             ).start()
 
             threading.Thread(
                 target=self._dispatch_queue,
-                args=(self.queues[tab_id]["stderr"], stderr_callback, scheduler),
+                args=(self.queues[tab_id]["stderr"], stderr_callback),
                 daemon=True,
                 name=f"DispatcherStderr-{tab_id}"
             ).start()
@@ -736,7 +752,7 @@ class ProcessTracker:
                 print(f"[WARNING] Error closing {stream_name}: {e}")
             print(f"[INFO] Output reader for {stream_name} finished, Tab ID: {tab_id}")
 
-    def _dispatch_queue(self, q, callback, scheduler):
+    def _dispatch_queue(self, q, callback):
         """Consume items from the queue and invoke the callback."""
         print("[INFO] Starting dispatcher thread.")
         while True:
@@ -747,6 +763,7 @@ class ProcessTracker:
                 # Check for shutdown periodically
                 if any(queue_data["stop_event"].is_set() for queue_data in self.queues.values()):
                     print("[INFO] Dispatcher stopping due to stop event.")
+                    logging.debug("Dispatcher stopping due to stop event.")
                     break
                 continue
 
@@ -755,37 +772,43 @@ class ProcessTracker:
                 break
 
             # Use the provided scheduler to safely invoke the callback
-            scheduler(0, lambda l=line: callback(l))
+            self.scheduler(0, lambda l=line: callback(l))
 
     def terminate_process(self, tab_id):
         """Terminate the process for a given tab ID."""
         print(f"[INFO] Attempting to terminate process for Tab ID: {tab_id}")
-        with self.lock:
-            metadata = self.processes.pop(tab_id, None)
-            if not metadata:
-                print(f"[INFO] No process found for Tab ID {tab_id}.")
-                return
+        logging.info("[INFO] Attempting to terminate process for Tab ID: %s", tab_id)
 
-            process = metadata["process"]
-            if process.poll() is None:  # Still running
-                print(f"[INFO] Terminating process for Tab ID {tab_id} (PID {process.pid}).")
-                self._terminate_process_tree(process.pid)
+        metadata = self.processes.pop(tab_id, None)
+        if not metadata:
+            print(f"[INFO] No process found for Tab ID {tab_id}.")
+            return
 
-            # Close the process's I/O streams
-            if process.stdout:
-                process.stdout.close()
-            if process.stderr:
-                process.stderr.close()
+        process = metadata["process"]
+        if process.poll() is None:  # Still running
+            print(f"[INFO] Terminating process for Tab ID {tab_id} (PID {process.pid}).")
+            self._terminate_process_tree(process.pid)
 
-            # Signal threads to stop
+        # Close the process's I/O streams
+        if process.stdout:
+            process.stdout.close()
+        if process.stderr:
+            process.stderr.close()
+
+        # Signal threads to stop
+        if tab_id in self.queues:
             self.queues[tab_id]["stop_event"].set()
-            print(f"[INFO] Stop event set for Tab ID: {tab_id}")
             del self.queues[tab_id]
 
+        print(f"[INFO] Process for Tab ID {tab_id} terminated.")
+
     def terminate_all_processes(self):
-        """Terminate all subprocesses and ensure threads stop."""
-        print("[INFO] Terminating all processes.")
-        with self.lock:
+        """Terminate all subprocesses and ensure threads stop using the scheduler."""
+        def terminate_all():
+            print("[INFO] Terminating all processes.")
+            logging.info("[INFO] Terminating all processes.")
+
+            # Terminate each process and clean up
             for tab_id in list(self.processes.keys()):
                 self.terminate_process(tab_id)
 
@@ -798,11 +821,16 @@ class ProcessTracker:
                 q["stdout"].put(None)
                 q["stderr"].put(None)
 
-        print("[INFO] All processes and threads terminated.")
+            print("[INFO] All processes and threads terminated.")
+
+        # Schedule the cleanup in the main thread
+        # TODO never called??
+        self.scheduler(0, terminate_all)
 
     def _terminate_process_tree(self, pid, timeout=5, force=True):
         """Terminate a process tree."""
         print(f"[INFO] Terminating process tree for PID: {pid}")
+        logging.info("[INFO] Terminating process tree for PID: %s", pid)
         try:
             parent = psutil.Process(pid)
         except psutil.NoSuchProcess:
@@ -885,16 +913,6 @@ class ProcessTracker:
             }
             for tab_id, metadata in self.processes.items()
         }
-
-# Configure logging globally
-logging.basicConfig(
-    level=logging.DEBUG,  # Change to logging.DEBUG for more detailed output
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(),  # Log to console
-        logging.FileHandler("shutdown_log.txt", mode="w")  # Log to file
-    ]
-)
 
 def monitor_shutdown_pipe(pipe_name, shutdown_event):
     """Monitor the named pipe for shutdown signals."""
