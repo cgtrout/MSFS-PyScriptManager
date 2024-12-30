@@ -316,13 +316,6 @@ class ScriptTab(Tab):
 
     def run_script(self):
         """Run the script using ProcessTracker."""
-        # Define the custom library path
-        lib_path = str((Path(__file__).resolve().parents[1] / "Lib").resolve())
-
-        # Set the PYTHONPATH environment variable dynamically
-        env = os.environ.copy()
-        env["PYTHONPATH"] = f"{lib_path};{env.get('PYTHONPATH', '')}"  # Add lib_path to PYTHONPATH
-
         # Build the command
         command = [str(pythonw_path.resolve()), "-u", str(self.script_path.resolve())]
 
@@ -957,6 +950,12 @@ def main():
         logging.debug("shutdown_pipe=%s", shutdown_pipe)
     else:
         logging.info("No --shutdown-pipe argument provided. Skipping pipe-based shutdown logic.")
+
+    # Add lib_path to PYTHONPATH
+    lib_path = str((Path(__file__).resolve().parents[1] / "Lib").resolve())
+    if lib_path not in os.environ.get("PYTHONPATH", "").split(";"):
+        os.environ["PYTHONPATH"] = f"{lib_path};{os.environ.get('PYTHONPATH', '')}"
+        logging.info(f"Added '{lib_path}' to PYTHONPATH.")
 
     logging.info("Starting the application.")
 
