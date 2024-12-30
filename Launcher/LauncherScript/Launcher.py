@@ -810,31 +810,6 @@ class ProcessTracker:
 
         print(f"[INFO] Process for Tab ID {tab_id} terminated.")
 
-    def terminate_all_processes(self):
-        """Terminate all subprocesses and ensure threads stop using the scheduler."""
-        def terminate_all():
-            print("[INFO] Terminating all processes.")
-            logging.info("[INFO] Terminating all processes.")
-
-            # Terminate each process and clean up
-            for tab_id in list(self.processes.keys()):
-                self.terminate_process(tab_id)
-
-            # Signal all threads to stop
-            for q in self.queues.values():
-                q["stop_event"].set()
-
-            # Clear any remaining items in the queues to unblock `Queue.get()`
-            for q in self.queues.values():
-                q["stdout"].put(None)
-                q["stderr"].put(None)
-
-            print("[INFO] All processes and threads terminated.")
-
-        # Schedule the cleanup in the main thread
-        # TODO never called??
-        self.scheduler(0, terminate_all)
-
     def _terminate_process_tree(self, pid, timeout=5, force=True):
         """Terminate a process tree."""
         print(f"[INFO] Terminating process tree for PID: {pid}")
