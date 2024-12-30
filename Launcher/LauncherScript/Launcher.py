@@ -500,6 +500,9 @@ class ScriptLauncherApp:
         # Autoplay Scripts
         self.autoplay_script_group()
 
+        # Create a multiprocessing Event for shutdown
+        self.shutdown_event = Event()
+
     def configure_root(self):
         """Configure the main root window."""
         self.root.title("Python Script Launcher")
@@ -549,7 +552,7 @@ class ScriptLauncherApp:
 
     def bind_events(self):
         # Override close window behavior
-        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.root.protocol("WM_DELETE_WINDOW", self.on_shutdown)
 
     def open_performance_metrics_tab(self):
         """Open a new performance metrics tab."""
@@ -644,6 +647,13 @@ class ScriptLauncherApp:
             if str(absolute_path) not in loaded_scripts:
                 loaded_scripts.add(str(absolute_path))
                 self.load_script_from_path(absolute_path)
+
+    def on_shutdown(self):
+        logging.info("Shutdown signal received. Triggering shutdown_event.")
+        logging.debug(f"[DEBUG] on_shutdown shutdown_event ID: {id(self.shutdown_event)}")
+
+        # Set shutdown_event which will trigger launcher shutdown
+        self.shutdown_event.set()
 
     def on_close(self, callback=None):
         """Handle application shutdown."""
@@ -900,31 +910,39 @@ class ProcessTracker:
 def monitor_shutdown_pipe(pipe_name, shutdown_event):
     """Monitor the named pipe for shutdown signals."""
     logging.info("Monitoring shutdown pipe in subprocess. Pipe: %s", pipe_name)
-    try:
-        with open(pipe_name, "r", encoding="utf-8") as pipe:
-            logging.info("Successfully connected to the shutdown pipe.")
-            while not shutdown_event.is_set():
-                try:
-                    line = pipe.readline().strip()  # Blocking read
-                    if not line:
-                        if shutdown_event.is_set():
-                            logging.info("Shutdown event detected. Exiting monitoring loop.")
-                            break
-                        time.sleep(0.1)
-                        continue
 
-                    logging.debug("Read line from pipe: %s", line)
-                    if line == "shutdown":
-                        logging.info("Shutdown signal received in subprocess.")
-                        shutdown_event.set()  # Notify the parent process
-                        return
-                except Exception as e:
-                    logging.error("Exception while reading pipe: %s", e)
-                    break
-    except Exception as e:
-        logging.error("Failed to monitor shutdown pipe: %s", e)
-    finally:
-        logging.info("Exiting monitor_shutdown_pipe subprocess.")
+    def pipe_reader():
+        """Threaded pipe reader."""
+        try:
+            with open(pipe_name, "r", encoding="utf-8") as pipe:
+                logging.info("Successfully connected to the shutdown pipe.")
+                while not shutdown_event.is_set():
+                    try:
+                        line = pipe.readline().strip()  # Blocking call
+                        if line:
+                            logging.debug("Read line from pipe: %s", line)
+                            if line == "shutdown":
+                                logging.info("Shutdown signal received in subprocess.")
+                                shutdown_event.set()
+                                break
+                    except Exception as e:
+                        logging.error("Exception while reading pipe: %s", e)
+                        break
+        except Exception as e:
+            logging.error("Failed to monitor shutdown pipe: %s", e)
+        finally:
+            logging.info("Exiting pipe_reader thread.")
+
+    # Start the reader thread
+    reader_thread = threading.Thread(target=pipe_reader, daemon=True)
+    reader_thread.start()
+
+    # Wait for shutdown even while pipe read runs in thread
+    while not shutdown_event.is_set():
+        time.sleep(1)
+
+    logging.debug("join reader_thread")
+    reader_thread.join(timeout=1)  # Allow the thread to exit
 
 def main():
     """Main entry point for the script."""
@@ -939,34 +957,26 @@ def main():
     else:
         logging.info("No --shutdown-pipe argument provided. Skipping pipe-based shutdown logic.")
 
-    # Create a multiprocessing Event for shutdown
-    shutdown_event = Event()
+    logging.info("Starting the application.")
+
+    # Start app
+    root = ThemedTk(theme="black")
+    app = ScriptLauncherApp(root)
 
     # Start the shutdown monitoring subprocess if a pipe is provided
     monitor_process = None
     if shutdown_pipe:
         monitor_process = Process(target=monitor_shutdown_pipe,
-                                  args=(shutdown_pipe, shutdown_event))
+                                  args=(shutdown_pipe, app.shutdown_event))
         monitor_process.start()
         logging.info("Started shutdown monitoring process.")
 
-    # Define the main application shutdown logic
-    def on_shutdown():
-        logging.info("Shutdown signal received. Starting cleanup.")
-        shutdown_event.set()  # Signal the subprocess to terminate
-        app.on_close()  # Use the main application’s cleanup logic
-
     try:
-        logging.info("Starting the application.")
-        # Your main Tkinter application logic here
-        root = ThemedTk(theme="black")
-        app = ScriptLauncherApp(root)
-
         # Periodically check for the shutdown_event
         def check_shutdown():
-            if shutdown_event.is_set():
+            if app.shutdown_event.is_set():
                 logging.info("Shutdown event detected in main application.")
-                on_shutdown()
+                app.on_close()
                 return
             root.after(100, check_shutdown)  # Recheck every 100ms
 
@@ -981,7 +991,7 @@ def main():
 
         # Ensure subprocess cleanup
         if monitor_process:
-            shutdown_event.set()  # Ensure the subprocess knows to exit
+            app.shutdown_event.set()  # Ensure the subprocess knows to exit
             logging.debug("Waiting for shutdown monitoring process to exit...")
             monitor_process.join(timeout=5)
             if monitor_process.is_alive():
