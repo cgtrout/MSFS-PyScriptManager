@@ -666,6 +666,8 @@ class ProcessTracker:
         self.processes = {}  # Maps tab_id to process metadata
         self.queues = {}  # Maps tab_id to queues for stdout and stderr
         self.scheduler = scheduler  # Store the scheduler
+        self.script_name = None
+        self.queuefull_warning_issued = False
 
     def start_process(self, tab_id, command, stdout_callback, stderr_callback, script_name=None):
         """Start a subprocess and manage its I/O."""
@@ -686,12 +688,13 @@ class ProcessTracker:
             )
             print(f"[INFO] Started process: {script_name}, PID: {process.pid}, Tab ID: {tab_id}")
 
+            self.script_name = script_name
             self.processes[tab_id] = {"process": process, "script_name": script_name or "Unknown"}
 
             # Create queues for communication
             self.queues[tab_id] = {
-                "stdout": queue.Queue(),
-                "stderr": queue.Queue(),
+                "stdout": queue.Queue(maxsize=1000),
+                "stderr": queue.Queue(maxsize=1000),
                 "stop_event": threading.Event()
             }
 
@@ -739,8 +742,13 @@ class ProcessTracker:
                     break
 
                 # print(f"[DEBUG] Line read for {stream_name}, Tab ID {tab_id}: {line.strip()}")
-                q.put(line)  # Add line to the queue
+                q.put_nowait(line)
 
+        except queue.Full:
+            # Handle scenario where queue is full and times out
+            if not self.queuefull_warning_issued:
+                print(f"\n[WARNING] Queue line buffer limit reached for {self.script_name} - logging skipped.\n")
+                self.queuefull_warning_issued = True
         except Exception as e:
             print(f"[ERROR] Error reading {stream_name} for Tab ID {tab_id}: {e}")
         finally:
