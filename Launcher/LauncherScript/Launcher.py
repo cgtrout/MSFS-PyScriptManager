@@ -1,3 +1,5 @@
+# Launcher.py - main launcher app script for MSFSPyScriptManager
+
 import logging
 import os
 import queue
@@ -263,7 +265,6 @@ class ScriptTab(Tab):
 
     def build_content(self):
         """Build the content of the ScriptTab."""
-        # Create the text widget for script output
         self.text_widget = scrolledtext.ScrolledText(
             self.frame,
             wrap="word",
@@ -378,7 +379,7 @@ class ScriptTab(Tab):
         self.process_tracker.scheduler(0, _reload)  # Schedule the reload process
 
 class PerfTab(Tab):
-    """PerfTab - represents performance tab"""
+    """PerfTab - represents performance tab for monitoring performance of scripts"""
     def __init__(self, title, process_tracker):
         super().__init__(title)
         self.process_tracker = process_tracker
@@ -397,7 +398,7 @@ class PerfTab(Tab):
         self.start_monitoring()
 
     def start_monitoring(self):
-        """Start monitoring performance metrics using tkinter's after."""
+        """Start monitoring performance metrics"""
         if not self.performance_metrics_open:
             return
 
@@ -415,7 +416,7 @@ class PerfTab(Tab):
             self.text_widget.insert(tk.END, text)
 
     def generate_metrics_text(self):
-        """Generate a text representation of performance metrics with average CPU time."""
+        """Generate a text representation of performance metrics."""
         metrics = []
         processes = self.process_tracker.list_processes()
 
@@ -500,7 +501,7 @@ class ScriptLauncherApp:
         # Autoplay Scripts
         self.autoplay_script_group()
 
-        # Create a multiprocessing Event for shutdown
+        # Event for shutdown
         self.shutdown_event = Event()
 
     def configure_root(self):
@@ -671,7 +672,7 @@ class ScriptLauncherApp:
         self.root.after(0, lambda: (self.root.destroy(), finalize_shutdown()))
 
 class ProcessTracker:
-    """Manages collection of processes"""
+    """Manages runtime of collection of processes"""
     def __init__(self, scheduler):
         self.processes = {}  # Maps tab_id to process metadata
         self.queues = {}  # Maps tab_id to queues for stdout and stderr
@@ -755,7 +756,7 @@ class ProcessTracker:
                 q.put_nowait(line)
 
         except queue.Full:
-            # Handle scenario where queue is full and times out
+            # Handle scenario where queue is full
             if not self.queuefull_warning_issued:
                 print(f"\n[WARNING] Queue line buffer limit reached for {self.script_name} - logging skipped.\n")
                 self.queuefull_warning_issued = True
@@ -937,7 +938,7 @@ def monitor_shutdown_pipe(pipe_name, shutdown_event):
     reader_thread = threading.Thread(target=pipe_reader, daemon=True)
     reader_thread.start()
 
-    # Wait for shutdown even while pipe read runs in thread
+    # Wait for shutdown event while pipe read runs in thread
     while not shutdown_event.is_set():
         time.sleep(1)
 
