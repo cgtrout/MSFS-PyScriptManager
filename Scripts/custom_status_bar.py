@@ -8,6 +8,7 @@ from SimConnect import SimConnect, AircraftRequests
 from datetime import datetime, timezone, timedelta
 import os
 import json
+import re
 import requests
 import time
 
@@ -37,7 +38,7 @@ print("custom_status_bar: Close this window to close status bar")
 
 DISPLAY_TEMPLATE = (
     "VAR(Sim:, get_sim_time, yellow) | "
-    "VAR(Zulu:, get_real_world_time, white) |"
+    "VAR(Zulu:, get_real_world_time, white ) |"
     "VARIF(Sim Rate:, get_sim_rate, white, is_sim_rate_accelerated) VARIF(|, '', white, is_sim_rate_accelerated)  " # Use VARIF on | to show conditionally
     "VAR(remain_label##, get_time_to_future, red) | "
     "VAR(, get_temp, cyan)"
@@ -462,103 +463,40 @@ def get_dynamic_value(function_name):
     except Exception as e:
         return "Err"
 
-def update_display():
-    """Update the display based on the user-defined template."""
-    global is_moving  # Ensure dragging doesn't interrupt updates
-
-    if is_moving:
-        root.after(UPDATE_INTERVAL, update_display)
-        return
-
+def update_display(parser, parsed_blocks):
+    """
+    Render the parsed blocks onto the display frame
+    """
     try:
-        # Clear the frame
+        if is_moving:
+            root.after(UPDATE_INTERVAL, lambda: update_display(parser, parsed_blocks))
+
+        # Clear the existing display
         for widget in display_frame.winfo_children():
             widget.destroy()
 
-        index = 0
-        while index < len(DISPLAY_TEMPLATE):
-            # Handle VAR or VARIF blocks
-            if DISPLAY_TEMPLATE[index:index + 4] == "VAR(" or DISPLAY_TEMPLATE[index:index + 6] == "VARIF(":
-                is_varif = DISPLAY_TEMPLATE[index:index + 6] == "VARIF("
-                block_type = "VARIF" if is_varif else "VAR"
-                end_index = DISPLAY_TEMPLATE.find(")", index)
-                if end_index == -1:
-                    break  # Malformed block, exit
+        # Render each block
+        for block in parsed_blocks:
+            block_type = block["type"]
 
-                content = DISPLAY_TEMPLATE[index + len(block_type) + 1:end_index]
-                index = end_index + 1  # Move to next block
+            # Find the render function for the block type in the parser's block registry
+            render_function = parser.block_registry.get(block_type, {}).get("render")
 
-                parts = content.split(",")
-                if is_varif and len(parts) == 4:  # VARIF(label, function, color, condition)
-                    label, func_name, color, condition_func = map(str.strip, parts)
-                    condition = get_dynamic_value(condition_func)
-                    if not condition:  # Skip this block if the condition is False
-                        continue
-                elif not is_varif and len(parts) == 3:  # VAR(label, function, color)
-                    label, func_name, color = map(str.strip, parts)
-                else:
-                    continue  # Skip malformed blocks
+            # If a valid render function exists, use it to create and pack the widget
+            if render_function:
+                widget = render_function(block)
+                if widget:
+                    widget.pack(side=tk.LEFT, padx=0, pady=0)
 
-                # Process the label for ## functionality
-                if "##" in label:
-                    label = process_label_with_dynamic_functions(label)
-
-                # Handle empty functions gracefully (e.g., conditional |)
-                if not func_name:  # If function is empty, show the label only
-                    value_str = ""
-                else:
-                    # Fetch the value for the block
-                    value = get_dynamic_value(func_name)
-                    value_str = str(value) if value is not None else ""
-
-                # Skip empty dynamic values (but not labels)
-                if not label.strip() and value_str == "":
-                    continue
-
-                # Add the label and value
-                label_text = f"{label} {value_str}".strip()
-                label_widget = tk.Label(display_frame, text=label_text, fg=color, font=FONT, bg=DARK_BG)
-                label_widget.pack(side=tk.LEFT, padx=0, pady=0)
-            else:
-                # Handle static text outside of VAR or VARIF blocks
-                next_var_index = DISPLAY_TEMPLATE.find("VAR(", index)
-                next_varif_index = DISPLAY_TEMPLATE.find("VARIF(", index)
-                next_index = min(next_var_index if next_var_index != -1 else len(DISPLAY_TEMPLATE),
-                                    next_varif_index if next_varif_index != -1 else len(DISPLAY_TEMPLATE))
-
-                static_text = DISPLAY_TEMPLATE[index:next_index].strip()
-                index = next_index
-
-                # Display the static text as-is
-                if static_text:
-                    static_text_widget = tk.Label(display_frame, text=static_text, fg="white", font=FONT, bg=DARK_BG)
-                    static_text_widget.pack(side=tk.LEFT, padx=0, pady=0)
-
-        # Adjust window size
+        # Adjust the window size to fit the rendered content
         root.update_idletasks()
         root.geometry(f"{display_frame.winfo_reqwidth() + PADDING_X}x{display_frame.winfo_reqheight() + PADDING_Y}")
+
     except Exception as e:
         print(f"Error in update_display: {e}")
 
-    # Schedule next update
-    root.after(UPDATE_INTERVAL, update_display)
-
-def process_label_with_dynamic_functions(label):
-    """
-    Replace occurrences of function_name## in the label with the evaluated result of the function.
-    """
-    while "##" in label:
-        # Find the position of the first ##
-        pos = label.find("##")
-        # Extract the text before ##
-        before = label[:pos].strip()
-        # Find the last "word" (function name) before ##
-        function_name = before.split()[-1]  # Last word in the preceding text
-        # Fetch the dynamic value
-        replacement_value = get_dynamic_value(function_name)
-        # Replace `function_name##` with the result of the function call
-        label = label.replace(f"{function_name}##", str(replacement_value) if replacement_value is not None else "", 1)
-    return label
+    # Reschedule the display update
+    root.after(UPDATE_INTERVAL, lambda: update_display(parser, parsed_blocks))
 
 # --- Simbrief functionality ---
 def get_latest_simbrief_ofp_json(username):
@@ -780,13 +718,225 @@ def main():
     background_thread = threading.Thread(target=simconnect_background_updater, daemon=True)
     background_thread.start()
 
-    # Start the time update loop
-    periodic_simbrief_update()
-    update_display()
+    try:
+        # Template parser stores block definitions and handles parsing
+        template_parser = TemplateParser()
+        # Parse the template string
+        parsed_blocks = template_parser.parse_template(DISPLAY_TEMPLATE)
 
-    # Run the GUI event loop
-    root.mainloop()
+        # Start the update loop
+        update_display(template_parser, parsed_blocks)
 
-# Ensure the script only runs when executed directly
+        # Run the GUI event loop
+        root.mainloop()
+    except ValueError as e:
+        print(f"Error: {e}")
+        print("Please check your DISPLAY_TEMPLATE and try again.")
+
+class TemplateParser:
+    """
+    A parser for template strings that validates block names and parentheses,
+    and converts them into structured blocks for rendering.
+    """
+
+    def __init__(self):
+        """Initialize the parser with a block registry."""
+        self.block_registry = {
+            "VAR": {
+                "keys": ["label", "function", "color"],
+                "render": self.render_var,
+            },
+            "VARIF": {
+                "keys": ["label", "function", "color", "condition"],
+                "render": self.render_varif,
+            },
+            "STATIC_TEXT": {
+                "keys": ["value"],
+                "render": self.render_static_text,
+            },
+        }
+
+    def parse_template(self, template_string):
+        """Parse a template string into structured blocks."""
+        # Validate parentheses and block names first
+        self.validate_blocks_and_parentheses(template_string)
+
+        parsed_blocks = []
+        index = 0
+
+        while index < len(template_string):
+            # Find the next block type and its position
+            next_block_type, next_index = self.get_next_block(template_string, index)
+
+            # Handle STATIC_TEXT: Capture everything between recognized blocks
+            static_text = template_string[index:next_index].strip()
+            if static_text:
+                parsed_blocks.append({"type": "STATIC_TEXT", "value": static_text})
+
+            if next_block_type is None:
+                break
+
+            # Locate and validate the closing parenthesis for the block
+            end_index = end_index = self.find_closing_parenthesis(template_string, next_index)
+
+            # Extract and parse the block content
+            block_content = template_string[next_index + len(next_block_type) + 1 : end_index]
+            parsed_blocks.append(self.parse_block(next_block_type, block_content))
+
+            index = end_index + 1
+
+        return parsed_blocks
+
+    def get_next_block(self, template_string, index):
+        """Find the next block type and its position."""
+        next_block_type = None
+        next_index = len(template_string)
+
+        for block_type in self.block_registry:
+            if block_type != "STATIC_TEXT":
+                block_start = self.find_next_occurrence(template_string, f"{block_type}(", index)
+                if block_start != -1 and block_start < next_index:
+                    next_block_type = block_type
+                    next_index = block_start
+
+        return next_block_type, next_index
+
+    def find_next_occurrence(self, template_string, pattern, start_index):
+        """Find the next occurrence of a pattern in the template."""
+        return template_string.find(pattern, start_index)
+
+    def find_closing_parenthesis(self, template_string, start_index):
+        """Find the next closing parenthesis after the given start index."""
+        for i in range(start_index, len(template_string)):
+            if template_string[i] == ")":
+                return i
+        raise RuntimeError("No closing parenthesis found—this should have been validated earlier.")
+
+    def parse_block(self, block_type, content):
+        """Parse a block's content dynamically."""
+        keys = self.block_registry[block_type]["keys"]
+        values = list(map(str.strip, content.split(",")))
+
+        # Validate block arguments
+        if len(values) != len(keys):
+            raise ValueError(
+                f"Invalid number of arguments for {block_type}. "
+                f"Expected {len(keys)}, got {len(values)}. Content: {values}"
+            )
+
+        for key, value in zip(keys, values):
+            value = value.strip("'")
+            if ("function" in key or "condition" in key) and value and value not in globals():
+                raise ValueError(f"Function '{value}' does not exist for block {block_type}.")
+            if key == "color" and not self.is_valid_color(value):
+                raise ValueError(f"Invalid color '{value}' for block {block_type}.")
+
+        return {"type": block_type, **dict(zip(keys, values))}
+
+    def is_valid_color(self, color):
+        """Validate a Tkinter color."""
+        try:
+            tk.Label(bg=color)  # Test if the color is valid in Tkinter
+            return True
+        except tk.TclError:
+            return False
+
+    def render_var(self, block):
+        """Render a VAR block."""
+        label = self.process_label_with_dynamic_functions(block["label"])
+        value = get_dynamic_value(block["function"])
+        text = f"{label} {value}"
+        return tk.Label(display_frame, text=text, fg=block["color"], font=FONT, bg=DARK_BG)
+
+    def render_varif(self, block):
+        """Render a VARIF block."""
+        condition = get_dynamic_value(block["condition"])
+        if condition:
+            label = self.process_label_with_dynamic_functions(block["label"])
+            value = get_dynamic_value(block["function"])
+            text = f"{label} {value}"
+            return tk.Label(display_frame, text=text, fg=block["color"], font=FONT, bg=DARK_BG)
+        return None
+
+    def render_static_text(self, block):
+        """Render a STATIC_TEXT block."""
+        return tk.Label(display_frame, text=block["value"], fg="white", font=FONT, bg=DARK_BG)
+
+    def process_label_with_dynamic_functions(self, label):
+        """Replace occurrences of `function_name##` in the label with dynamic values."""
+        while "##" in label:
+            pos = label.find("##")
+            before = label[:pos].strip()
+            function_name = before.split()[-1]
+            replacement_value = get_dynamic_value(function_name)
+            label = label.replace(f"{function_name}##", str(replacement_value) if replacement_value is not None else "", 1)
+        return label
+
+    def validate_blocks_and_parentheses(self, template_string):
+        """Ensure parentheses are correctly balanced and block names are valid."""
+        def raise_error(message, position):
+            """Helper function to raise a ValueError with context."""
+            snippet = template_string[max(0, position - 20):position + 20]
+            marker = ' ' * (position - max(0, position - 20)) + '^'
+            raise ValueError(f"{message} at position {position}:\n\n{snippet}\n{marker}\n")
+
+        stack = []  # Tracks opening parentheses and their block names
+
+        # This loop scans the template string character by character to ensure:
+        # 1. All opening parentheses `(` are matched with valid block names directly before them.
+        #    - Example: "VAR(" requires "VAR" to be recognized as a valid block type.
+        # 2. All closing parentheses `)` have a matching opening parenthesis `(`.
+        #    - Ensures the parentheses are balanced.
+        # 3. Any unmatched parentheses or invalid block names raise clear, actionable errors.
+        # We use a stack to keep track of unmatched `(` and validate each `)` as we encounter them.
+
+        i = 0
+        while i < len(template_string):
+            char = template_string[i]
+
+            if char == "(":
+                # Handle an opening parenthesis
+                # Look backward to find the block name before '('
+                name_start = i - 1
+                while name_start >= 0 and (template_string[name_start].isalnum() or template_string[name_start] == "_"):
+                    name_start -= 1
+                block_name = template_string[name_start + 1:i].strip()
+
+                # Raise an error if no block name is found before '('
+                if not block_name:
+                    raise_error("Missing block name before '('", i)
+
+                # Raise an error if the block name is not recognized
+                if block_name not in self.block_registry:
+                    raise_error(f"Unsupported or misnamed block type: '{block_name}'", i)
+
+                # Push the block name and its position onto the stack
+                stack.append((block_name, i))
+
+            elif char == ")":
+                # Handle a closing parenthesis
+                # Raise an error if there's no matching opening parenthesis
+                if not stack:
+                    raise_error("Unexpected ')'", i)
+
+                # Pop the stack to match this closing parenthesis with the most recent '('
+                block_name, start_position = stack.pop()
+
+            # Increment the position to process the next character
+            i += 1
+
+        # After parsing, check for any unmatched opening parentheses left in the stack
+        if stack:
+            error_messages = []
+            for block_name, position in stack:
+                # For each unmatched '(', show its block name and position
+                snippet = template_string[max(0, position - 20):position + 20]
+                marker = ' ' * (position - max(0, position - 20)) + '^'
+                error_messages.append(f"Unmatched '(' for block '{block_name}' at position {position}:\n\n{snippet}\n{marker}")
+
+            # Raise a single error summarizing all unmatched opening parentheses
+            raise ValueError("\n\n".join(error_messages))
+
+
 if __name__ == "__main__":
     main()
