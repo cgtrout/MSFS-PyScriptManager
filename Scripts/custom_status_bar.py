@@ -742,6 +742,12 @@ def save_settings(settings):
 def main():
     global root, display_frame
 
+    # --- Load initial settings ---
+    settings = load_settings()
+    initial_x = settings.get("x", 0)
+    initial_y = settings.get("y", 0)
+    print(f"DEBUG: Loaded settings - x: {initial_x}, y: {initial_y}")
+
     # --- GUI Setup ---
     root = tk.Tk()
     root.title(WINDOW_TITLE)
