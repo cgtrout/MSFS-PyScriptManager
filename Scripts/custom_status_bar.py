@@ -400,28 +400,31 @@ def set_future_time_internal(future_time_input, current_sim_time):
 
 def set_future_time():
     """
-    Prompt the user to set a future countdown time based on Sim Time.
+    Open the CountdownTimerDialog to prompt the user to set a future countdown time based on Sim Time.
     If no input is provided, use SimBrief time based on the global `USE_SIMBRIEF_ADJUSTED_TIME` flag.
     """
     global future_time, is_future_time_manually_set, last_entered_time
+
     try:
-        # Get current simulator datetime
+        # Get the current simulator datetime
         current_sim_time = get_simulator_datetime()
-        sim_time_str = current_sim_time.strftime("%H:%M:%S")
+        if not current_sim_time:
+            messagebox.showerror("Error", "Simulator time not available. Please wait and try again.")
+            return
 
-        # Prompt the user to enter the future time in HHMM format
-        prompt_message = f"Enter future time based on Sim Time (HHMM)\nCurrent Sim Time: {sim_time_str}"
-        future_time_input = simpledialog.askstring("Input", prompt_message, initialvalue=last_entered_time, parent=root)
+        # Open the custom dialog to input the countdown time
+        dialog = CountdownTimerDialog(root, initial_time=last_entered_time)
+        root.wait_window(dialog)  # Wait for the dialog to close
 
-        # If user provides input, convert it to a datetime object
-        if future_time_input:
-            last_entered_time = future_time_input  # Save the entered time for the next prompt
+        # Handle user input from the dialog
+        if dialog.result:
+            last_entered_time = dialog.result  # Save for the next use
             try:
                 # Convert HHMM to hours and minutes
-                hours = int(future_time_input[:2])
-                minutes = int(future_time_input[2:])
+                hours = int(dialog.result[:2])
+                minutes = int(dialog.result[2:])
 
-                # Create a new datetime object with the entered time
+                # Create a datetime object for the future time
                 future_time_candidate = datetime(
                     year=current_sim_time.year,
                     month=current_sim_time.month,
@@ -431,9 +434,8 @@ def set_future_time():
                     tzinfo=timezone.utc
                 )
 
-                # Adjust for times past midnight
+                # Adjust for next day if the entered time is earlier than the current time
                 if future_time_candidate < current_sim_time:
-                    # If the entered time is earlier than the current time, assume it's for the next day
                     future_time_candidate += timedelta(days=1)
 
                 # Validate and set the future time
@@ -441,12 +443,14 @@ def set_future_time():
                 if set_future_time_internal(future_time_candidate, current_sim_time):
                     print(f"DEBUG: Future time manually set to: {future_time}")
                 else:
-                    print("DEBUG: Failed to set future time.")
+                    messagebox.showerror("Error", "Failed to set the future time.")
             except (ValueError, IndexError):
                 messagebox.showerror("Error", "Invalid time format. Please enter time in HHMM format.")
         else:
-            # If no input is provided, fallback to SimBrief time
-            load_simbrief_future_time()
+            # No input provided; fallback to SimBrief time
+            if not load_simbrief_future_time():
+                messagebox.showerror("Error", "No valid SimBrief time found. Future time remains unset.")
+
     except Exception as e:
         messagebox.showerror("Error", f"Failed to set future time: {str(e)}")
 
@@ -682,6 +686,55 @@ def main():
     except ValueError as e:
         print(f"Error: {e}")
         print("Please check your DISPLAY_TEMPLATE and try again.")
+
+class CountdownTimerDialog(tk.Toplevel):
+    """A dialog to set the countdown timer."""
+    def __init__(self, parent, initial_time=None):
+        super().__init__(parent)
+
+        # Configure dialog properties
+        self.title("Set Countdown Timer")
+        self.geometry("300x150")
+        self.transient(parent)  # Make the dialog stay on top of the parent
+        self.grab_set()  # Prevent interaction with the parent window
+
+        self.initial_time = initial_time  # Prepopulate with initial time if provided
+        self.result = None  # To store the result entered by the user
+
+        # Label and Entry for time input
+        tk.Label(self, text="Enter time (HHMM):").pack(pady=10)
+        self.time_entry = tk.Entry(self, justify="center")
+        if initial_time:
+            self.time_entry.insert(0, initial_time)  # Set default value
+        self.time_entry.pack(pady=5)
+
+        # Buttons for OK and Cancel
+        button_frame = tk.Frame(self)
+        button_frame.pack(pady=10)
+        tk.Button(button_frame, text="OK", command=self.on_ok).pack(side="left", padx=5)
+        tk.Button(button_frame, text="Cancel", command=self.on_cancel).pack(side="right", padx=5)
+
+    def on_ok(self):
+        """Validate and store the entered time."""
+        time_text = self.time_entry.get().strip()
+        if self.validate_time_format(time_text):
+            self.result = time_text  # Store the valid result
+            self.destroy()  # Close the dialog
+        else:
+            tk.messagebox.showerror("Invalid Input", "Please enter time in HHMM format.")
+
+    def on_cancel(self):
+        """Cancel the dialog without storing any result."""
+        self.result = None  # No result to return
+        self.destroy()  # Close the dialog
+
+    @staticmethod
+    def validate_time_format(time_text):
+        """Validate time format (HHMM)."""
+        if len(time_text) != 4 or not time_text.isdigit():
+            return False
+        hours, minutes = int(time_text[:2]), int(time_text[2:])
+        return 0 <= hours < 24 and 0 <= minutes < 60
 
 class TemplateParser:
     """
