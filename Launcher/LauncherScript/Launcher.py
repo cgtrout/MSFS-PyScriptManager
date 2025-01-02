@@ -42,7 +42,6 @@ logging.basicConfig(
     level=logging.DEBUG,  # Change to logging.DEBUG for more detailed output
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.StreamHandler(),  # Log to console
         logging.FileHandler("shutdown_log.txt", mode="w")  # Log to file
     ]
 )
@@ -742,7 +741,7 @@ class ProcessTracker:
             while not self.queues[tab_id]["stop_event"].is_set():
                 line = stream.readline()  # Read one line at a time
                 if not line:  # End of stream
-                    print(f"[INFO] End of stream detected for {stream_name}, Tab ID: {tab_id}")
+                    logging.info("End of stream for %s, Tab ID: %d", stream_name, tab_id)
                     break
 
                 # print(f"[DEBUG] Line read for {stream_name}, Tab ID {tab_id}: {line.strip()}")
@@ -821,7 +820,7 @@ class ProcessTracker:
         try:
             parent = psutil.Process(pid)
         except psutil.NoSuchProcess:
-            print(f"[INFO] Process with PID {pid} already terminated. "
+            logging.info(f"Process with PID {pid} already terminated. "
                   "Checking for orphaned children.")
             # Attempt to clean up orphaned child processes
             self._terminate_orphaned_children(pid)
@@ -832,30 +831,33 @@ class ProcessTracker:
 
         try:
             children = parent.children(recursive=True)
-            print(f"[INFO] Found {len(children)} child processes for PID {pid}."
+            logging.info(f"Found {len(children)} child processes for PID {pid}."
                   f"Terminating children first.")
 
             for child in children:
                 try:
                     child.terminate()
                 except psutil.NoSuchProcess:
+                    logging.warning(f"NoSuchProcess {child.pid}.")
                     continue
                 except psutil.AccessDenied:
-                    print(f"[WARNING] Access denied to terminate child PID {child.pid}.")
+                    logging.warning(f"Access denied to terminate child PID {child.pid}.")
 
             # Wait for all children to terminate
             _, alive = psutil.wait_procs(children, timeout=timeout)
 
             if alive and force:
-                print(f"[WARNING] {len(alive)} child processes did not terminate. "
+                logging.info(f"[WARNING] {len(alive)} child processes did not terminate. "
                       "Forcing termination.")
                 for proc in alive:
                     try:
+                        logging.info("proc.kill()")
                         proc.kill()
                     except psutil.NoSuchProcess:
+                        logging.warning(f"NoSuchProcess")
                         continue
                     except psutil.AccessDenied:
-                        print(f"[WARNING] Access denied to kill child PID {proc.pid}.")
+                        logging.info(f"[WARNING] Access denied to kill child PID {proc.pid}.")
 
             # Terminate the parent process
             parent.terminate()
@@ -866,10 +868,15 @@ class ProcessTracker:
                 for proc in alive:
                     try:
                         proc.kill()
+                        logging.info("proc.kill()")
                     except psutil.NoSuchProcess:
+                        logging.warning(f"NoSuchProcess")
                         continue
                     except psutil.AccessDenied:
-                        print(f"[WARNING] Access denied to kill PID {proc.pid}.")
+                        logging.warning(f"Access denied to kill PID {proc.pid}.")
+            
+            #logging.info("Made it to end - terminate process tree")
+
         except psutil.NoSuchProcess:
             print(f"[INFO] Parent process PID {pid} already terminated during cleanup.")
         except Exception as e:
@@ -994,6 +1001,7 @@ def main():
             app.shutdown_event.set()  # Ensure the subprocess knows to exit
             logging.debug("Waiting for shutdown monitoring process to exit...")
             monitor_process.join(timeout=5)
+            logging.debug("Past monitor_process join")
             if monitor_process.is_alive():
                 logging.warning("Forcibly terminating the shutdown monitoring process.")
                 monitor_process.terminate()
