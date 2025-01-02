@@ -8,11 +8,14 @@ from SimConnect import SimConnect, AircraftRequests
 from datetime import datetime, timezone, timedelta
 import os
 import json
-import re
 import requests
 import time
+from enum import Enum
+from dataclasses import dataclass, field
 
 import threading
+
+from typing import Any, Optional
 
 # Print initial message
 print("custom_status_bar: Close this window to close status bar")
@@ -47,17 +50,13 @@ DISPLAY_TEMPLATE = (
 # Other examples that can be placed in template
 # VAR(Altitude:, get_altitude, tomato)
 
-# Configurable Variables
-SIMBRIEF_USERNAME = ""  # Enter your SimBrief username here to enable automatic lookup of flight arrival times for the countdown timer. Leave blank to disable SimBrief integration.
-USE_SIMBRIEF_ADJUSTED_TIME = False  # Set to True for simulator-adjusted time, False for real-world time
-
+# --- Configurable Variables  ---
 alpha_transparency_level = 0.95  # Set transparency (0.0 = fully transparent, 1.0 = fully opaque)
 WINDOW_TITLE = "Simulator Time"
 DARK_BG = "#000000"
 FONT = ("Helvetica", 16)
 UPDATE_INTERVAL = 1000  # in milliseconds
 RECONNECT_INTERVAL = 1000  # in milliseconds
-SIMBRIEF_UPDATE_INTERVAL = 15000  # in milliseconds
 
 PADDING_X = 20  # Horizontal padding for each label
 PADDING_Y = 10  # Vertical padding for the window
@@ -65,10 +64,58 @@ PADDING_Y = 10  # Vertical padding for the window
 sm = None
 aq = None
 sim_connected = False
-future_time = None  # Time for countdown in seconds
-is_future_time_manually_set = False
-last_simbrief_generated_time = None  # Store the last loaded SimBrief time for update checks
-last_entered_time = None  # Last entered future time in HHMM format
+
+# --- Timer Variables  --
+# Define epoch value to use as default value
+UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+@dataclass
+class CountdownState:
+    future_time_seconds: Optional[int] = None  # Time for countdown in seconds
+    is_future_time_manually_set: bool = False  # Flag for manual setting
+    last_simbrief_generated_time: Optional[datetime] = None  # Last SimBrief time
+    last_entered_time: Optional[str] = None  # Last entered time in HHMM format
+    gate_out_time: Optional[datetime] = None  # Store last game out time
+    countdown_target_time: datetime = field(default_factory=lambda: UNIX_EPOCH)  # Default target time
+
+    def set_target_time(self, new_time: datetime):
+        """Set a new countdown target time with type validation."""
+        if not isinstance(new_time, datetime):
+            raise TypeError("countdown_target_time must be a datetime object")
+        self.countdown_target_time = new_time
+
+# --- SimBrief Data Structures  ---
+class SimBriefTimeOption(Enum):
+    ESTIMATED_IN = "Estimated In"
+    ESTIMATED_TOD = "Estimated TOD"
+
+@dataclass
+class SimBriefSettings:
+    username: str = ""
+    use_adjusted_time: bool = False
+    selected_time_option: SimBriefTimeOption = SimBriefTimeOption.ESTIMATED_IN
+    allow_negative_timer: bool = False  # New setting
+
+    def to_dict(self):
+        return {
+            "username": self.username,
+            "use_adjusted_time": self.use_adjusted_time,
+            "selected_time_option": self.selected_time_option.value,
+            "allow_negative_timer": self.allow_negative_timer,  
+        }
+
+    @staticmethod
+    def from_dict(data):
+        return SimBriefSettings(
+            username=data.get("username", ""),
+            use_adjusted_time=data.get("use_adjusted_time", False),
+            selected_time_option=SimBriefTimeOption(data.get("selected_time_option", SimBriefTimeOption.ESTIMATED_IN.value)),
+            allow_negative_timer=data.get("allow_negative_timer", False),  
+        )
+
+# Declare gobal instances for shared data
+countdown_state = CountdownState()
+simbrief_settings = SimBriefSettings()
 
 # Shared data structures for threading
 simconnect_cache = {}
@@ -129,16 +176,15 @@ def remain_label():
         return "Rem(adj):"
     return "Remaining:"
 
-def get_time_to_future():
+def get_time_to_future() -> str:
     """
-    Calculate remaining time to the globally configured future event.
+    Calculate remaining time to the globally configured countdown target.
     Adjusts for simulator time acceleration if necessary.
-    Returns '00:00:00' if the future time has not been set or an error occurs.
+    Returns the time difference as HH:MM:SS, optionally allowing negative values.
     """
-    global future_time
+    global countdown_state, simbrief_settings  # Access global settings and state
 
-    # If future_time is not set, return "00:00:00"
-    if future_time is None:
+    if countdown_state.countdown_target_time == datetime(1970, 1, 1):  # Default unset state
         return "00:00:00"
 
     try:
@@ -146,13 +192,11 @@ def get_time_to_future():
         current_sim_time = get_simulator_datetime()
 
         # Ensure both times are timezone-aware (UTC)
-        if future_time.tzinfo is None or current_sim_time.tzinfo is None:
-            raise ValueError("Future time or simulator time is offset-naive. Ensure all times are offset-aware.")
+        if countdown_state.countdown_target_time.tzinfo is None or current_sim_time.tzinfo is None:
+            raise ValueError("Target time or simulator time is offset-naive. Ensure all times are offset-aware.")
 
         # Calculate remaining time
-        remaining_time = future_time - current_sim_time
-        if remaining_time.total_seconds() <= 0:
-            return "00:00:00"  # If remaining time is zero or negative
+        remaining_time = countdown_state.countdown_target_time - current_sim_time
 
         # Fetch simulation rate
         sim_rate = get_sim_rate()
@@ -167,10 +211,17 @@ def get_time_to_future():
             print("DEBUG: Simulation rate unavailable; using unadjusted time.")
             adjusted_seconds = remaining_time.total_seconds()
 
+        # Allow or block negative time display based on settings
+        if adjusted_seconds < 0 and not simbrief_settings.allow_negative_timer:
+            return "00:00:00"
+
         # Format the adjusted remaining time as HH:MM:SS
-        hours, remainder = divmod(adjusted_seconds, 3600)
+        hours, remainder = divmod(abs(adjusted_seconds), 3600)
         minutes, seconds = divmod(remainder, 60)
-        return f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
+
+        # Add a negative sign if the remaining time is negative
+        sign = "-" if adjusted_seconds < 0 else ""
+        return f"{sign}{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
 
     except Exception as e:
         return "00:00:00"
@@ -185,44 +236,71 @@ def initialize_simconnect():
     except Exception:
         sim_connected = False
 
-def get_simconnect_value(variable_name, default_value="N/A", retries=10, retry_interval=0.2):
-    """ Fetch a SimConnect variable from the cache with retry logic. """
-    if not sim_connected or not sm.ok:
+def get_simconnect_value(variable_name: str, default_value: Any = "N/A", retries: int = 10, retry_interval: float = 0.2) -> Any:
+    """Fetch a SimConnect variable with caching and retry logic."""
+    if not sim_connected or sm is None or not sm.ok:
         return "Sim Not Running"
 
-    for attempt in range(retries):
-        with cache_lock:
-            if variable_name in simconnect_cache:
-                value = simconnect_cache[variable_name]
-                if value != default_value:  # If value has been updated, return it
-                    return value
-            else:
-                print(f"DEBUG get_simconnect_value: get_simconnect_value Attempt {attempt+1}/{retries} - Adding '{variable_name}' to track list.")
-                variables_to_track.add(variable_name)
-                simconnect_cache[variable_name] = default_value
+    value = check_cache(variable_name)
+    if value and value != default_value:
+        return value
 
-        print(f"DEBUG get_simconnect_value: Attempt {attempt+1}/{retries} - Value for '{variable_name}' not updated yet. Retrying...")
+    add_to_cache(variable_name, default_value)
+    for _ in range(retries):
+        value = check_cache(variable_name)
+        if value and value != default_value:
+            return value
         time.sleep(retry_interval)
 
     print(f"DEBUG: All {retries} retries failed for '{variable_name}'. Returning default: {default_value}")
     return default_value
 
-def simconnect_background_updater():
-    """Background thread to update SimConnect variables with retry logic, including retries for 'None' values."""
-    global sim_connected, aq
-    MAX_RETRIES = 5  # Maximum number of retries for each variable
+def check_cache(variable_name):
+    """Return SimConnect cached value for variable if available, otherwise None."""
+    with cache_lock:
+        return simconnect_cache.get(variable_name)
 
-    print("DEBUG: simconnect_background_updater start\n")
+def add_to_cache(variable_name, default_value="N/A"):
+    """Add SimConnect variable to cache with default value and track it."""
+    with cache_lock:
+        simconnect_cache[variable_name] = default_value
+        variables_to_track.add(variable_name)
+
+def prefetch_variables(*variables, default_value="N/A"):
+    """Prefetch variables by initializing them in the cache and tracking list."""
+    with cache_lock:
+        for variable_name in variables:
+            if variable_name not in simconnect_cache:  # Ensure each variable is only added once
+                simconnect_cache[variable_name] = default_value
+                variables_to_track.add(variable_name)
+
+def is_main_thread_blocked():
+    main_thread = threading.main_thread()
+    return not main_thread.is_alive() 
+
+def simconnect_background_updater():
+    """Background thread to update SimConnect variables with dynamic sleep adjustment."""
+    global sim_connected, aq
+
+    MIN_UPDATE_INTERVAL = 500  # in milliseconds, reduced interval for quick retries
+    STANDARD_UPDATE_INTERVAL = UPDATE_INTERVAL  # Use existing global update interval
 
     while True:
+        lookup_failed = False  # Flag to track if any variable lookup failed
+
         try:
             if not sim_connected:
                 initialize_simconnect()
                 continue
 
+            if is_main_thread_blocked():
+                print("DEBUG: Main thread is blocked. Retrying in 1 second.")
+                time.sleep(1)
+                continue
+
             if sim_connected:
                 # Check to see if in flight
-                if not sm.ok or sm.quit == 1:
+                if sm is None or not sm.ok or sm.quit == 1:
                     sim_connected = False
                     continue
 
@@ -231,39 +309,35 @@ def simconnect_background_updater():
                     vars_to_update = list(variables_to_track)
 
                 for variable_name in vars_to_update:
-                    retries = 0
-                    success = False
-                    while retries < MAX_RETRIES and not success:
-                        try:
+                    try:
+                        if aq is not None and hasattr(aq, 'get'): 
                             value = aq.get(variable_name)
-                            if value is not None:  # Check if a valid value is returned
+                            if value is not None:  
                                 with cache_lock:
                                     simconnect_cache[variable_name] = value
-                                success = True
                             else:
-                                retries += 1
-                                time.sleep(0.1)  # Small delay before retrying
-                        except Exception as e:
-                            retries += 1
-                            time.sleep(0.1)  # Small delay before retrying
-
-                    if not success:
-                        # If all retries fail, set a default or error value
-                        with cache_lock:
-                            simconnect_cache[variable_name] = "Err"
+                                print(f"DEBUG: Value for '{variable_name}' is None. Will retry in the next cycle.")
+                                lookup_failed = True
+                        else:
+                            print(f"DEBUG: 'aq' is None or does not have a 'get' method.")
+                            lookup_failed = True
+                    except Exception as e:
+                        print(f"DEBUG: Error fetching '{variable_name}': {e}. Will retry in the next cycle.")
+                        lookup_failed = True
             else:
-                print("DEBUG: SimConnect not connected. Retrying in {RECONNECT_INTERVAL}ms.")
+                print(f"DEBUG: SimConnect not connected. Retrying in {RECONNECT_INTERVAL}ms.")
                 time.sleep(RECONNECT_INTERVAL / 1000.0)
 
         except OSError as os_err:
-            print(f"DEBUG: OS error occurred: {os_err} - likely a connection issue")
+            print(f"DEBUG: OS error occurred: {os_err} - likely a connection issue.")
             sim_connected = False
 
         except Exception as e:
             print(f"DEBUG: Error in background updater: {e}")
 
-        # Sleep for the update interval
-        time.sleep(UPDATE_INTERVAL / 1000.0)
+        # Adjust sleep interval dynamically
+        sleep_interval = MIN_UPDATE_INTERVAL if lookup_failed else STANDARD_UPDATE_INTERVAL
+        time.sleep(sleep_interval / 1000.0)
 
 def get_formatted_value(variable_names, format_string=None):
     """
@@ -277,7 +351,7 @@ def get_formatted_value(variable_names, format_string=None):
     - The formatted string, or an error message if retrieval fails.
     """
 
-    if not sim_connected or not sm.ok:
+    if not sim_connected or sm is None or not sm.ok:
         return "Sim Not Running"
 
     if isinstance(variable_names, str):
@@ -295,13 +369,17 @@ def get_formatted_value(variable_names, format_string=None):
     result = values[0] if len(values) == 1 else values
     return result
 
-def get_simulator_datetime():
+def get_simulator_datetime() -> datetime:
     """
     Fetch the current simulator date and time as a datetime object.
     Ensure it is simulator time and timezone-aware (UTC).
+    If unavailable, return the Unix epoch as a default.
     """
     global sim_connected
     try:
+        # Prefetch variables - may speed up access in some cases
+        prefetch_variables("ZULU_YEAR", "ZULU_MONTH_OF_YEAR", "ZULU_DAY_OF_MONTH", "ZULU_TIME")
+
         # Fetch simulator date and time from SimConnect (ZULU time assumed as UTC)
         zulu_year = get_simconnect_value("ZULU_YEAR")
         zulu_month = get_simconnect_value("ZULU_MONTH_OF_YEAR")
@@ -323,15 +401,16 @@ def get_simulator_datetime():
         minutes, seconds = divmod(remainder, 60)
 
         # Construct and return the current datetime object with UTC timezone
-        simulator_datetime = datetime(zulu_year, zulu_month, zulu_day, hours, minutes, seconds, tzinfo=timezone.utc)
-        return simulator_datetime
+        return datetime(zulu_year, zulu_month, zulu_day, hours, minutes, seconds, tzinfo=timezone.utc)
 
     except ValueError as ve:
-        print(f"DEBUG: Simulator datetime not ready: {ve}")
-        return None  # Return None if data is not ready
+        #print(ve)
+        pass
     except Exception as e:
         print(f"get_simulator_datetime: Failed to retrieve simulator datetime: {e}")
-        return None  # Return None for other exceptions
+
+    # Return the Unix epoch if simulator time is unavailable
+    return UNIX_EPOCH
 
 def get_simulator_time_offset():
     """
@@ -339,14 +418,16 @@ def get_simulator_time_offset():
     Returns a timedelta representing the difference (simulator time - real-world time).
     """
     try:
-        # Get simulator Zulu time (simulator time in UTC)
+        # Use a threshold for considering the offset as zero
+        threshold = timedelta(seconds=5)
         simulator_time = get_simulator_datetime()
-
-        # Get real-world UTC time
         real_world_time = datetime.now(timezone.utc)
-
-        # Calculate the offset
         offset = simulator_time - real_world_time
+
+        # Check if the offset is within the threshold
+        if abs(offset) <= threshold:
+            print(f"DEBUG: Offset {offset} is within threshold, assuming zero offset.")
+            return timedelta(0)
         print(f"DEBUG: Simulator Time Offset: {offset}")
         return offset
     except Exception as e:
@@ -370,11 +451,7 @@ def convert_real_world_time_to_sim_time(real_world_time):
         return real_world_time  # Return the original time as fallback
 
 def set_future_time_internal(future_time_input, current_sim_time):
-    """
-    Internal helper function to process and set the future time.
-    Assumes the input time is already in the correct format.
-    """
-    global future_time
+    """Validates and sets a future time."""
     try:
         # Ensure all times are timezone-aware (UTC)
         if current_sim_time.tzinfo is None:
@@ -385,9 +462,8 @@ def set_future_time_internal(future_time_input, current_sim_time):
             if future_time_input <= current_sim_time:
                 raise ValueError("Future time must be later than the current simulator time.")
 
-            # Set the future time
-            future_time = future_time_input
-            print(f"DEBUG: Future time set to: {future_time}")
+            # Log successful setting of the timer
+            print(f"Timer manually set to: {future_time_input}")
             return True
         else:
             raise TypeError("Unsupported future_time_input type. Must be a datetime object.")
@@ -396,66 +472,26 @@ def set_future_time_internal(future_time_input, current_sim_time):
         print(f"Validation error in set_future_time_internal: {ve}")
     except Exception as e:
         print(f"DEBUG: Unexpected error in set_future_time_internal: {str(e)}")
-    return False
 
-def set_future_time():
+def open_timer_dialog():
     """
-    Open the CountdownTimerDialog to prompt the user to set a future countdown time based on Sim Time.
-    If no input is provided, use SimBrief time based on the global `USE_SIMBRIEF_ADJUSTED_TIME` flag.
+    Open the CountdownTimerDialog to prompt the user to set a future countdown time and SimBrief settings.
     """
-    global future_time, is_future_time_manually_set, last_entered_time
-
     try:
-        # Get the current simulator datetime
-        current_sim_time = get_simulator_datetime()
-        if not current_sim_time:
-            messagebox.showerror("Error", "Simulator time not available. Please wait and try again.")
-            return
-
-        # Open the custom dialog to input the countdown time
-        dialog = CountdownTimerDialog(root, initial_time=last_entered_time)
+        # Open the dialog with current SimBrief settings and last entered time
+        dialog = CountdownTimerDialog(
+            root,
+            simbrief_settings=simbrief_settings,
+            initial_time=countdown_state.last_entered_time,
+        )
         root.wait_window(dialog)  # Wait for the dialog to close
-
-        # Handle user input from the dialog
-        if dialog.result:
-            last_entered_time = dialog.result  # Save for the next use
-            try:
-                # Convert HHMM to hours and minutes
-                hours = int(dialog.result[:2])
-                minutes = int(dialog.result[2:])
-
-                # Create a datetime object for the future time
-                future_time_candidate = datetime(
-                    year=current_sim_time.year,
-                    month=current_sim_time.month,
-                    day=current_sim_time.day,
-                    hour=hours,
-                    minute=minutes,
-                    tzinfo=timezone.utc
-                )
-
-                # Adjust for next day if the entered time is earlier than the current time
-                if future_time_candidate < current_sim_time:
-                    future_time_candidate += timedelta(days=1)
-
-                # Validate and set the future time
-                is_future_time_manually_set = True
-                if set_future_time_internal(future_time_candidate, current_sim_time):
-                    print(f"DEBUG: Future time manually set to: {future_time}")
-                else:
-                    messagebox.showerror("Error", "Failed to set the future time.")
-            except (ValueError, IndexError):
-                messagebox.showerror("Error", "Invalid time format. Please enter time in HHMM format.")
-        else:
-            # No input provided; fallback to SimBrief time
-            if not load_simbrief_future_time():
-                messagebox.showerror("Error", "No valid SimBrief time found. Future time remains unset.")
-
+        # The dialog now handles all time and settings updates
     except Exception as e:
-        messagebox.showerror("Error", f"Failed to set future time: {str(e)}")
+        messagebox.showerror("Error", f"Failed to open timer dialog: {str(e)}")
 
 # --- Display Update  ---
 def get_dynamic_value(function_name):
+    """ Get a value dynamically from the function name. """
     try:
         if not function_name.strip():  # If function name is empty, return an empty string
             return ""
@@ -504,83 +540,84 @@ def update_display(parser, parsed_blocks):
     root.after(UPDATE_INTERVAL, lambda: update_display(parser, parsed_blocks))
 
 # --- Simbrief functionality ---
-def get_latest_simbrief_ofp_json(username):
-    """
-    Fetch SimBrief OFP JSON data for the provided username.
-    Returns None if the username is not set or if an error occurs.
-    """
-    if not username.strip():
-        return None
+class SimBriefFunctions:
+    @staticmethod
+    def get_latest_simbrief_ofp_json(username):
+        """Fetch SimBrief OFP JSON data for the provided username."""
+        if not username.strip():
+            return None
 
-    simbrief_url = f"https://www.simbrief.com/api/xml.fetcher.php?username={username}&json=1"
-    try:
-        response = requests.get(simbrief_url, timeout=5)
-        if response.status_code == 200:
-            return response.json()
-        print(f"DEBUG: SimBrief API call failed with status code {response.status_code}")
-        return None
-    except Exception as e:
-        print(f"DEBUG: Error fetching SimBrief OFP: {str(e)}")
-        return None
-
-def get_simbrief_ofp_arrival_datetime(username):
-    """
-    Fetch the estimated arrival time from SimBrief as a datetime object.
-    Returns None if the username is not set or SimBrief data is unavailable.
-    """
-    if not username.strip():
-        return None
-
-    ofp_json = get_latest_simbrief_ofp_json(username)
-    if ofp_json:
+        simbrief_url = f"https://www.simbrief.com/api/xml.fetcher.php?username={username}&json=1"
         try:
-            # Access the nested "times" dictionary and extract "est_in"
-            if "times" in ofp_json and "est_in" in ofp_json["times"]:
-                est_in_epoch = int(ofp_json["times"]["est_in"])
-                est_in_datetime = datetime.fromtimestamp(est_in_epoch, tz=timezone.utc)
-                return est_in_datetime
-            else:
-                print("DEBUG: 'est_in' not found in SimBrief JSON under 'times'.")
+            response = requests.get(simbrief_url, timeout=5)
+            if response.status_code == 200:
+                return response.json()
+            print(f"DEBUG: SimBrief API call failed with status code {response.status_code}")
+            return None
         except Exception as e:
-            print(f"DEBUG: Error processing SimBrief arrival datetime: {e}")
-    return None
+            print(f"DEBUG: Error fetching SimBrief OFP: {str(e)}")
+            return None
 
-def load_simbrief_future_time():
-    """
-    Load SimBrief's arrival time and set it as the future time.
-    Adjusts the time if `USE_SIMBRIEF_ADJUSTED_TIME` is enabled.
-    Returns True if successful, False otherwise.
-    """
-    global future_time
+    @staticmethod
+    def get_simbrief_ofp_gate_out_datetime(simbrief_json):
+        """Fetch the scheduled gate out time (sched_out) as a datetime object."""
+        if simbrief_json:
+            try:
+                if "times" in simbrief_json and "sched_out" in simbrief_json["times"]:
+                    sched_out_epoch = int(simbrief_json["times"]["sched_out"])
+                    return datetime.fromtimestamp(sched_out_epoch, tz=timezone.utc)
+                else:
+                    print("DEBUG: 'sched_out' not found in SimBrief JSON under 'times'.")
+            except Exception as e:
+                print(f"DEBUG: Error processing SimBrief gate out datetime: {e}")
+        return None
 
-    if not SIMBRIEF_USERNAME.strip():
-        return False
+    @staticmethod
+    def get_simbrief_ofp_arrival_datetime(simbrief_json):
+        """Fetch the estimated arrival time as a datetime object."""
+        if simbrief_json:
+            try:
+                if "times" in simbrief_json and "est_in" in simbrief_json["times"]:
+                    est_in_epoch = int(simbrief_json["times"]["est_in"])
+                    return datetime.fromtimestamp(est_in_epoch, tz=timezone.utc)
+                else:
+                    print("DEBUG: 'est_in' not found in SimBrief JSON under 'times'.")
+            except Exception as e:
+                print(f"DEBUG: Error processing SimBrief arrival datetime: {e}")
+        return None
 
-    try:
-        # Fetch the latest SimBrief OFP JSON data for the provided username
-        simbrief_arrival_datetime = get_simbrief_ofp_arrival_datetime(SIMBRIEF_USERNAME)
-        if simbrief_arrival_datetime:
-            # Fetch simulator datetime
-            current_sim_datetime = get_simulator_datetime()
-            if current_sim_datetime is None:
-                print("DEBUG: Simulator datetime not available yet. Retrying later.")
-                return False  # Retry later
+    @staticmethod
+    def get_simbrief_ofp_tod_datetime(simbrief_json):
+        """Fetch the Top of Descent (TOD) time from SimBrief JSON data."""
+        try:
+            if "times" not in simbrief_json or "navlog" not in simbrief_json or "fix" not in simbrief_json["navlog"]:
+                print("Invalid SimBrief JSON format.")
+                return None
 
-            # Adjust time if needed
-            if USE_SIMBRIEF_ADJUSTED_TIME:
-                sim_time = convert_real_world_time_to_sim_time(simbrief_arrival_datetime)
-                print(f"DEBUG: Adjusted SimBrief arrival time to simulator time: {sim_time}")
-                return set_future_time_internal(sim_time, current_sim_datetime)
-            else:
-                print(f"DEBUG: Using SimBrief real-world time directly: {simbrief_arrival_datetime}")
-                return set_future_time_internal(simbrief_arrival_datetime, current_sim_datetime)
-        else:
-            print("DEBUG: SimBrief arrival time not available.")
-            return False
-    except Exception as e:
-        print(f"ERROR: Failed to set SimBrief Future Time: {e}")
-        return False
+            sched_out_epoch = simbrief_json["times"].get("sched_out")
+            if not sched_out_epoch:
+                print("sched_out (gate out time) not found.")
+                return None
 
+            sched_out_epoch = int(sched_out_epoch)
+
+            for waypoint in simbrief_json["navlog"]["fix"]:
+                if waypoint.get("ident") == "TOD":
+                    time_total_seconds = waypoint.get("time_total")
+                    if not time_total_seconds:
+                        print("time_total for TOD not found.")
+                        return None
+
+                    time_total_seconds = int(time_total_seconds)
+                    tod_epoch = sched_out_epoch + time_total_seconds
+                    return datetime.fromtimestamp(tod_epoch, tz=timezone.utc)
+
+            print("TOD waypoint not found in the navlog.")
+            return None
+        except Exception as e:
+            print(f"Error extracting TOD time: {e}")
+            return None
+        
 # --- Drag functionality ---
 is_moving = False
 
@@ -604,7 +641,7 @@ def stop_move(event):
     """Stop moving the window."""
     global is_moving
     is_moving = False
-    save_settings({"x": root.winfo_x(), "y": root.winfo_y()})
+    save_settings({"x": root.winfo_x(), "y": root.winfo_y()}, simbrief_settings)
 
 # --- Settings  ---
 SCRIPT_DIR = os.path.dirname(__file__)
@@ -619,27 +656,35 @@ def load_settings():
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r") as f:
-                return json.load(f)
+                data = json.load(f)
+                # Load SimBrief settings
+                if "simbrief_settings" in data:
+                    simbrief_settings = SimBriefSettings.from_dict(data["simbrief_settings"])
+                else:
+                    simbrief_settings = SimBriefSettings()
+                return data, simbrief_settings
         except json.JSONDecodeError:
             print("Error: Settings file is corrupted. Using defaults.")
-    return {"x": 0, "y": 0}  # Default position
+    return {"x": 0, "y": 0}, SimBriefSettings()  # Default position and settings
 
-def save_settings(settings):
+def save_settings(settings, simbrief_settings):
     """Save settings to the JSON file."""
     try:
+        settings["simbrief_settings"] = simbrief_settings.to_dict()
         with open(SETTINGS_FILE, "w") as f:
             json.dump(settings, f, indent=4)
     except Exception as e:
         print(f"Error saving settings: {e}")
 
 def main():
-    global root, display_frame
+    global root, display_frame, simbrief_settings
 
     # --- Load initial settings ---
-    settings = load_settings()
+    settings, simbrief_settings_loaded = load_settings()
+    simbrief_settings = simbrief_settings_loaded
     initial_x = settings.get("x", 0)
     initial_y = settings.get("y", 0)
-    print(f"DEBUG: Loaded settings - x: {initial_x}, y: {initial_y}")
+    print(f"Loaded window position - x: {initial_x}, y: {initial_y}")
 
     # --- GUI Setup ---
     root = tk.Tk()
@@ -653,7 +698,6 @@ def main():
     try:
         # Set initial position
         root.geometry(f"+{initial_x}+{initial_y}")
-        print(f"DEBUG: Applied geometry - x: {initial_x}, y: {initial_y}")
     except Exception as e:
         print(f"DEBUG: Failed to apply geometry - {e}")
 
@@ -667,7 +711,7 @@ def main():
     display_frame.pack(padx=10, pady=5)
 
     # --- Double click functionality for setting timer ---
-    root.bind("<Double-1>", lambda event: set_future_time())
+    root.bind("<Double-1>", lambda event: open_timer_dialog())
 
     # Start the background thread
     background_thread = threading.Thread(target=simconnect_background_updater, daemon=True)
@@ -689,45 +733,443 @@ def main():
         print("Please check your DISPLAY_TEMPLATE and try again.")
 
 class CountdownTimerDialog(tk.Toplevel):
-    """A dialog to set the countdown timer."""
-    def __init__(self, parent, initial_time=None):
+    """A dialog to set the countdown timer and SimBrief settings"""
+    def __init__(self, parent, simbrief_settings: SimBriefSettings, initial_time=None, gate_out_time=None):
         super().__init__(parent)
+        
+        self.simbrief_settings = simbrief_settings
 
-        # Configure dialog properties
-        self.title("Set Countdown Timer")
-        self.geometry("300x150")
-        self.transient(parent)  # Make the dialog stay on top of the parent
-        self.grab_set()  # Prevent interaction with the parent window
+        # Remove the native title bar
+        self.overrideredirect(True)
 
-        self.initial_time = initial_time  # Prepopulate with initial time if provided
-        self.result = None  # To store the result entered by the user
+        # Ensure the window is visible before further actions
+        self.wait_visibility()
 
-        # Label and Entry for time input
-        tk.Label(self, text="Enter time (HHMM):").pack(pady=10)
-        self.time_entry = tk.Entry(self, justify="center")
+        # Fix focus and interaction issues
+        self.transient(parent)  # Keep the dialog on top of the parent
+        self.grab_set()  # Prevent interaction with other windows
+
+        # Window size and positioning
+        parent_x = parent.winfo_rootx()
+        parent_y = parent.winfo_rooty()
+        self.geometry(f"+{parent_x}+{parent_y}")  
+
+        # Dark mode colors
+        self.bg_color = "#2E2E2E"  # Dark background
+        self.fg_color = "#FFFFFF"  # Light text
+        self.entry_bg_color = "#3A3A3A"  # Slightly lighter background for entries
+        self.entry_fg_color = "#FFFFFF"  # Text color for entries
+        self.button_bg_color = "#5A5A5A"  # Dark button background
+        self.button_fg_color = "#FFFFFF"  # Light button text
+        self.title_bar_bg = "#1E1E1E"  # Darker background for title bar
+
+        self.configure(bg=self.bg_color)  # Apply dark background to the dialog
+
+        self.create_title_bar()
+
+        # Font variables
+        small_font = ("Helvetica", 10)
+        large_font = ("Helvetica", 14)
+
+        # Countdown Time Input
+        countdown_frame = tk.Frame(self, bg=self.bg_color)
+        countdown_frame.pack(pady=10, anchor="w")
+        tk.Label(countdown_frame, text="Enter Countdown Time (HHMM):", bg=self.bg_color, fg=self.fg_color,
+                font=large_font).pack(side="left", padx=5)
+        self.time_entry = tk.Entry(countdown_frame, justify="center", bg=self.entry_bg_color, fg=self.entry_fg_color,
+                                    font=("Helvetica", 16), width=10)  # Larger font for the entry
         if initial_time:
-            self.time_entry.insert(0, initial_time)  # Set default value
-        self.time_entry.pack(pady=5)
+            self.time_entry.insert(0, initial_time)
+        self.time_entry.pack(side="left", padx=5)
+        
+        # Add simbrief section (with collapsable section)
+        self.build_simbrief_section(self, small_font)
 
-        # Buttons for OK and Cancel
-        button_frame = tk.Frame(self)
-        button_frame.pack(pady=10)
-        tk.Button(button_frame, text="OK", command=self.on_ok).pack(side="left", padx=5)
-        tk.Button(button_frame, text="Cancel", command=self.on_cancel).pack(side="right", padx=5)
+        # OK and Cancel Buttons
+        button_frame = tk.Frame(self, bg=self.bg_color)
+        button_frame.pack(pady=20)
+        tk.Button(button_frame, text="OK", command=self.on_ok, bg=self.button_bg_color, fg=self.button_fg_color,
+                activebackground=self.entry_bg_color, activeforeground=self.fg_color, font=small_font, width=10
+                ).pack(side="left", padx=5)
 
-    def on_ok(self):
-        """Validate and store the entered time."""
-        time_text = self.time_entry.get().strip()
-        if self.validate_time_format(time_text):
-            self.result = time_text  # Store the valid result
-            self.destroy()  # Close the dialog
-        else:
-            tk.messagebox.showerror("Invalid Input", "Please enter time in HHMM format.")
+        tk.Button(button_frame, text="Cancel", command=self.on_cancel, bg=self.button_bg_color, fg=self.button_fg_color,
+                activebackground=self.entry_bg_color, activeforeground=self.fg_color, font=small_font, width=10
+                ).pack(side="right", padx=5)
+
+        # Bind Enter to OK button
+        self.bind("<Return>", lambda event: self.on_ok())
+
+        # Ensure the window is always on top
+        self.attributes("-topmost", True)
+
+        # Capture the original position and offset
+        parent_x = self.winfo_rootx()
+        parent_y = self.winfo_rooty()
+        x = parent_x + 50
+        y = parent_y + 50
+
+        # Reapply geometry with the offset after setting topmost
+        self.geometry(f"+{x}+{y}")
+
+        # Ensure the dialog gets focus
+        self.focus_force()
+        self.time_entry.focus_set()
+
+    def create_title_bar(self):
+        """Create a custom title bar for the dialog."""
+        # Custom Title Bar
+        self.title_bar = tk.Frame(self, bg=self.title_bar_bg, relief="flat", height=30)
+        self.title_bar.pack(side="top", fill="x")
+
+        # Title Label
+        self.title_label = tk.Label(self.title_bar, text="Set Countdown Timer and SimBrief Settings",
+                                    bg=self.title_bar_bg, fg=self.fg_color, font=("Helvetica", 10, "bold"))
+        self.title_label.pack(side="left", padx=10)
+
+        # Close Button
+        self.close_button = tk.Button(self.title_bar, text="✕", command=self.on_cancel, bg=self.title_bar_bg,
+                                    fg=self.fg_color, relief="flat", font=("Helvetica", 10, "bold"),
+                                    activebackground="#FF0000", activeforeground=self.fg_color)
+        self.close_button.pack(side="right", padx=5)
+
+        # Bind dragging to the title bar
+        self.title_bar.bind("<Button-1>", self.start_move)
+        self.title_bar.bind("<B1-Motion>", self.do_move)
+
+        # Propagate binds to children
+        for widget in self.title_bar.winfo_children():
+            widget.bind("<Button-1>", self.start_move)
+            widget.bind("<B1-Motion>", self.do_move)
+
+    def build_simbrief_section(self, parent, small_font):
+        """Create a collapsible SimBrief section."""
+        # Create a collapsible section for SimBrief
+        simbrief_section = CollapsibleSection(
+            parent,
+            "SimBrief Settings",
+            lambda frame: self.simbrief_content(
+                frame,
+                small_font,
+                self.simbrief_settings.username,
+                self.simbrief_settings.use_adjusted_time,
+                countdown_state.gate_out_time,  # Pass the current gate-out time
+            ),
+        )
+        simbrief_section.pack(fill="x", padx=10, pady=5)
+
+        # Expand section if SimBrief username exists
+        if self.simbrief_settings.username.strip():
+            simbrief_section.expand()
+
+    def simbrief_content(self, frame, small_font, simbrief_username, use_simbrief_adjusted_time, gate_out_time):
+        """Build the SimBrief components inside the collapsible section."""
+        border_color = "#444444"
+
+        # Outer Frame for Padding
+        outer_frame = tk.Frame(frame, bg=self.bg_color)
+        outer_frame.pack(fill="x", padx=10, pady=0) 
+
+        # SimBrief Username and Gate Out Time Group
+        input_frame = tk.Frame(outer_frame, bg=self.bg_color)
+        input_frame.pack(fill="x", pady=2) 
+
+        # SimBrief Username
+        tk.Label(
+            input_frame, text="SimBrief Username:", bg=self.bg_color, fg=self.fg_color, font=small_font
+        ).grid(row=0, column=0, sticky="w", padx=5, pady=2) 
+
+        self.simbrief_entry = tk.Entry(
+            input_frame, justify="left", bg=self.entry_bg_color, fg=self.entry_fg_color, font=small_font, width=25
+        )
+        if simbrief_username:
+            self.simbrief_entry.insert(0, simbrief_username)
+        self.simbrief_entry.grid(row=0, column=1, sticky="w", padx=5, pady=2)
+
+        # Gate Out Time
+        tk.Label(
+            input_frame, text="Gate Out Time (HHMM):", bg=self.bg_color, fg=self.fg_color, font=small_font
+        ).grid(row=1, column=0, sticky="w", padx=5, pady=2) 
+
+        self.gate_out_entry = tk.Entry(
+            input_frame, justify="left", bg=self.entry_bg_color, fg=self.entry_fg_color, font=small_font, width=25
+        )
+        if gate_out_time:
+            self.gate_out_entry.insert(0, gate_out_time.strftime("%H%M"))
+        self.gate_out_entry.grid(row=1, column=1, sticky="w", padx=5, pady=2) 
+
+        # Checkbox for SimBrief Time Translation
+        self.simbrief_checkbox_var = tk.BooleanVar(value=use_simbrief_adjusted_time)
+        self.simbrief_checkbox = tk.Checkbutton(
+            input_frame,
+            text="Translate SimBrief Time to Simulator Time",
+            variable=self.simbrief_checkbox_var,
+            bg=self.bg_color,
+            fg=self.fg_color,
+            selectcolor=self.entry_bg_color,
+            font=small_font,
+        )
+        self.simbrief_checkbox.grid(row=2, column=0, columnspan=2, sticky="w", padx=5, pady=2)
+
+        # Checkbox for allowing negative timer
+        self.negative_timer_checkbox_var = tk.BooleanVar(value=simbrief_settings.allow_negative_timer)
+        self.negative_timer_checkbox = tk.Checkbutton(
+            input_frame,
+            text="Allow Negative Timer",
+            variable=self.negative_timer_checkbox_var,
+            bg=self.bg_color,
+            fg=self.fg_color,
+            selectcolor=self.entry_bg_color,
+            font=small_font,
+        )
+        self.negative_timer_checkbox.grid(row=3, column=0, columnspan=2, sticky="w", padx=5, pady=2) 
+
+        # Add separation before SimBrief Time Selection
+        separator_frame = tk.Frame(outer_frame, bg=self.bg_color, height=5)  
+        separator_frame.pack(fill="x", pady=2)  
+
+        # SimBrief Time Selection Group
+        time_selection_frame = tk.Frame(outer_frame, bg=self.bg_color)
+        time_selection_frame.pack(fill="x", pady=2, anchor="w")  
+
+        tk.Label(
+            time_selection_frame, text="Select SimBrief Time:", bg=self.bg_color, fg=self.fg_color, font=small_font
+        ).grid(row=0, column=0, sticky="w", padx=5, pady=2)  
+
+        self.selected_time_option = tk.StringVar(value=self.simbrief_settings.selected_time_option.value)
+        self.time_dropdown = tk.OptionMenu(
+            time_selection_frame,
+            self.selected_time_option,
+            *[option.value for option in SimBriefTimeOption],  # Use the enum values for options
+        )
+        self.time_dropdown.configure(bg=self.entry_bg_color, fg=self.entry_fg_color, highlightthickness=0, font=small_font)
+        self.time_dropdown["menu"].configure(bg=self.entry_bg_color, fg=self.fg_color)
+        self.time_dropdown.grid(row=0, column=1, sticky="w", padx=5, pady=2)
+
+        pull_time_button = tk.Button(
+            time_selection_frame,
+            text="Get Time",
+            command=self.pull_time,
+            bg=self.button_bg_color,
+            fg=self.button_fg_color,
+            activebackground=self.entry_bg_color,
+            activeforeground=self.fg_color,
+            font=small_font,
+        )
+        pull_time_button.grid(row=0, column=2, sticky="w", padx=5, pady=2)
+
+    def get_default_gate_out_time(self):
+        """
+        Fetch the default gate-out time (sched_out) from SimBrief JSON.
+        """
+        try:
+            simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(self.simbrief_settings.username)
+            if not simbrief_json:
+                print("DEBUG: Failed to fetch SimBrief JSON.")
+                return None
+            return SimBriefFunctions.get_simbrief_ofp_gate_out_datetime(simbrief_json)
+        except Exception as e:
+            print(f"Error fetching default gate-out time: {e}")
+            return None
 
     def on_cancel(self):
-        """Cancel the dialog without storing any result."""
-        self.result = None  # No result to return
-        self.destroy()  # Close the dialog
+        """Cancel the dialog."""
+        self.result = None
+        self.destroy()
+
+    def on_ok(self):
+        """
+        Validate user input, update SimBrief settings, and set the countdown timer if time is provided.
+        """
+        global countdown_state, simbrief_settings
+
+        try:
+            # Update SimBrief settings from dialog inputs
+            self.update_simbrief_settings()
+
+            # Save SimBrief settings regardless of whether a username is provided
+            save_settings(load_settings()[0], simbrief_settings)
+
+            # Handle the time input
+            time_text = self.time_entry.get().strip()
+            if time_text:
+                if not self.validate_time_format(time_text):
+                    messagebox.showerror("Invalid Input", "Please enter time in HHMM format.")
+                    return
+
+                future_time = self.calculate_future_time(time_text)
+                if not self.set_countdown_timer(future_time):
+                    messagebox.showerror("Error", "Failed to set the countdown timer.")
+                    return
+
+            # Close the dialog
+            self.result = {"time": time_text}
+            self.destroy()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"An unexpected error occurred: {str(e)}")
+
+    def pull_time(self):
+        """
+        Pull the selected time from SimBrief, adjust SimBrief's gate time to match the simulator's time context.
+        """
+        try:
+            # Update and validate SimBrief settings
+            self.update_simbrief_settings()
+
+            # Validate the SimBrief username
+            if not self.validate_simbrief_username():
+                return
+
+            # Fetch SimBrief data
+            simbrief_json = self.fetch_simbrief_data()
+            if not simbrief_json:
+                return
+
+            # Handle gate-out time adjustment
+            gate_time_offset = self.adjust_gate_out_time(simbrief_json)
+            print(f"DEBUG: Gate time offset: {gate_time_offset}")
+
+            # Set the countdown timer
+            self.set_countdown_timer_from_simbrief(simbrief_json, gate_time_offset)
+
+            # Close the dialog
+            self.destroy()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"An unexpected error occurred: {str(e)}")
+            print(f"DEBUG: Exception in pull_time: {e}")
+
+    def update_simbrief_settings(self):
+        """Update SimBrief settings from dialog inputs."""
+        simbrief_settings.username = self.simbrief_entry.get().strip()
+        simbrief_settings.use_adjusted_time = self.simbrief_checkbox_var.get()
+        simbrief_settings.selected_time_option = SimBriefTimeOption(self.selected_time_option.get())
+        simbrief_settings.allow_negative_timer = self.negative_timer_checkbox_var.get()  
+
+    def validate_simbrief_username(self):
+        """Validate SimBrief username and show an error if invalid."""
+        if not simbrief_settings.username:
+            messagebox.showerror("Error", "Please enter a SimBrief username.")
+            return False
+        return True
+
+    def fetch_simbrief_data(self):
+        """Fetch and return SimBrief JSON data."""
+        simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(simbrief_settings.username)
+        if not simbrief_json:
+            messagebox.showerror("Error", "Failed to fetch SimBrief data. Please check the username or try again.")
+            return None
+        return simbrief_json
+
+    def adjust_gate_out_time(self, simbrief_json) -> timedelta:
+        """
+        Handle gate-out time adjustment based on SimBrief data and user input.
+        Returns the calculated gate time offset.
+        """
+        
+        if not self.gate_out_entry.get():
+            return timedelta(0)
+
+        simbrief_gate_time = SimBriefFunctions.get_simbrief_ofp_gate_out_datetime(simbrief_json)
+        if not simbrief_gate_time:
+            messagebox.showerror("Error", "SimBrief gate-out time not found.")
+            return timedelta(0)
+
+        simbrief_gate_time_sim = simbrief_gate_time
+
+        # Only check if user has set simbrief_settings.use_adjusted_time
+        if simbrief_settings.use_adjusted_time:
+            simulator_to_real_world_offset = get_simulator_time_offset()
+            simbrief_gate_time_sim += simulator_to_real_world_offset
+
+        # Check if the user provided a custom gate-out time
+        gate_out_time_input = self.gate_out_entry.get().strip()
+        if gate_out_time_input:
+            if not self.validate_time_format(gate_out_time_input):
+                messagebox.showerror("Error", "Invalid gate-out time format. Please use HHMM.")
+                return timedelta(0)
+
+            # Parse the user-provided gate-out time
+            hours, minutes = int(gate_out_time_input[:2]), int(gate_out_time_input[2:])
+            current_sim_time = get_simulator_datetime()
+            user_gate_time_dt = current_sim_time.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+
+            # If the parsed time is earlier than the current time, add one day
+            if user_gate_time_dt < current_sim_time:
+                user_gate_time_dt += timedelta(days=1)
+                print(f"Gate offset calculation: Added one day to user gate time since it was earlier than current time.")
+
+            countdown_state.gate_out_time = user_gate_time_dt
+
+            # Compute the offset
+            return user_gate_time_dt - simbrief_gate_time_sim
+
+        # No user-provided gate-out time; use default
+        countdown_state.gate_out_time = None
+        return timedelta(0)
+
+    def calculate_future_time(self, time_text):
+        """
+        Convert HHMM time input into a datetime object.
+        Adjust for the next day if the entered time is earlier than the current simulator time.
+        """
+        hours, minutes = int(time_text[:2]), int(time_text[2:])
+        current_sim_time = get_simulator_datetime()
+        future_time = datetime(
+            year=current_sim_time.year,
+            month=current_sim_time.month,
+            day=current_sim_time.day,
+            hour=hours,
+            minute=minutes,
+            tzinfo=timezone.utc
+        )
+
+        if future_time < current_sim_time:
+            future_time += timedelta(days=1)
+
+        return future_time
+
+    def set_countdown_timer(self, future_time):
+        """
+        Set the countdown timer and update global state.
+        """
+        global countdown_state
+        current_sim_time = get_simulator_datetime()
+
+        if set_future_time_internal(future_time, current_sim_time):
+            countdown_state.is_future_time_manually_set = True
+            countdown_state.set_target_time(future_time)
+            return True
+        return False
+
+    def set_countdown_timer_from_simbrief(self, simbrief_json, gate_time_offset):
+        """
+        Set the countdown timer based on SimBrief time, user preferences, and adjustments.
+        """
+        selected_time = SimBriefTimeOption(self.selected_time_option.get())
+        simbrief_time = None
+
+        if selected_time == SimBriefTimeOption.ESTIMATED_IN:
+            simbrief_time = SimBriefFunctions.get_simbrief_ofp_arrival_datetime(simbrief_json)
+        elif selected_time == SimBriefTimeOption.ESTIMATED_TOD:
+            simbrief_time = SimBriefFunctions.get_simbrief_ofp_tod_datetime(simbrief_json)
+
+        if simbrief_time:
+            print(f"DEBUG: Original SimBrief time: {simbrief_time}")
+
+            if simbrief_settings.use_adjusted_time:
+                simbrief_time = convert_real_world_time_to_sim_time(simbrief_time)
+                print(f"DEBUG: use_adjusted_time--Adjusted SimBrief time: {simbrief_time}")
+
+            adjusted_simbrief_time = simbrief_time + gate_time_offset
+            print(f"DEBUG: Final adjusted SimBrief time: {adjusted_simbrief_time}")
+
+            if self.set_countdown_timer(adjusted_simbrief_time):
+                print(f"DEBUG: Countdown timer set to: {adjusted_simbrief_time}")
+            else:
+                messagebox.showerror("Error", "Failed to set the countdown timer.")
+            
+            print()
 
     @staticmethod
     def validate_time_format(time_text):
@@ -736,6 +1178,67 @@ class CountdownTimerDialog(tk.Toplevel):
             return False
         hours, minutes = int(time_text[:2]), int(time_text[2:])
         return 0 <= hours < 24 and 0 <= minutes < 60
+
+    def start_move(self, event):
+        """Start dragging the window."""
+        self._drag_start_x = event.x
+        self._drag_start_y = event.y
+
+    def do_move(self, event):
+        """Handle dragging the window."""
+        x = self.winfo_x() + event.x - self._drag_start_x
+        y = self.winfo_y() + event.y - self._drag_start_y
+        self.geometry(f"+{x}+{y}")
+
+class CollapsibleSection(tk.Frame):
+    """A collapsible Tkinter section with a toggle button and content frame."""
+    def __init__(self, parent, title, content_builder, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        # Colors
+        self.bg_color = "#2E2E2E"
+        self.fg_color = "#FFFFFF"
+        self.border_color = "#444444"
+
+        # Frame styling to reduce white padding
+        self.configure(bg=self.bg_color, highlightbackground=self.border_color, highlightthickness=1)
+
+        # Toggle button (with an arrow)
+        self.toggle_button = tk.Button(
+            self, text="▲ " + title, command=self.toggle, bg=self.bg_color, fg=self.fg_color,
+            anchor="w", relief="flat", font=("Helvetica", 12), bd=0
+        )
+        self.toggle_button.pack(fill="x", pady=2, padx=2)
+
+        # Frame to hold the content
+        self.content_frame = tk.Frame(self, bg=self.bg_color, highlightthickness=0)
+        self.content_frame.pack(fill="x", padx=2, pady=2)
+
+        # Build the content using the provided function
+        content_builder(self.content_frame)
+
+        # Initial collapsed state
+        self.collapsed = True
+        if self.collapsed:
+            self.collapse()
+
+    def toggle(self):
+        """Toggle visibility of the content frame."""
+        if self.collapsed:
+            self.expand()
+        else:
+            self.collapse()
+        self.collapsed = not self.collapsed
+
+    def collapse(self):
+        """Collapse the section."""
+        self.content_frame.pack_forget()
+        self.toggle_button.config(text="▼ " + self.toggle_button.cget("text")[2:])
+
+    def expand(self):
+        """Expand the section."""
+        self.content_frame.pack(fill="x", padx=2, pady=2)
+        self.toggle_button.config(text="▲ " + self.toggle_button.cget("text")[2:])
 
 class TemplateParser:
     """
