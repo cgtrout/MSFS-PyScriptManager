@@ -474,6 +474,7 @@ def update_display(parser, parsed_blocks):
     try:
         if is_moving:
             root.after(UPDATE_INTERVAL, lambda: update_display(parser, parsed_blocks))
+            return
 
         # Clear the existing display
         for widget in display_frame.winfo_children():
