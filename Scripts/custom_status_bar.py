@@ -576,37 +576,6 @@ def load_simbrief_future_time():
         print(f"ERROR: Failed to set SimBrief Future Time: {e}")
         return False
 
-def periodic_simbrief_update():
-    """
-    Periodically update the future time using SimBrief data if no user-set time exists.
-    Detects and reloads only if the SimBrief plan's generation time has changed.
-    """
-    global future_time, is_future_time_manually_set, last_simbrief_generated_time
-
-    try:
-        # Skip if the user has manually set a time
-        if not is_future_time_manually_set:
-            # Fetch the latest SimBrief data
-            ofp_json = get_latest_simbrief_ofp_json(SIMBRIEF_USERNAME)
-            if ofp_json:
-                # Extract the generation time
-                current_generated_time = ofp_json.get("params", {}).get("time_generated")
-                if not current_generated_time:
-                    print("DEBUG: Unable to determine SimBrief flight plan generation time.")
-                elif current_generated_time != last_simbrief_generated_time:
-                    print(f"DEBUG: New SimBrief flight plan detected. Generation Time: {current_generated_time}")
-
-                    # Try to reload SimBrief future time
-                    if load_simbrief_future_time():  # Update only if successful
-                        last_simbrief_generated_time = current_generated_time
-                    else:
-                        print("DEBUG: Failed to load SimBrief future time. Will retry later.")
-    except Exception as e:
-        print(f"DEBUG: Error in periodic SimBrief update: {e}")
-
-    # Schedule the next update
-    root.after(SIMBRIEF_UPDATE_INTERVAL, periodic_simbrief_update)
-
 # --- Drag functionality ---
 is_moving = False
 
