@@ -518,25 +518,6 @@ def get_latest_simbrief_ofp_json(username):
         print(f"DEBUG: Error fetching SimBrief OFP: {str(e)}")
         return None
 
-def decode_timestamps(ofp_json):
-    """
-    Decode relevant SimBrief timestamps into datetime objects.
-    """
-    try:
-        # Decode key timestamps
-        sched_out = datetime.fromtimestamp(int(ofp_json["sched_out"]), tz=timezone.utc) if "sched_out" in ofp_json else None
-        sched_in = datetime.fromtimestamp(int(ofp_json["sched_in"]), tz=timezone.utc) if "sched_in" in ofp_json else None
-        est_in = datetime.fromtimestamp(int(ofp_json["est_in"]), tz=timezone.utc) if "est_in" in ofp_json else None
-
-        return {
-            "sched_out": sched_out,
-            "sched_in": sched_in,
-            "est_in": est_in,
-        }
-    except Exception as e:
-        print(f"Error decoding timestamps: {e}")
-        return None
-
 def get_simbrief_ofp_arrival_datetime(username):
     """
     Fetch the estimated arrival time from SimBrief as a datetime object.
