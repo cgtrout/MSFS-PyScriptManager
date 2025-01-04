@@ -55,8 +55,7 @@ alpha_transparency_level = 0.95  # Set transparency (0.0 = fully transparent, 1.
 WINDOW_TITLE = "Simulator Time"
 DARK_BG = "#000000"
 FONT = ("Helvetica", 16)
-UPDATE_INTERVAL = 1000  # in milliseconds
-RECONNECT_INTERVAL = 1000  # in milliseconds
+UPDATE_INTERVAL = 33  # in milliseconds
 
 AUTO_UPDATE_INTERVAL_MS = 5 * 60 * 1000  # 5 minutes in milliseconds
 
@@ -288,14 +287,15 @@ def is_main_thread_blocked():
     return not main_thread.is_alive() 
 
 def simconnect_background_updater():
-    """Background thread to update SimConnect variables with dynamic sleep adjustment."""
+    """Background thread to update SimConnect variables with small sleep between updates."""
     global sim_connected, aq
 
-    MIN_UPDATE_INTERVAL = 500  # in milliseconds, reduced interval for quick retries
-    STANDARD_UPDATE_INTERVAL = UPDATE_INTERVAL  # Use existing global update interval
+    VARIABLE_SLEEP = 0.01  # Sleep for 10ms between each variable lookup
+    MIN_UPDATE_INTERVAL = UPDATE_INTERVAL / 2  # Reduced interval for retry cycles (in milliseconds)
+    STANDARD_UPDATE_INTERVAL = UPDATE_INTERVAL  # Normal interval for successful cycles
 
     while True:
-        lookup_failed = False  # Flag to track if any variable lookup failed
+        lookup_failed = False  # Track if any variable lookup failed
 
         try:
             if not sim_connected:
@@ -303,13 +303,13 @@ def simconnect_background_updater():
                 continue
 
             if is_main_thread_blocked():
-                print("DEBUG: Main thread is blocked. Retrying in 1 second.")
+                print("WARNING: Main thread is blocked. Retrying in 1 second.")
                 time.sleep(1)
                 continue
 
             if sim_connected:
-                # Check to see if in flight
                 if sm is None or not sm.ok or sm.quit == 1:
+                    print("WARNING: SimConnect state invalid. Disconnecting.")
                     sim_connected = False
                     continue
 
@@ -319,30 +319,30 @@ def simconnect_background_updater():
 
                 for variable_name in vars_to_update:
                     try:
-                        if aq is not None and hasattr(aq, 'get'): 
+                        if aq is not None and hasattr(aq, 'get'):
                             value = aq.get(variable_name)
-                            if value is not None:  
+                            if value is not None:
                                 with cache_lock:
                                     simconnect_cache[variable_name] = value
                             else:
                                 print(f"DEBUG: Value for '{variable_name}' is None. Will retry in the next cycle.")
                                 lookup_failed = True
                         else:
-                            print(f"DEBUG: 'aq' is None or does not have a 'get' method.")
+                            print(f"WARNING: 'aq' is None or does not have a 'get' method.")
                             lookup_failed = True
                     except Exception as e:
                         print(f"DEBUG: Error fetching '{variable_name}': {e}. Will retry in the next cycle.")
                         lookup_failed = True
-            else:
-                print(f"DEBUG: SimConnect not connected. Retrying in {RECONNECT_INTERVAL}ms.")
-                time.sleep(RECONNECT_INTERVAL / 1000.0)
 
-        except OSError as os_err:
-            print(f"DEBUG: OS error occurred: {os_err} - likely a connection issue.")
-            sim_connected = False
+                    # Introduce a small sleep between variable updates
+                    time.sleep(VARIABLE_SLEEP)
+
+            else:
+                print("WARNING: SimConnect not connected. Retrying in 1 second.")
+                time.sleep(1)
 
         except Exception as e:
-            print(f"DEBUG: Error in background updater: {e}")
+            print(f"ERROR: Unexpected error in background updater: {e}")
 
         # Adjust sleep interval dynamically
         sleep_interval = MIN_UPDATE_INTERVAL if lookup_failed else STANDARD_UPDATE_INTERVAL
@@ -512,40 +512,64 @@ def get_dynamic_value(function_name):
     except Exception as e:
         return "Err"
 
+widget_pool = {}
+
 def update_display(parser, parsed_blocks):
     """
-    Render the parsed blocks onto the display frame
+    Render the parsed blocks onto the display frame.
     """
+    global widget_pool
+
     try:
         if is_moving:
             root.after(UPDATE_INTERVAL, lambda: update_display(parser, parsed_blocks))
             return
 
-        # Clear the existing display
-        for widget in display_frame.winfo_children():
-            widget.destroy()
+        # Track which widgets should remain on the screen and which ones should be removed later. 
+        new_widget_pool = {}
+        widget = None
 
-        # Render each block
         for block in parsed_blocks:
             block_type = block["type"]
+            # Define a unique identifier for the block
+            block_id = block.get("label", f"block_{id(block)}")
 
-            # Find the render function for the block type in the parser's block registry
-            render_function = parser.block_registry.get(block_type, {}).get("render")
+            # Check if the widget already exists
+            if block_id in widget_pool:
+                widget = widget_pool[block_id]
+                # Update the widget's content
+                render_function = parser.block_registry.get(block_type, {}).get("render")
+                if render_function:
+                    updated_widget = render_function(block)
+                    if updated_widget and widget.cget("text") != updated_widget.cget("text"):
+                        widget.config(text=updated_widget.cget("text"))
+            else:
+                # Create a new widget for the block
+                render_function = parser.block_registry.get(block_type, {}).get("render")
+                if render_function:
+                    widget = render_function(block)
+                    if widget:
+                        widget.pack(side=tk.LEFT, padx=0, pady=0)
+                    else:
+                        #print(f"Warning: Render function returned None for block: {block}")
+                        continue 
 
-            # If a valid render function exists, use it to create and pack the widget
-            if render_function:
-                widget = render_function(block)
-                if widget:
-                    widget.pack(side=tk.LEFT, padx=0, pady=0)
+            new_widget_pool[block_id] = widget
 
-        # Adjust the window size to fit the rendered content
-        root.update_idletasks()
-        root.geometry(f"{display_frame.winfo_reqwidth() + PADDING_X}x{display_frame.winfo_reqheight() + PADDING_Y}")
+        # Remove widgets no longer in use
+        for old_block_id in set(widget_pool) - set(new_widget_pool):
+            widget_pool[old_block_id].destroy()
+
+        widget_pool = new_widget_pool  # Update the pool
+
+        # Adjust geometry only if needed
+        new_width = display_frame.winfo_reqwidth() + PADDING_X
+        new_height = display_frame.winfo_reqheight() + PADDING_Y
+        root.geometry(f"{new_width}x{new_height}")
 
     except Exception as e:
         print(f"Error in update_display: {e}")
 
-    # Reschedule the display update
     root.after(UPDATE_INTERVAL, lambda: update_display(parser, parsed_blocks))
 
 # --- Simbrief functionality ---
