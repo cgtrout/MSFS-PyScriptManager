@@ -1036,7 +1036,7 @@ class CountdownTimerDialog(tk.Toplevel):
                 return
 
             # Handle gate-out time adjustment
-            gate_time_offset = self.adjust_gate_out_time(simbrief_json)
+            gate_time_offset = self.adjust_gate_out_delta(simbrief_json)
             print(f"DEBUG: Gate time offset: {gate_time_offset}")
 
             # Set the countdown timer
@@ -1071,7 +1071,7 @@ class CountdownTimerDialog(tk.Toplevel):
             return None
         return simbrief_json
 
-    def adjust_gate_out_time(self, simbrief_json) -> timedelta:
+    def adjust_gate_out_delta(self, simbrief_json) -> timedelta:
         """
         Handle gate-out time adjustment based on SimBrief data and user input.
         Returns the calculated gate time offset.
@@ -1105,23 +1105,26 @@ class CountdownTimerDialog(tk.Toplevel):
                 current_sim_time = get_simulator_datetime()
                 user_gate_time_dt = current_sim_time.replace(hour=hours, minute=minutes, second=0, microsecond=0)
 
-                # TODO: need to handle cases where date is calculated incorrectly
+                # Handle cases where the entered time is earlier than the current simulator time
+                if user_gate_time_dt.time() < current_sim_time.time():
+                    user_gate_time_dt += timedelta(days=1)
 
                 countdown_state.gate_out_time = user_gate_time_dt
 
-                adjusted_user_gate_time = user_gate_time_dt - simbrief_gate_time_sim
+                adjusted_user_gate_delta = user_gate_time_dt - simbrief_gate_time_sim
 
                 print(f"DEBUG: Gate Adjustment calculation")
                 print(f"DEBUG: user_gate_time_dt: {user_gate_time_dt}")
                 print(f"DEBUG: simbrief_gate_time_sim: {simbrief_gate_time_sim}")
-                print(f"DEBUG: adjusted_user_gate_time: {adjusted_user_gate_time}\n")
+                print(f"DEBUG: adjusted_user_gate_delta: {adjusted_user_gate_delta}\n")
 
                 # Compute the offset
-                return adjusted_user_gate_time
+                return adjusted_user_gate_delta
 
         # No user-provided gate-out time; use default
         countdown_state.gate_out_time = None
         return timedelta(0)
+
 
     def calculate_future_time(self, time_text):
         """
@@ -1177,7 +1180,7 @@ class CountdownTimerDialog(tk.Toplevel):
                 print(f"DEBUG: use_adjusted_time--Adjusted SimBrief time: {simbrief_time}")
 
             adjusted_simbrief_time = simbrief_time + gate_time_offset
-            print(f"DEBUG: Final adjusted SimBrief time: {adjusted_simbrief_time}")
+            print(f"DEBUG: Simbrief after gate offset: {adjusted_simbrief_time}")
 
             if self.set_countdown_timer(adjusted_simbrief_time):
                 print(f"DEBUG: Countdown timer set to: {adjusted_simbrief_time}")
