@@ -77,13 +77,20 @@ class CountdownState:
     last_simbrief_generated_time: Optional[datetime] = None  # Last SimBrief time
     last_entered_time: Optional[str] = None  # Last entered time in HHMM format
     gate_out_time: Optional[datetime] = None  # Store last game out time
-    countdown_target_time: datetime = field(default_factory=lambda: UNIX_EPOCH)  # Default target time
+    countdown_target_time: datetime = field(default_factory=lambda: UNIX_EPOCH) 
+    last_countdown_time: Optional[float] = None  # Track last countdown time in seconds
+    is_negative: bool = False  # Track if the countdown has gone negative
 
     def set_target_time(self, new_time: datetime):
         """Set a new countdown target time with type validation."""
         if not isinstance(new_time, datetime):
             raise TypeError("countdown_target_time must be a datetime object")
         self.countdown_target_time = new_time
+
+    def reset(self):
+        """Reset relevant countdown-related state variables."""
+        self.last_countdown_time = None
+        self.is_negative = False
 
 # --- SimBrief Data Structures  ---
 class SimBriefTimeOption(Enum):
@@ -182,20 +189,18 @@ def remain_label():
 
 def get_time_to_future() -> str:
     """
-    Calculate remaining time to the globally configured countdown target.
-    Adjusts for simulator time acceleration if necessary.
-    Returns the time difference as HH:MM:SS, optionally allowing negative values.
+    Calculate the remaining time to the configured countdown target.
+    Handles transitions to negative time and midnight rollover as needed.
+    Returns the time difference as HH:MM:SS.
     """
-    global countdown_state, simbrief_settings  # Access global settings and state
+    global countdown_state, simbrief_settings
 
-    if countdown_state.countdown_target_time == datetime(1970, 1, 1):  # Default unset state
+    if countdown_state.countdown_target_time == UNIX_EPOCH:  # Default unset state
         return "00:00:00"
 
     try:
-        # Fetch current simulator time
         current_sim_time = get_simulator_datetime()
 
-        # Ensure both times are timezone-aware (UTC)
         if countdown_state.countdown_target_time.tzinfo is None or current_sim_time.tzinfo is None:
             raise ValueError("Target time or simulator time is offset-naive. Ensure all times are offset-aware.")
 
@@ -206,9 +211,11 @@ def get_time_to_future() -> str:
 
         # Adjust for midnight rollover - Check if the countdown is for tomorrow
         if target_time_today < current_sim_time:
-            target_time_today += timedelta(days=1)
+            # Only adjust if we are not negative or close to zero (<5 seconds)
+            if not countdown_state.is_negative and (countdown_state.last_countdown_time is None or countdown_state.last_countdown_time > 5):
+                target_time_today += timedelta(days=1)
 
-        # Calculate remaining time
+        # Calculate remaining time after any adjustment
         remaining_time = target_time_today - current_sim_time
 
         # Adjust for simulation rate
@@ -219,19 +226,23 @@ def get_time_to_future() -> str:
             else remaining_time.total_seconds()
         )
 
-        # Allow or block negative time display based on settings
-        if adjusted_seconds < 0 and not simbrief_settings.allow_negative_timer:
-            return "00:00:00"
+        # Update `last_countdown_time` for tracking
+        countdown_state.last_countdown_time = abs(remaining_time.total_seconds())
+
+        # Update `is_negative` flag
+        countdown_state.is_negative = remaining_time.total_seconds() < 0
 
         # Format the adjusted remaining time as HH:MM:SS
-        hours, remainder = divmod(abs(adjusted_seconds), 3600)
+        total_seconds = int(adjusted_seconds)
+        sign = "-" if total_seconds < 0 else ""
+        total_seconds = abs(total_seconds)
+        hours, remainder = divmod(total_seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
 
-        # Add a negative sign if the remaining time is negative
-        sign = "-" if adjusted_seconds < 0 else ""
         return f"{sign}{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
 
     except Exception as e:
+        print(f"Error in get_time_to_future: {e}")
         return "00:00:00"
 
 def initialize_simconnect():
@@ -470,6 +481,8 @@ def set_future_time_internal(future_time_input, current_sim_time):
             # Validate that the future time is after the current simulator time
             if future_time_input <= current_sim_time:
                 raise ValueError("Future time must be later than the current simulator time.")
+
+            countdown_state.reset()
 
             # Log successful setting of the timer
             print(f"Timer manually set to: {future_time_input}")
