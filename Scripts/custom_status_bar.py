@@ -983,6 +983,8 @@ class CountdownTimerDialog(tk.Toplevel):
         global countdown_state, simbrief_settings
 
         try:
+            print("DEBUG: on_ok---------------------------")
+
             # Update SimBrief settings from dialog inputs
             self.update_simbrief_settings()
 
@@ -1013,8 +1015,16 @@ class CountdownTimerDialog(tk.Toplevel):
         Pull the selected time from SimBrief, adjust SimBrief's gate time to match the simulator's time context.
         """
         try:
+            print("DEBUG: pull_time---------------------------")
+            
             # Update and validate SimBrief settings
             self.update_simbrief_settings()
+
+            # Print sim time
+            print(f"DEBUG: Simulator Time: {get_simulator_datetime()}")
+
+            # Print actual time
+            print(f"DEBUG: Real World Time: {datetime.now(timezone.utc)}")
 
             # Validate the SimBrief username
             if not self.validate_simbrief_username():
@@ -1066,43 +1076,48 @@ class CountdownTimerDialog(tk.Toplevel):
         Handle gate-out time adjustment based on SimBrief data and user input.
         Returns the calculated gate time offset.
         """
-        
-        if not self.gate_out_entry.get():
-            return timedelta(0)
-
-        simbrief_gate_time = SimBriefFunctions.get_simbrief_ofp_gate_out_datetime(simbrief_json)
-        if not simbrief_gate_time:
-            messagebox.showerror("Error", "SimBrief gate-out time not found.")
-            return timedelta(0)
-
-        simbrief_gate_time_sim = simbrief_gate_time
-
-        # Only check if user has set simbrief_settings.use_adjusted_time
-        if simbrief_settings.use_adjusted_time:
-            simulator_to_real_world_offset = get_simulator_time_offset()
-            simbrief_gate_time_sim += simulator_to_real_world_offset
-
-        # Check if the user provided a custom gate-out time
-        gate_out_time_input = self.gate_out_entry.get().strip()
-        if gate_out_time_input:
-            if not self.validate_time_format(gate_out_time_input):
-                messagebox.showerror("Error", "Invalid gate-out time format. Please use HHMM.")
+        if self.gate_out_entry.get(): 
+            simbrief_gate_time = SimBriefFunctions.get_simbrief_ofp_gate_out_datetime(simbrief_json)
+            if not simbrief_gate_time:
+                messagebox.showerror("Error", "SimBrief gate-out time not found.")
                 return timedelta(0)
 
-            # Parse the user-provided gate-out time
-            hours, minutes = int(gate_out_time_input[:2]), int(gate_out_time_input[2:])
-            current_sim_time = get_simulator_datetime()
-            user_gate_time_dt = current_sim_time.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+            print(f"DEBUG: UNALTERED SimBrief Gate Time: {simbrief_gate_time}")
 
-            # If the parsed time is earlier than the current time, add one day
-            if user_gate_time_dt < current_sim_time:
-                user_gate_time_dt += timedelta(days=1)
-                print(f"Gate offset calculation: Added one day to user gate time since it was earlier than current time.")
+            simbrief_gate_time_sim = simbrief_gate_time
 
-            countdown_state.gate_out_time = user_gate_time_dt
+            # Only check if user has set simbrief_settings.use_adjusted_time
+            if simbrief_settings.use_adjusted_time:
+                simulator_to_real_world_offset = get_simulator_time_offset()
+                simbrief_gate_time_sim += simulator_to_real_world_offset
 
-            # Compute the offset
-            return user_gate_time_dt - simbrief_gate_time_sim
+            print(f"DEBUG: use_adjusted_time SimBrief Gate Time: {simbrief_gate_time_sim}")
+
+            # Check if the user provided a custom gate-out time
+            gate_out_time_input = self.gate_out_entry.get().strip()
+            if gate_out_time_input:
+                if not self.validate_time_format(gate_out_time_input):
+                    messagebox.showerror("Error", "Invalid gate-out time format. Please use HHMM.")
+                    return timedelta(0)
+
+                # Parse the user-provided gate-out time
+                hours, minutes = int(gate_out_time_input[:2]), int(gate_out_time_input[2:])
+                current_sim_time = get_simulator_datetime()
+                user_gate_time_dt = current_sim_time.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+
+                # TODO: need to handle cases where date is calculated incorrectly
+
+                countdown_state.gate_out_time = user_gate_time_dt
+
+                adjusted_user_gate_time = user_gate_time_dt - simbrief_gate_time_sim
+
+                print(f"DEBUG: Gate Adjustment calculation")
+                print(f"DEBUG: user_gate_time_dt: {user_gate_time_dt}")
+                print(f"DEBUG: simbrief_gate_time_sim: {simbrief_gate_time_sim}")
+                print(f"DEBUG: adjusted_user_gate_time: {adjusted_user_gate_time}\n")
+
+                # Compute the offset
+                return adjusted_user_gate_time
 
         # No user-provided gate-out time; use default
         countdown_state.gate_out_time = None
