@@ -242,7 +242,7 @@ def get_time_to_future() -> str:
         return f"{sign}{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
 
     except Exception as e:
-        print(f"Error in get_time_to_future: {e}")
+        #print(f"Error in get_time_to_future: {e}")
         return "00:00:00"
 
 def initialize_simconnect():
