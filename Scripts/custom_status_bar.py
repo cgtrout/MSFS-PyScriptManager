@@ -325,7 +325,7 @@ def simconnect_background_updater():
                                 with cache_lock:
                                     simconnect_cache[variable_name] = value
                             else:
-                                print(f"DEBUG: Value for '{variable_name}' is None. Will retry in the next cycle.")
+                                #print(f"DEBUG: Value for '{variable_name}' is None. Will retry in the next cycle.")
                                 lookup_failed = True
                         else:
                             print(f"WARNING: 'aq' is None or does not have a 'get' method.")
@@ -574,6 +574,9 @@ def update_display(parser, parsed_blocks):
 
 # --- Simbrief functionality ---
 class SimBriefFunctions:
+    # Last report gen time
+    last_simbrief_generated_time = None
+
     @staticmethod
     def get_latest_simbrief_ofp_json(username):
         """Fetch SimBrief OFP JSON data for the provided username."""
@@ -696,25 +699,36 @@ class SimBriefFunctions:
     @staticmethod
     def auto_update_simbrief(root):
         """
-        Automatically fetch SimBrief data and update the countdown timer.
+        Automatically fetch SimBrief data and update the countdown timer if the generation time has changed.
         """
         if not simbrief_settings.auto_update_enabled:
             return  # Exit if auto-update is disabled
 
         try:
-            # Fetch SimBrief data
+            # Fetch the latest SimBrief data
             simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(simbrief_settings.username)
             if simbrief_json:
-                # Perform the update using the shared method
-                success = SimBriefFunctions.update_countdown_from_simbrief(
-                    simbrief_json=simbrief_json,
-                    simbrief_settings=simbrief_settings,
-                    gate_out_entry_value=None  # No manual entry for auto-update
-                )
-                if success:
-                    print("DEBUG: Auto-update completed successfully.")
+                # Extract the generation time
+                current_generated_time = simbrief_json.get("params", {}).get("time_generated")
+                if not current_generated_time:
+                    print("DEBUG: Unable to determine SimBrief flight plan generation time.")
+                elif current_generated_time != SimBriefFunctions.last_simbrief_generated_time:
+                    print(f"New SimBrief flight plan detected. Generation Time: {current_generated_time}")
+                    
+                    # Try to reload SimBrief future time
+                    success = SimBriefFunctions.update_countdown_from_simbrief(
+                        simbrief_json=simbrief_json,
+                        simbrief_settings=simbrief_settings,
+                        gate_out_entry_value=None  # No manual entry for auto-update
+                    )
+                    if success:
+                        print("DEBUG: Countdown timer updated successfully.")
+                        # Update the stored generation time only on successful update
+                        SimBriefFunctions.last_simbrief_generated_time = current_generated_time
+                    else:
+                        print("DEBUG: Failed to update countdown timer from SimBrief data.")
                 else:
-                    print("DEBUG: Auto-update failed.")
+                    print("DEBUG: SimBrief flight plan has not changed. Skipping update.")
             else:
                 print("DEBUG: Failed to fetch SimBrief data during auto-update.")
         except Exception as e:
@@ -870,7 +884,7 @@ def main():
     initial_x = settings.get("x", 0)
     initial_y = settings.get("y", 0)
     print(f"Loaded window position - x: {initial_x}, y: {initial_y}")
-
+   
     # --- GUI Setup ---
     root = tk.Tk()
     root.title(WINDOW_TITLE)
@@ -878,6 +892,11 @@ def main():
     root.attributes("-topmost", True)
     root.attributes("-alpha", alpha_transparency_level)
     root.configure(bg=DARK_BG)
+
+     # Start auto-update if enabled
+    if simbrief_settings.auto_update_enabled:
+        print("\nAuto-update is enabled. Starting periodic updates...\n")
+        root.after(1000, lambda: SimBriefFunctions.auto_update_simbrief(root))  # Initial delay of 1 second
 
     # Apply initial geometry after creating the root window
     try:
