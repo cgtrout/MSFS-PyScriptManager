@@ -9,6 +9,7 @@ from SimConnect import SimConnect, AircraftRequests
 from datetime import datetime, timezone, timedelta
 import os
 import json
+import importlib
 import requests
 import time
 from enum import Enum
@@ -30,7 +31,11 @@ except ImportError:
 # Print initial message
 print("custom_status_bar: Close this window to close status bar")
 
-# DISPLAY_TEMPLATE
+# Default templates file - this will be created if it doesn't exist
+# in the settings directory as /Settings/status_bar_templates.py
+#
+#   All template modification should be done from this file
+DEFAULT_TEMPLATES = """
 # Defines the content and format of the data shown in the application's window, including dynamic data elements
 # ('VAR()' and 'VARIF()' blocks) and static text.
 
@@ -48,18 +53,24 @@ print("custom_status_bar: Close this window to close status bar")
 # - Static text can be included directly in the template.
 # - Dynamic function calls in labels (e.g., ## suffix) are supported.
 # - VARIF blocks are only displayed if the condition evaluates to True.
+# /Settings/status_bar_templates.py
 
-DISPLAY_TEMPLATE = (
-    "VAR(Sim:, get_sim_time, yellow) | "
-    "VAR(Zulu:, get_real_world_time, white ) |"
-    "VARIF(Sim Rate:, get_sim_rate, white, is_sim_rate_accelerated) VARIF(|, '', white, is_sim_rate_accelerated)  " # Use VARIF on | to show conditionally
-    "VAR(remain_label##, get_time_to_future, red) | "
-    "VAR(, get_temp, cyan)"
-)
+# Define your templates here in the TEMPLATES dictionary.
 
-# Other examples that can be placed in template
-# VAR(Altitude:, get_altitude, tomato)
-
+TEMPLATES = {
+    "Default": (
+        "VAR(Sim:, get_sim_time, yellow) | "
+        "VAR(Zulu:, get_real_world_time, white ) |"
+        "VARIF(Sim Rate:, get_sim_rate, white, is_sim_rate_accelerated) VARIF(|, '', white, is_sim_rate_accelerated)  " # Use VARIF on | to show conditionally
+        "VAR(remain_label##, get_time_to_future, red) | "
+        "VAR(, get_temp, cyan)"
+    ),
+    "Altitude and Temp": (
+        "VAR(Altitude:, get_altitude, tomato) | "
+        "VAR(Temp:, get_temp, cyan)"
+    ),
+}
+"""
 # --- Configurable Variables  ---
 ALPHA_TRANSPARENCY_LEVEL = 0.95  # Set transparency (0.0 = fully transparent, 1.0 = fully opaque)
 WINDOW_TITLE = "Simulator Time"
@@ -142,6 +153,60 @@ simbrief_settings = SimBriefSettings()
 simconnect_cache = {}
 variables_to_track = set()
 cache_lock = threading.Lock()
+
+# --- Template handling  ---
+@dataclass
+class TemplateHandler:
+    """Class to manage the template file and selected template."""
+    templates: dict[str, str] = field(init=False, default_factory=dict)
+    selected_template_name: Optional[str] = None
+    cached_parsed_blocks: list = field(init=False, default_factory=list)
+    pending_template_change: bool = field(init=False, default=False)
+    parser: "TemplateParser" = field(init=False)
+
+    def __post_init__(self):
+        """Initialize templates and set the default selection."""
+        self.parser = TemplateParser()  # Initialize the parser
+        self.templates = self.load_templates()
+        self.selected_template_name = next(iter(self.templates), None)
+        if not self.selected_template_name:
+            raise ValueError("No templates available to select.")
+
+        # Initially cache the parsed blocks for the first template
+        self.cache_parsed_blocks()
+
+    def load_templates(self) -> dict[str, str]:
+        """Load templates from the template file, creating the file if necessary."""
+        os.makedirs(SETTINGS_DIR, exist_ok=True)
+
+        if not os.path.exists(TEMPLATE_FILE):
+            with open(TEMPLATE_FILE, "w") as f:
+                f.write(self.DEFAULT_TEMPLATES.strip())
+            print(f"Created default template file at {TEMPLATE_FILE}")
+
+        try:
+            spec = importlib.util.spec_from_file_location("status_bar_templates", TEMPLATE_FILE)
+            templates_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(templates_module)
+            return templates_module.TEMPLATES if hasattr(templates_module, "TEMPLATES") else {}
+        except Exception as e:
+            print(f"Error loading templates: {e}")
+            return {}
+
+    def get_current_template(self) -> str:
+        """Return the content of the currently selected template."""
+        if not self.selected_template_name or self.selected_template_name not in self.templates:
+            raise ValueError("No valid template selected.")
+        return self.templates[self.selected_template_name]
+
+    def cache_parsed_blocks(self):
+        """Cache the parsed blocks for the currently selected template."""
+        template_content = self.get_current_template()
+        self.cached_parsed_blocks = self.parser.parse_template(template_content)
+
+    def mark_template_change(self):
+        """Mark that a template change is pending."""
+        self.pending_template_change = True
 
 # --- SimConnect Lookup  ---
 def get_sim_time():
@@ -528,63 +593,68 @@ def get_dynamic_value(function_name):
 
 widget_pool = {}
 
-def update_display(parser, parsed_blocks):
+def update_display(template_handler):
     """
-    Render the parsed blocks onto the display frame.
+    Render the parsed blocks onto the display frame, re-parsing if a template change is pending.
     """
     global widget_pool
 
-    try:
-        if is_moving:
-            root.after(UPDATE_INTERVAL, lambda: update_display(parser, parsed_blocks))
-            return
+    #try:
+    if is_moving:
+        root.after(UPDATE_INTERVAL, lambda: update_display(template_handler))
+        return
 
-        # Track which widgets should remain on the screen and which ones should be removed later.
-        new_widget_pool = {}
-        widget = None
+    # Re-parse the template if a change is pending
+    if template_handler.pending_template_change:
+        template_handler.cache_parsed_blocks()
+        template_handler.pending_template_change = False  # Reset the flag
 
-        for block in parsed_blocks:
-            block_type = block["type"]
-            # Define a unique identifier for the block
-            block_id = block.get("label", f"block_{id(block)}")
+        # Reset the widget pool to clear old widgets
+        for widget in widget_pool.values():
+            if widget is not None and hasattr(widget, "destroy"):
+                widget.destroy()
+        widget_pool = {}
 
-            # Check if the widget already exists
-            if block_id in widget_pool:
-                widget = widget_pool[block_id]
-                # Update the widget's content
-                render_function = parser.block_registry.get(block_type, {}).get("render")
-                if render_function:
-                    updated_widget = render_function(block)
-                    if updated_widget and widget.cget("text") != updated_widget.cget("text"):
-                        widget.config(text=updated_widget.cget("text"))
-            else:
-                # Create a new widget for the block
-                render_function = parser.block_registry.get(block_type, {}).get("render")
-                if render_function:
-                    widget = render_function(block)
-                    if widget:
-                        widget.pack(side=tk.LEFT, padx=0, pady=0)
-                    else:
-                        #print(f"Warning: Render function returned None for block: {block}")
-                        continue
+    # Use cached parsed blocks
+    parsed_blocks = template_handler.cached_parsed_blocks
 
-            new_widget_pool[block_id] = widget
+    # Track which widgets should remain on the screen and which ones should be removed later.
+    new_widget_pool = {}
+    widget = None
 
-        # Remove widgets no longer in use
-        for old_block_id in set(widget_pool) - set(new_widget_pool):
-            widget_pool[old_block_id].destroy()
+    for block in parsed_blocks:
+        block_type = block["type"]
+        block_id = block.get("label", f"block_{id(block)}")
 
-        widget_pool = new_widget_pool  # Update the pool
+        if block_id in widget_pool:
+            widget = widget_pool[block_id]
+            render_function = template_handler.parser.block_registry.get(block_type, {}).get("render")
+            if render_function:
+                updated_widget = render_function(block)
+                if updated_widget and widget.cget("text") != updated_widget.cget("text"):
+                    widget.config(text=updated_widget.cget("text"))
+        else:
+            render_function = template_handler.parser.block_registry.get(block_type, {}).get("render")
+            if render_function:
+                widget = render_function(block)
+                if widget:
+                    widget.pack(side=tk.LEFT, padx=0, pady=0)
 
-        # Adjust geometry only if needed
-        new_width = display_frame.winfo_reqwidth() + PADDING_X
-        new_height = display_frame.winfo_reqheight() + PADDING_Y
-        root.geometry(f"{new_width}x{new_height}")
+        new_widget_pool[block_id] = widget
 
-    except Exception as e:
-        print_error(f"Error in update_display: {e}")
+    for old_block_id in set(widget_pool) - set(new_widget_pool):
+        widget_pool[old_block_id].destroy()
 
-    root.after(UPDATE_INTERVAL, lambda: update_display(parser, parsed_blocks))
+    widget_pool = new_widget_pool
+
+    new_width = display_frame.winfo_reqwidth() + PADDING_X
+    new_height = display_frame.winfo_reqheight() + PADDING_Y
+    root.geometry(f"{new_width}x{new_height}")
+
+    #except Exception as e:
+    #    print_error(f"Error in update_display: {e}")
+
+    root.after(UPDATE_INTERVAL, lambda: update_display(template_handler))
 
 # --- Simbrief functionality ---
 class SimBriefFunctions:
@@ -856,10 +926,42 @@ def stop_move(event):
     is_moving = False
     save_settings({"x": root.winfo_x(), "y": root.winfo_y()}, simbrief_settings)
 
+# --- Template Menu ---
+def show_template_menu(event, template_handler):
+    """
+    Display a context menu to allow the user to select a template.
+    """
+    menu = tk.Menu(root, tearoff=0)
+
+    # Add all templates to the menu
+    for template_name in template_handler.templates.keys():
+        menu.add_command(
+            label=template_name,
+            command=lambda name=template_name: switch_template(name, template_handler)
+        )
+
+    # Show the menu at the cursor position
+    menu.post(event.x_root, event.y_root)
+
+def switch_template(new_template_name, template_handler):
+    """
+    Switch to a new template and mark it for re-rendering in the next update cycle.
+    """
+    try:
+        # Update the selected template
+        template_handler.selected_template_name = new_template_name
+        template_handler.mark_template_change()  # Mark the change
+
+        print(f"Switched to template: {new_template_name}")
+
+    except Exception as e:
+        print_error(f"Error switching template: {e}")
+
 # --- Settings  ---
 SCRIPT_DIR = os.path.dirname(__file__)
 SETTINGS_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "Settings")
 SETTINGS_FILE = os.path.join(SETTINGS_DIR, "custom_status_bar.json")
+TEMPLATE_FILE = os.path.join(SETTINGS_DIR, "status_bar_templates.py")
 
 # Ensure the Settings directory exists
 os.makedirs(SETTINGS_DIR, exist_ok=True)
@@ -938,13 +1040,14 @@ def main():
     background_thread.start()
 
     try:
-        # Template parser stores block definitions and handles parsing
-        template_parser = TemplateParser()
-        # Parse the template string
-        parsed_blocks = template_parser.parse_template(DISPLAY_TEMPLATE)
+        # Initialize TemplateHandler
+        template_handler = TemplateHandler()
 
-        # Start the update loop
-        update_display(template_parser, parsed_blocks)
+        # Render the initial display
+        update_display(template_handler)
+
+        # Bind the right-click menu
+        root.bind("<Button-3>", lambda event: show_template_menu(event, template_handler))
 
         # Run the GUI event loop
         root.mainloop()
