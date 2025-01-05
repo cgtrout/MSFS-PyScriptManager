@@ -1,6 +1,7 @@
 # custom_status_bar.py: shows a draggable, customizable status bar using SimConnect to display real-time flight simulator metrics like time, altitude, and temperature in a compact GUI.
 #   - use instructions below to customize
 #   - Uses https://github.com/odwdinc/Python-SimConnect library to obtain values from SimConnect
+#   - Further SimConnect variables can be found at https://docs.flightsimulator.com/html/Programming_Tools/SimVars/Simulation_Variables.htm
 
 import tkinter as tk
 from tkinter import simpledialog, messagebox
@@ -51,13 +52,13 @@ DISPLAY_TEMPLATE = (
 # VAR(Altitude:, get_altitude, tomato)
 
 # --- Configurable Variables  ---
-alpha_transparency_level = 0.95  # Set transparency (0.0 = fully transparent, 1.0 = fully opaque)
+ALPHA_TRANSPARENCY_LEVEL = 0.95  # Set transparency (0.0 = fully transparent, 1.0 = fully opaque)
 WINDOW_TITLE = "Simulator Time"
 DARK_BG = "#000000"
 FONT = ("Helvetica", 16)
 UPDATE_INTERVAL = 33  # in milliseconds
 
-AUTO_UPDATE_INTERVAL_MS = 5 * 60 * 1000  # 5 minutes in milliseconds
+SIMBRIEF_AUTO_UPDATE_INTERVAL_MS = 5 * 60 * 1000  # 5 minutes in milliseconds
 
 PADDING_X = 20  # Horizontal padding for each label
 PADDING_Y = 10  # Vertical padding for the window
@@ -161,7 +162,7 @@ def get_altitude():
     return get_formatted_value("PLANE_ALTITUDE", "{:.0f} ft")
 
 def get_sim_rate():
-    """Fetch the sim rate from SimConnect, formatted in feet."""
+    """Fetch the sim rate from SimConnect."""
     return get_formatted_value("SIMULATION_RATE", "{:.1f}")
 
 def is_sim_rate_accelerated():
@@ -313,6 +314,7 @@ def simconnect_background_updater():
                 initialize_simconnect()
                 continue
 
+            # Sleep if thread is blocked to prevent breakpoints from being hit here
             if is_main_thread_blocked():
                 print("WARNING: Main thread is blocked. Retrying in 1 second.")
                 time.sleep(1)
@@ -748,7 +750,7 @@ class SimBriefFunctions:
             print(f"DEBUG: Exception during auto-update: {e}")
 
         # Schedule the next auto-update
-        root.after(AUTO_UPDATE_INTERVAL_MS, lambda: SimBriefFunctions.auto_update_simbrief(root))
+        root.after(SIMBRIEF_AUTO_UPDATE_INTERVAL_MS, lambda: SimBriefFunctions.auto_update_simbrief(root))
 
     @staticmethod
     def adjust_gate_out_delta(
@@ -903,7 +905,7 @@ def main():
     root.title(WINDOW_TITLE)
     root.overrideredirect(True)
     root.attributes("-topmost", True)
-    root.attributes("-alpha", alpha_transparency_level)
+    root.attributes("-alpha", ALPHA_TRANSPARENCY_LEVEL)
     root.configure(bg=DARK_BG)
 
      # Start auto-update if enabled
