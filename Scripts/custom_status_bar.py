@@ -77,7 +77,7 @@ class CountdownState:
     last_simbrief_generated_time: Optional[datetime] = None  # Last SimBrief time
     last_entered_time: Optional[str] = None  # Last entered time in HHMM format
     gate_out_time: Optional[datetime] = None  # Store last game out time
-    countdown_target_time: datetime = field(default_factory=lambda: UNIX_EPOCH) 
+    countdown_target_time: datetime = field(default_factory=lambda: UNIX_EPOCH)
     last_countdown_time: Optional[float] = None  # Track last countdown time in seconds
     is_negative: bool = False  # Track if the countdown has gone negative
 
@@ -103,7 +103,7 @@ class SimBriefSettings:
     use_adjusted_time: bool = False
     selected_time_option: SimBriefTimeOption = SimBriefTimeOption.ESTIMATED_IN
     allow_negative_timer: bool = False
-    auto_update_enabled: bool = False  
+    auto_update_enabled: bool = False
 
     def to_dict(self):
         return {
@@ -295,7 +295,7 @@ def prefetch_variables(*variables, default_value="N/A"):
 
 def is_main_thread_blocked():
     main_thread = threading.main_thread()
-    return not main_thread.is_alive() 
+    return not main_thread.is_alive()
 
 def simconnect_background_updater():
     """Background thread to update SimConnect variables with small sleep between updates."""
@@ -538,7 +538,7 @@ def update_display(parser, parsed_blocks):
             root.after(UPDATE_INTERVAL, lambda: update_display(parser, parsed_blocks))
             return
 
-        # Track which widgets should remain on the screen and which ones should be removed later. 
+        # Track which widgets should remain on the screen and which ones should be removed later.
         new_widget_pool = {}
         widget = None
 
@@ -565,7 +565,7 @@ def update_display(parser, parsed_blocks):
                         widget.pack(side=tk.LEFT, padx=0, pady=0)
                     else:
                         #print(f"Warning: Render function returned None for block: {block}")
-                        continue 
+                        continue
 
             new_widget_pool[block_id] = widget
 
@@ -666,7 +666,7 @@ class SimBriefFunctions:
         except Exception as e:
             print(f"Error extracting TOD time: {e}")
             return None
-    
+
     @staticmethod
     def update_countdown_from_simbrief(simbrief_json, simbrief_settings, gate_out_entry_value=None):
         """
@@ -727,7 +727,7 @@ class SimBriefFunctions:
                     print("DEBUG: Unable to determine SimBrief flight plan generation time.")
                 elif current_generated_time != SimBriefFunctions.last_simbrief_generated_time:
                     print(f"New SimBrief flight plan detected. Generation Time: {current_generated_time}")
-                    
+
                     # Try to reload SimBrief future time
                     success = SimBriefFunctions.update_countdown_from_simbrief(
                         simbrief_json=simbrief_json,
@@ -800,7 +800,7 @@ class SimBriefFunctions:
         print("DEBUG: No user-provided gate-out time. Using SimBrief default gate-out time.")
         countdown_state.gate_out_time = None
         return timedelta(0)
-    
+
     @staticmethod
     def set_countdown_timer_from_simbrief(
         simbrief_json, selected_time_option: SimBriefTimeOption, simbrief_settings: SimBriefSettings, gate_time_offset: timedelta
@@ -897,7 +897,7 @@ def main():
     initial_x = settings.get("x", 0)
     initial_y = settings.get("y", 0)
     print(f"Loaded window position - x: {initial_x}, y: {initial_y}")
-   
+
     # --- GUI Setup ---
     root = tk.Tk()
     root.title(WINDOW_TITLE)
@@ -953,7 +953,7 @@ class CountdownTimerDialog(tk.Toplevel):
     """A dialog to set the countdown timer and SimBrief settings"""
     def __init__(self, parent, simbrief_settings: SimBriefSettings, initial_time=None, gate_out_time=None):
         super().__init__(parent)
-        
+
         self.simbrief_settings = simbrief_settings
 
         # Remove the native title bar
@@ -969,7 +969,7 @@ class CountdownTimerDialog(tk.Toplevel):
         # Window size and positioning
         parent_x = parent.winfo_rootx()
         parent_y = parent.winfo_rooty()
-        self.geometry(f"+{parent_x}+{parent_y}")  
+        self.geometry(f"+{parent_x}+{parent_y}")
 
         # Dark mode colors
         self.bg_color = "#2E2E2E"  # Dark background
@@ -998,7 +998,7 @@ class CountdownTimerDialog(tk.Toplevel):
         if initial_time:
             self.time_entry.insert(0, initial_time)
         self.time_entry.pack(side="left", padx=5)
-        
+
         # Add simbrief section (with collapsable section)
         self.build_simbrief_section(self, small_font)
 
@@ -1084,16 +1084,16 @@ class CountdownTimerDialog(tk.Toplevel):
 
         # Outer Frame for Padding
         outer_frame = tk.Frame(frame, bg=self.bg_color)
-        outer_frame.pack(fill="x", padx=10, pady=0) 
+        outer_frame.pack(fill="x", padx=10, pady=0)
 
         # SimBrief Username and Gate Out Time Group
         input_frame = tk.Frame(outer_frame, bg=self.bg_color)
-        input_frame.pack(fill="x", pady=2) 
+        input_frame.pack(fill="x", pady=2)
 
         # SimBrief Username
         tk.Label(
             input_frame, text="SimBrief Username:", bg=self.bg_color, fg=self.fg_color, font=small_font
-        ).grid(row=0, column=0, sticky="w", padx=5, pady=2) 
+        ).grid(row=0, column=0, sticky="w", padx=5, pady=2)
 
         self.simbrief_entry = tk.Entry(
             input_frame, justify="left", bg=self.entry_bg_color, fg=self.entry_fg_color, font=small_font, width=25
@@ -1105,14 +1105,14 @@ class CountdownTimerDialog(tk.Toplevel):
         # Gate Out Time
         tk.Label(
             input_frame, text="Gate Out Time (HHMM):", bg=self.bg_color, fg=self.fg_color, font=small_font
-        ).grid(row=1, column=0, sticky="w", padx=5, pady=2) 
+        ).grid(row=1, column=0, sticky="w", padx=5, pady=2)
 
         self.gate_out_entry = tk.Entry(
             input_frame, justify="left", bg=self.entry_bg_color, fg=self.entry_fg_color, font=small_font, width=25
         )
         if gate_out_time:
             self.gate_out_entry.insert(0, gate_out_time.strftime("%H%M"))
-        self.gate_out_entry.grid(row=1, column=1, sticky="w", padx=5, pady=2) 
+        self.gate_out_entry.grid(row=1, column=1, sticky="w", padx=5, pady=2)
 
         # Checkbox for SimBrief Time Translation
         self.simbrief_checkbox_var = tk.BooleanVar(value=use_simbrief_adjusted_time)
@@ -1138,7 +1138,7 @@ class CountdownTimerDialog(tk.Toplevel):
             selectcolor=self.entry_bg_color,
             font=small_font,
         )
-        self.negative_timer_checkbox.grid(row=3, column=0, columnspan=2, sticky="w", padx=5, pady=2) 
+        self.negative_timer_checkbox.grid(row=3, column=0, columnspan=2, sticky="w", padx=5, pady=2)
 
         # Add checkbox for enabling/disabling auto updates
         self.auto_update_var = tk.BooleanVar(value=simbrief_settings.auto_update_enabled)
@@ -1154,16 +1154,16 @@ class CountdownTimerDialog(tk.Toplevel):
         self.auto_update_checkbox.grid(row=4, column=0, columnspan=2, sticky="w", padx=5, pady=2)
 
         # Add separation before SimBrief Time Selection
-        separator_frame = tk.Frame(outer_frame, bg=self.bg_color, height=5)  
-        separator_frame.pack(fill="x", pady=2)  
+        separator_frame = tk.Frame(outer_frame, bg=self.bg_color, height=5)
+        separator_frame.pack(fill="x", pady=2)
 
         # SimBrief Time Selection Group
         time_selection_frame = tk.Frame(outer_frame, bg=self.bg_color)
-        time_selection_frame.pack(fill="x", pady=2, anchor="w")  
+        time_selection_frame.pack(fill="x", pady=2, anchor="w")
 
         tk.Label(
             time_selection_frame, text="Select SimBrief Time:", bg=self.bg_color, fg=self.fg_color, font=small_font
-        ).grid(row=0, column=0, sticky="w", padx=5, pady=2)  
+        ).grid(row=0, column=0, sticky="w", padx=5, pady=2)
 
         self.selected_time_option = tk.StringVar(value=self.simbrief_settings.selected_time_option.value)
         self.time_dropdown = tk.OptionMenu(
@@ -1292,7 +1292,7 @@ class CountdownTimerDialog(tk.Toplevel):
         simbrief_settings.username = self.simbrief_entry.get().strip()
         simbrief_settings.use_adjusted_time = self.simbrief_checkbox_var.get()
         simbrief_settings.selected_time_option = SimBriefTimeOption(self.selected_time_option.get())
-        simbrief_settings.allow_negative_timer = self.negative_timer_checkbox_var.get()  
+        simbrief_settings.allow_negative_timer = self.negative_timer_checkbox_var.get()
         simbrief_settings.auto_update_enabled = self.auto_update_var.get()
 
     def validate_simbrief_username(self):
