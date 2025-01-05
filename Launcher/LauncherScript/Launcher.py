@@ -11,11 +11,15 @@ from multiprocessing import Process, Event
 from pathlib import Path
 from typing import Dict
 
+# Import parse_ansi_colors from local parse_ansi.py
+from parse_ansi import parse_ansi_colors
+
 import tkinter as tk
 from tkinter import filedialog, scrolledtext, TclError
 from tkinter import ttk
 
 import psutil
+import re
 from ttkthemes import ThemedTk
 
 # Path to the WinPython Python executable and VS Code.exe
@@ -262,14 +266,20 @@ class ScriptTab(Tab):
         self.process_tracker = process_tracker
         self.tab_id = None
 
+        # Define font settings
+        self.font_normal = ("Consolas", 12)
+        self.font_bold = ("Consolas", 12, "bold")
+
     def build_content(self):
         """Build the content of the ScriptTab."""
+
         self.text_widget = scrolledtext.ScrolledText(
             self.frame,
             wrap="word",
             bg=TEXT_WIDGET_BG_COLOR,
             fg=TEXT_WIDGET_FG_COLOR,
-            insertbackground=TEXT_WIDGET_INSERT_COLOR
+            insertbackground=TEXT_WIDGET_INSERT_COLOR,
+            font=self.font_normal
         )
         self.text_widget.pack(expand=True, fill="both")
 
@@ -335,11 +345,56 @@ class ScriptTab(Tab):
         self._insert_text(text)
 
     def _insert_text(self, text):
-        """Safely insert text into the widget, handling both stdout and stderr."""
+        """Parse and insert text with ANSI color handling."""
         if self.text_widget and self.text_widget.winfo_exists():
-            self.frame.after(0, lambda: self._safe_insert(text))
-        else:
-            print(f"[WARNING] Attempt to write to a destroyed widget for Tab ID: {self.tab_id}")
+            parsed_segments = parse_ansi_colors(text)
+            self.frame.after(0, lambda: self._safe_insert_segments(parsed_segments))
+
+    def ensure_tag(self, color=None, bold=False):
+        """
+        Ensure that a text tag for the given color and bold style is defined in the widget.
+        """
+        # Generate a unique tag name based on color and bold
+        tag = f"color-{color}-bold-{bold}" if color else f"bold-{bold}"
+
+        if tag not in self.text_widget.tag_names():
+            tag_config = {}
+
+            # Set the foreground color if specified
+            if color:
+                tag_config["foreground"] = color
+
+            # Set the font explicitly for bold or normal text
+            if bold:
+                tag_config["font"] = self.font_bold
+            else:
+                tag_config["font"] = self.font_normal
+
+            # Configure the tag in the widget
+            self.text_widget.tag_configure(tag, **tag_config)
+
+        return tag
+
+    def _safe_insert_segments(self, segments):
+        """Safely insert text segments with colors and bold styles into the text widget."""
+        try:
+            for segment, style in segments:
+                color = style.get("color")  # Extract the color
+                bold = style.get("bold", False)  # Extract bold
+
+                if color or bold:
+                    # Ensure the tag exists for this combination of color and bold
+                    tag = self.ensure_tag(color=color, bold=bold)
+                    self.text_widget.insert(tk.END, segment, tag)
+                else:
+                    # Insert plain text with no formatting
+                    self.text_widget.insert(tk.END, segment)
+
+            self.text_widget.see(tk.END)  # Scroll to the end
+        except TclError as e:
+            print(f"[WARNING] _safe_insert_segments: TclError encountered: {e}")
+        except Exception as e:
+            print(f"[ERROR] _safe_insert_segments: Unexpected error: {e}")
 
     def _safe_insert(self, text):
         """Safely insert text into the text widget"""
@@ -874,7 +929,7 @@ class ProcessTracker:
                         continue
                     except psutil.AccessDenied:
                         logging.warning(f"Access denied to kill PID {proc.pid}.")
-            
+
             #logging.info("Made it to end - terminate process tree")
 
         except psutil.NoSuchProcess:
