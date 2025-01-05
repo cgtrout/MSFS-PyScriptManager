@@ -15,8 +15,17 @@ from enum import Enum
 from dataclasses import dataclass, field
 
 import threading
+import sys
 
 from typing import Any, Optional
+
+try:
+    # Import all color print functions
+    from Lib.color_print import *
+
+except ImportError:
+    print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
+    sys.exit(1)
 
 # Print initial message
 print("custom_status_bar: Close this window to close status bar")
@@ -272,7 +281,7 @@ def get_simconnect_value(variable_name: str, default_value: Any = "N/A", retries
             return value
         time.sleep(retry_interval)
 
-    print(f"DEBUG: All {retries} retries failed for '{variable_name}'. Returning default: {default_value}")
+    print_debug(f"All {retries} retries failed for '{variable_name}'. Returning default: {default_value}")
     return default_value
 
 def check_cache(variable_name):
@@ -312,7 +321,7 @@ def simconnect_background_updater():
 
             if sim_connected:
                 if sm is None or not sm.ok or sm.quit == 1:
-                    print("WARNING: SimConnect state invalid. Disconnecting.")
+                    print_warning("SimConnect state invalid. Disconnecting.")
                     sim_connected = False
                     continue
 
@@ -331,21 +340,21 @@ def simconnect_background_updater():
                                 #print(f"DEBUG: Value for '{variable_name}' is None. Will retry in the next cycle.")
                                 lookup_failed = True
                         else:
-                            print(f"WARNING: 'aq' is None or does not have a 'get' method.")
+                            print_warning(f"'aq' is None or does not have a 'get' method.")
                             lookup_failed = True
                     except Exception as e:
-                        print(f"DEBUG: Error fetching '{variable_name}': {e}. Will retry in the next cycle.")
+                        print_debug(f"Error fetching '{variable_name}': {e}. Will retry in the next cycle.")
                         lookup_failed = True
 
                     # Introduce a small sleep between variable updates
                     time.sleep(VARIABLE_SLEEP)
 
             else:
-                print("WARNING: SimConnect not connected. Retrying in 1 second.")
+                print_warning("SimConnect not connected. Retrying in 1 second.")
                 time.sleep(1)
 
         except Exception as e:
-            print(f"ERROR: Unexpected error in background updater: {e}")
+            print_error(f"Unexpected error in background updater: {e}")
 
         # Adjust sleep interval dynamically
         sleep_interval = MIN_UPDATE_INTERVAL if lookup_failed else STANDARD_UPDATE_INTERVAL
@@ -438,12 +447,12 @@ def get_simulator_time_offset():
 
         # Check if the offset is within the threshold
         if abs(offset) <= threshold:
-            print(f"DEBUG: Offset {offset} is within threshold, assuming zero offset.")
+            print_debug(f"Offset {offset} is within threshold, assuming zero offset.")
             return timedelta(0)
-        print(f"DEBUG: Simulator Time Offset: {offset}")
+        print_debug(f"Simulator Time Offset: {offset}")
         return offset
     except Exception as e:
-        print(f"Error calculating simulator time offset: {e}")
+        print_error(f"Error calculating simulator time offset: {e}")
         return timedelta(0)  # Default to no offset if error occurs
 
 def convert_real_world_time_to_sim_time(real_world_time):
@@ -456,10 +465,10 @@ def convert_real_world_time_to_sim_time(real_world_time):
 
         # Adjust the real-world time to simulator time
         sim_time = real_world_time + offset
-        print(f"DEBUG: Converted Real-World Time {real_world_time} to Sim Time {sim_time}")
+        print_debug(f"Converted Real-World Time {real_world_time} to Sim Time {sim_time}")
         return sim_time
     except Exception as e:
-        print(f"Error converting real-world time to sim time: {e}")
+        print_error(f"Error converting real-world time to sim time: {e}")
         return real_world_time  # Return the original time as fallback
 
 def set_future_time_internal(future_time_input, current_sim_time):
@@ -483,9 +492,9 @@ def set_future_time_internal(future_time_input, current_sim_time):
             raise TypeError("Unsupported future_time_input type. Must be a datetime object.")
 
     except ValueError as ve:
-        print(f"Validation error in set_future_time_internal: {ve}")
+        print_error(f"Validation error in set_future_time_internal: {ve}")
     except Exception as e:
-        print(f"DEBUG: Unexpected error in set_future_time_internal: {str(e)}")
+        print_error(f"Unexpected error in set_future_time_internal: {str(e)}")
 
 def open_timer_dialog():
     """
@@ -573,7 +582,7 @@ def update_display(parser, parsed_blocks):
         root.geometry(f"{new_width}x{new_height}")
 
     except Exception as e:
-        print(f"Error in update_display: {e}")
+        print_error(f"Error in update_display: {e}")
 
     root.after(UPDATE_INTERVAL, lambda: update_display(parser, parsed_blocks))
 
@@ -593,10 +602,10 @@ class SimBriefFunctions:
             response = requests.get(simbrief_url, timeout=5)
             if response.status_code == 200:
                 return response.json()
-            print(f"DEBUG: SimBrief API call failed with status code {response.status_code}")
+            print_debug(f"SimBrief API call failed with status code {response.status_code}")
             return None
         except Exception as e:
-            print(f"DEBUG: Error fetching SimBrief OFP: {str(e)}")
+            print_debug(f"Error fetching SimBrief OFP: {str(e)}")
             return None
 
     @staticmethod
@@ -608,9 +617,9 @@ class SimBriefFunctions:
                     sched_out_epoch = int(simbrief_json["times"]["sched_out"])
                     return datetime.fromtimestamp(sched_out_epoch, tz=timezone.utc)
                 else:
-                    print("DEBUG: 'sched_out' not found in SimBrief JSON under 'times'.")
+                    print_debug("'sched_out' not found in SimBrief JSON under 'times'.")
             except Exception as e:
-                print(f"DEBUG: Error processing SimBrief gate out datetime: {e}")
+                print_error(f"Error processing SimBrief gate out datetime: {e}")
         return None
 
     @staticmethod
@@ -622,9 +631,9 @@ class SimBriefFunctions:
                     est_in_epoch = int(simbrief_json["times"]["est_in"])
                     return datetime.fromtimestamp(est_in_epoch, tz=timezone.utc)
                 else:
-                    print("DEBUG: 'est_in' not found in SimBrief JSON under 'times'.")
+                    print_warning("'est_in' not found in SimBrief JSON under 'times'.")
             except Exception as e:
-                print(f"DEBUG: Error processing SimBrief arrival datetime: {e}")
+                print_error(f"Error processing SimBrief arrival datetime: {e}")
         return None
 
     @staticmethod
@@ -632,12 +641,12 @@ class SimBriefFunctions:
         """Fetch the Top of Descent (TOD) time from SimBrief JSON data."""
         try:
             if "times" not in simbrief_json or "navlog" not in simbrief_json or "fix" not in simbrief_json["navlog"]:
-                print("Invalid SimBrief JSON format.")
+                print_warning("Invalid SimBrief JSON format.")
                 return None
 
             sched_out_epoch = simbrief_json["times"].get("sched_out")
             if not sched_out_epoch:
-                print("sched_out (gate out time) not found.")
+                print_warning("sched_out (gate out time) not found.")
                 return None
 
             sched_out_epoch = int(sched_out_epoch)
@@ -646,17 +655,17 @@ class SimBriefFunctions:
                 if waypoint.get("ident") == "TOD":
                     time_total_seconds = waypoint.get("time_total")
                     if not time_total_seconds:
-                        print("time_total for TOD not found.")
+                        print_warning("time_total for TOD not found.")
                         return None
 
                     time_total_seconds = int(time_total_seconds)
                     tod_epoch = sched_out_epoch + time_total_seconds
                     return datetime.fromtimestamp(tod_epoch, tz=timezone.utc)
 
-            print("TOD waypoint not found in the navlog.")
+            print_error("TOD waypoint not found in the navlog.")
             return None
         except Exception as e:
-            print(f"Error extracting TOD time: {e}")
+            print_error(f"Error extracting TOD time: {e}")
             return None
 
     @staticmethod
@@ -697,7 +706,7 @@ class SimBriefFunctions:
                 return True
 
         except Exception as e:
-            print(f"DEBUG: Exception in update_countdown_from_simbrief: {e}")
+            print_error(f"Exception in update_countdown_from_simbrief: {e}")
         return False
 
 
@@ -716,9 +725,9 @@ class SimBriefFunctions:
                 # Extract the generation time
                 current_generated_time = simbrief_json.get("params", {}).get("time_generated")
                 if not current_generated_time:
-                    print("DEBUG: Unable to determine SimBrief flight plan generation time.")
+                    print_warning("Unable to determine SimBrief flight plan generation time.")
                 elif current_generated_time != SimBriefFunctions.last_simbrief_generated_time:
-                    print(f"New SimBrief flight plan detected. Generation Time: {current_generated_time}")
+                    print_info(f"New SimBrief flight plan detected. Generation Time: {current_generated_time}")
 
                     # Try to reload SimBrief future time
                     success = SimBriefFunctions.update_countdown_from_simbrief(
@@ -727,17 +736,17 @@ class SimBriefFunctions:
                         gate_out_entry_value=None  # No manual entry for auto-update
                     )
                     if success:
-                        print("DEBUG: Countdown timer updated successfully.")
+                        print_info("Countdown timer updated successfully.")
                         # Update the stored generation time only on successful update
                         SimBriefFunctions.last_simbrief_generated_time = current_generated_time
                     else:
-                        print("DEBUG: Failed to update countdown timer from SimBrief data.")
+                        print_warning("Failed to update countdown timer from SimBrief data.")
                 else:
-                    print("DEBUG: SimBrief flight plan has not changed. Skipping update.")
+                    print_info("SimBrief flight plan has not changed. Skipping update.")
             else:
-                print("DEBUG: Failed to fetch SimBrief data during auto-update.")
+                print_error("Failed to fetch SimBrief data during auto-update.")
         except Exception as e:
-            print(f"DEBUG: Exception during auto-update: {e}")
+            print_error(f"DEBUG: Exception during auto-update: {e}")
 
         # Schedule the next auto-update
         root.after(SIMBRIEF_AUTO_UPDATE_INTERVAL_MS, lambda: SimBriefFunctions.auto_update_simbrief(root))
@@ -755,14 +764,14 @@ class SimBriefFunctions:
         if not simbrief_gate_time:
             raise ValueError("SimBrief gate-out time not found.")
 
-        print(f"DEBUG: UNALTERED SimBrief Gate Time: {simbrief_gate_time}")
+        print_debug(f"UNALTERED SimBrief Gate Time: {simbrief_gate_time}")
 
         # Adjust SimBrief time for simulator context if required
         if simbrief_settings.use_adjusted_time:
             simulator_to_real_world_offset = get_simulator_time_offset()
             simbrief_gate_time += simulator_to_real_world_offset
 
-        print(f"DEBUG: use_adjusted_time SimBrief Gate Time: {simbrief_gate_time}")
+        print_debug(f"use_adjusted_time SimBrief Gate Time: {simbrief_gate_time}")
 
         # Save SimBrief gate-out time as the default
         countdown_state.gate_out_time = simbrief_gate_time
@@ -779,17 +788,17 @@ class SimBriefFunctions:
 
             adjusted_delta = user_gate_time_dt - simbrief_gate_time
 
-            print(f"DEBUG: Gate Adjustment calculation")
-            print(f"DEBUG: user_gate_time_dt: {user_gate_time_dt}")
-            print(f"DEBUG: simbrief_gate_time: {simbrief_gate_time}")
-            print(f"DEBUG: adjusted_delta: {adjusted_delta}\n")
+            print_debug(f"Gate Adjustment calculation")
+            print_debug(f"user_gate_time_dt: {user_gate_time_dt}")
+            print_debug(f"simbrief_gate_time: {simbrief_gate_time}")
+            print_debug(f"adjusted_delta: {adjusted_delta}\n")
 
             # Save user-provided gate-out time
             countdown_state.gate_out_time = user_gate_time_dt
             return adjusted_delta
 
         # No user-provided gate-out time; use SimBrief defaults
-        print("DEBUG: No user-provided gate-out time. Using SimBrief default gate-out time.")
+        print_info("No user-provided gate-out time. Using SimBrief default gate-out time.")
         countdown_state.gate_out_time = None
         return timedelta(0)
 
@@ -809,15 +818,15 @@ class SimBriefFunctions:
             raise ValueError("Invalid SimBrief time option.")
 
         if simbrief_time:
-            print(f"DEBUG: Original SimBrief time: {simbrief_time}")
+            print_debug(f"Original SimBrief time: {simbrief_time}")
 
             if simbrief_settings.use_adjusted_time:
                 simulator_to_real_world_offset = get_simulator_time_offset()
                 simbrief_time += simulator_to_real_world_offset
-                print(f"DEBUG: Adjusted SimBrief time: {simbrief_time}")
+                print_debug(f"Adjusted SimBrief time: {simbrief_time}")
 
             adjusted_simbrief_time = simbrief_time + gate_time_offset
-            print(f"DEBUG: Final SimBrief countdown time: {adjusted_simbrief_time}")
+            print_debug(f"Final SimBrief countdown time: {adjusted_simbrief_time}")
             return adjusted_simbrief_time
 
         return None
@@ -868,7 +877,7 @@ def load_settings():
                     simbrief_settings = SimBriefSettings()
                 return data, simbrief_settings
         except json.JSONDecodeError:
-            print("Error: Settings file is corrupted. Using defaults.")
+            print_error("Settings file is corrupted. Using defaults.")
     return {"x": 0, "y": 0}, SimBriefSettings()  # Default position and settings
 
 def save_settings(settings, simbrief_settings):
@@ -878,17 +887,19 @@ def save_settings(settings, simbrief_settings):
         with open(SETTINGS_FILE, "w") as f:
             json.dump(settings, f, indent=4)
     except Exception as e:
-        print(f"Error saving settings: {e}")
+        print_error(f"Error saving settings: {e}")
 
 def main():
     global root, display_frame, simbrief_settings
+
+    print_info("Starting custom status bar...")
 
     # --- Load initial settings ---
     settings, simbrief_settings_loaded = load_settings()
     simbrief_settings = simbrief_settings_loaded
     initial_x = settings.get("x", 0)
     initial_y = settings.get("y", 0)
-    print(f"Loaded window position - x: {initial_x}, y: {initial_y}")
+    print_debug(f"Loaded window position - x: {initial_x}, y: {initial_y}")
 
     # --- GUI Setup ---
     root = tk.Tk()
@@ -900,7 +911,7 @@ def main():
 
      # Start auto-update if enabled
     if simbrief_settings.auto_update_enabled:
-        print("\nAuto-update is enabled. Starting periodic updates...\n")
+        print_info("\nAuto-update is enabled. Starting periodic updates...\n")
         root.after(1000, lambda: SimBriefFunctions.auto_update_simbrief(root))  # Initial delay of 1 second
 
     # Apply initial geometry after creating the root window
@@ -908,7 +919,7 @@ def main():
         # Set initial position
         root.geometry(f"+{initial_x}+{initial_y}")
     except Exception as e:
-        print(f"DEBUG: Failed to apply geometry - {e}")
+        print_error(f"Failed to apply geometry - {e}")
 
     # Bind mouse events to enable dragging of the window
     root.bind("<Button-1>", start_move)
@@ -938,7 +949,7 @@ def main():
         # Run the GUI event loop
         root.mainloop()
     except ValueError as e:
-        print(f"Error: {e}")
+        print_error(f"Error: {e}")
         print("Please check your DISPLAY_TEMPLATE and try again.")
 
 class CountdownTimerDialog(tk.Toplevel):
@@ -1205,7 +1216,7 @@ class CountdownTimerDialog(tk.Toplevel):
         global countdown_state, simbrief_settings
 
         try:
-            print("DEBUG: on_ok---------------------------")
+            print_debug("on_ok---------------------------")
 
             # Update SimBrief settings from dialog inputs
             self.update_simbrief_settings()
@@ -1237,7 +1248,7 @@ class CountdownTimerDialog(tk.Toplevel):
         Pull the selected time from SimBrief and update the countdown timer.
         """
         try:
-            print("DEBUG: pull_time started")
+            print_debug("pull_time started")
 
             # Update SimBrief settings from the dialog inputs
             self.update_simbrief_settings()
@@ -1247,14 +1258,14 @@ class CountdownTimerDialog(tk.Toplevel):
 
             # Validate the SimBrief username
             if not self.validate_simbrief_username():
-                print("DEBUG: Invalid SimBrief username. Exiting pull_time.")
+                print_debug("DEBUG: Invalid SimBrief username. Exiting pull_time.")
                 return
 
             # Fetch SimBrief data
             simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(simbrief_settings.username)
             if not simbrief_json:
                 messagebox.showerror("Error", "Failed to fetch SimBrief data. Please check your username.")
-                print("DEBUG: SimBrief data fetch failed.")
+                print_debug("DEBUG: SimBrief data fetch failed.")
                 return
 
             # Get manual gate-out time entry, if provided
@@ -1269,15 +1280,15 @@ class CountdownTimerDialog(tk.Toplevel):
 
             if not success:
                 messagebox.showerror("Error", "Failed to update the countdown timer from SimBrief.")
-                print("DEBUG: Countdown timer update failed.")
+                print_error("Countdown timer update failed.")
                 return
 
-            print("DEBUG: Countdown timer updated successfully from SimBrief.")
+            print_debug("Countdown timer updated successfully from SimBrief.")
             self.destroy()
 
         except Exception as e:
             messagebox.showerror("Error", f"An unexpected error occurred: {str(e)}")
-            print(f"DEBUG: Exception in pull_time: {e}")
+            print_error(f"Exception in pull_time: {e}")
 
     def update_simbrief_settings(self):
         """Update SimBrief settings from dialog inputs."""

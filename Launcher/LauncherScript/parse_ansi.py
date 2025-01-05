@@ -29,14 +29,11 @@ def parse_ansi_colors(text):
     buffer = ""                    # Buffer to hold plain text
     i = 0                          # Pointer for text traversal
 
-    print(f"DEBUG: Starting to parse text: {text}")
     while i < len(text):
         if text[i:i+2] == '\033[':  # Start of an ANSI escape sequence
-            print(f"DEBUG: Found ANSI escape sequence at index {i}")
 
             # Add the current buffer as a plain text segment
             if buffer:
-                print(f"DEBUG: Adding buffer to segments: '{buffer}' with style {current_style}")
                 segments.append((buffer, current_style.copy()))
                 buffer = ""  # Clear the buffer
 
@@ -54,21 +51,15 @@ def parse_ansi_colors(text):
 
             # Split the code into parts (e.g., '1;31' -> ['1', '31'])
             codes = code.split(';')
-            print(f"DEBUG: Parsed ANSI codes: {codes}")
 
             # Process each part of the ANSI code
             for part in codes:
                 if part == '0':  # Reset
-                    print(f"DEBUG: Resetting styles")
                     current_style = {"color": None, "bold": False}
                 elif part == '1':  # Bold
-                    print(f"DEBUG: Setting bold to True")
                     current_style["bold"] = True
                 elif part in ANSI_COLOR_MAP:  # Color
-                    print(f"DEBUG: Setting color to {ANSI_COLOR_MAP[part]}")
                     current_style["color"] = ANSI_COLOR_MAP[part]
-                else:
-                    print(f"WARNING: Unknown ANSI code: {part}")
 
         else:
             # If not an escape sequence, add to the buffer
@@ -77,8 +68,6 @@ def parse_ansi_colors(text):
 
     # Add any remaining buffer as the last plain text segment
     if buffer:
-        print(f"DEBUG: Adding remaining buffer to segments: '{buffer}' with style {current_style}")
         segments.append((buffer, current_style.copy()))
 
-    print(f"DEBUG: Final segments: {segments}")
     return segments

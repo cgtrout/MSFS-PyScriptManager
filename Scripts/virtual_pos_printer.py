@@ -19,6 +19,14 @@ os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "1"
 import pygame
 import atexit
 
+try:
+    # Import all color print functions
+    from Lib.color_print import *
+
+except ImportError:
+    print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
+    sys.exit(1)
+
 # Define constants for server address and port
 PRINTER_SERVER_ADDRESS = '127.0.0.1'
 PRINTER_SERVER_PORT = 9102
@@ -39,7 +47,7 @@ def play_print_sound():
         pygame.mixer.music.play(start=1.75) # Trim start for quicker playback
         # print(f"Playing sound from: {play_sound_path} at volume: {play_volume}")
     except pygame.error as e:
-        print(f"Error loading or playing sound: {e}")
+        print_error(f"Error loading or playing sound: {e}")
 
 # Load sounds from file
 def load_settings():
@@ -73,7 +81,7 @@ def load_settings():
 
     if not settings.get("enable_popups", True):
         print("\n" + "="*50)
-        print("WARNING: Pop-up windows are currently disabled!")
+        print_color("WARNING: Pop-up windows are currently disabled!", color="red", bold=True)
         print("Printout notifications will NOT be shown (Windows).")
         print("\nTo enable Windows printer popups, update the setting:")
         print("   File: /Settings/settings.json")
@@ -102,9 +110,9 @@ atexit.register(pygame.mixer.quit)
 
 # Check if the MP3 file exists
 if not os.path.isfile(play_sound_path):
-    print(f"Error: The sound file '{play_sound_path}' does not exist.  Sound playback will not work. Please check the path in settings.json.")
+    print_error(f"Error: The sound file '{play_sound_path}' does not exist.  Sound playback will not work. Please check the path in settings.json.")
 else:
-    print("MP3 sound file found.")
+    print_info("MP3 sound file found.")
 
 # Variables for cascading windows
 active_windows = []
@@ -125,7 +133,7 @@ def capture_mouse_position():
     save_settings(settings)
 
     messagebox.showinfo("Position Set", f"Spawn position set to: {spawn_position}")
-    print(f"Spawn position set to: {spawn_position}")
+    print_info(f"Spawn position set to: {spawn_position}")
 
 # Function to create a new window with the given data
 def create_window(data, default_font):
@@ -201,7 +209,7 @@ def process_print_queue(default_font):
     except queue.Empty:
         pass
     except Exception as e:
-        print(f"Error in process_queue: {e}")
+        print_error(f"Error in process_queue: {e}")
 
     root.after(100, process_print_queue, default_font)
 
@@ -213,11 +221,11 @@ def start_virtual_printer_server(printer_message_queue):
     server_socket.bind(server_address)
     server_socket.listen(5)
 
-    print(f"Printer server is listening on {PRINTER_SERVER_ADDRESS}:{PRINTER_SERVER_PORT}\n")
+    print_info(f"Printer server is listening on {PRINTER_SERVER_ADDRESS}:{PRINTER_SERVER_PORT}\n")
 
     while True:
         connection, client_address = server_socket.accept()
-        print(f'Printer connection from {client_address}')
+        print_info(f'Printer connection from {client_address}')
 
         try:
             data = b""
@@ -228,14 +236,14 @@ def start_virtual_printer_server(printer_message_queue):
                 data += part
 
             decoded_data = data.decode('utf-8')
-            print("DEBUG: decoded_data------------\n\n")
+            print_debug("decoded_data------------\n\n")
             print(decoded_data)
-            print("DEBUG: decoded_data------------  END \n\n")
+            print_debug("decoded_data------------  END \n\n")
 
             cleaned_data = re.sub(r'[\r\n]+', '\n', decoded_data)
             cleaned_data = cleaned_data.replace('\x0c', '')
             if not cleaned_data.strip():
-                print("DEBUG: Cleaned print job is empty after removing Form Feed and whitespace, ignoring.")
+                print_debug("Cleaned print job is empty after removing Form Feed and whitespace, ignoring.")
                 continue
 
             acars_message = extract_acars_message(cleaned_data)
@@ -244,7 +252,7 @@ def start_virtual_printer_server(printer_message_queue):
             http_message_queue.put(acars_message)  # Store the message in the queue
 
         except Exception as e:
-            print(f"Error: {e}")
+            print_error(f"Error: {e}")
         finally:
             connection.close()
 
@@ -291,14 +299,14 @@ def start_http_server():
         httpd.allow_reuse_address = True
         httpd.server_bind()
         httpd.server_activate()
-        print(f"HTTP Server serving on port {HTTP_SERVER_PORT}\n")
+        print_info(f"HTTP Server serving on port {HTTP_SERVER_PORT}\n")
         httpd.serve_forever()
 
 def setup_printer():
     printer_name = "VirtualTextPrinter"
     driver_name = "Generic / Text Only"
 
-    print("---CHECKING PRINTER STATUS--------------------------------------")
+    print_color("---CHECKING PRINTER STATUS--------------------------------------", color="yellow", bold=False)
 
     powershell_script = f"""
     try {{
@@ -371,9 +379,9 @@ def setup_printer():
         if process.returncode != 0:
             print("An error occurred during setup. Please check the details above.")
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+        print_error(f"An unexpected error occurred: {e}")
 
-    print("----------------------------------------------------------------")
+    print_color("----------------------------------------------------------------", color="yellow", bold=False)
 
 
 # Initialize Tkinter

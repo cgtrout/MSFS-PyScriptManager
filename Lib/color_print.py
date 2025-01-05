@@ -94,4 +94,4 @@ def print_error(message):
     Args:
         message (str): The message to print.
     """
-    print_color(f"[red(][ERROR][)] {message}", bold=False)
+    print_color(f"[red(][ERROR][)] {message}", bold=True)
