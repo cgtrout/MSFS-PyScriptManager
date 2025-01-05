@@ -294,10 +294,6 @@ def prefetch_variables(*variables, default_value="N/A"):
                 simconnect_cache[variable_name] = default_value
                 variables_to_track.add(variable_name)
 
-def is_main_thread_blocked():
-    main_thread = threading.main_thread()
-    return not main_thread.is_alive()
-
 def simconnect_background_updater():
     """Background thread to update SimConnect variables with small sleep between updates."""
     global sim_connected, aq
@@ -312,12 +308,6 @@ def simconnect_background_updater():
         try:
             if not sim_connected:
                 initialize_simconnect()
-                continue
-
-            # Sleep if thread is blocked to prevent breakpoints from being hit here
-            if is_main_thread_blocked():
-                print("WARNING: Main thread is blocked. Retrying in 1 second.")
-                time.sleep(1)
                 continue
 
             if sim_connected:
