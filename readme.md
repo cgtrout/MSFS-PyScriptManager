@@ -22,13 +22,12 @@
 
 # Included Scripts
 - **virtual_pos_printer.py:** Allows print jobs from the Fenix A32x to show as popup 'notes' on the screen.
-  - [Virtual Printer Setup Guide](Docs/virtual_pos_printer.md) - please read this guide on how to use
+  - [Virtual Printer Guide](Docs/virtual_pos_printer.md) - please read this guide on how to use
     
     ![image](https://github.com/user-attachments/assets/5b0aac05-f1da-417e-a97b-be8261a4f1ba)
   
 - **custom_status_bar.py:** Shows a draggable status bar that shows the real world zulu time and sim zulu time, along with a countdown timer.  Double-click to program the count-down timer.
-  - NEW: If 'SIMBRIEF_USERNAME' is set, it will look up the time for this flight to automatically set the countdown timer (thanks @leftos for this idea/initial implementation).
-  - Uses an easily modifiable 'template' system to define variables that show on the bar.  See source file for more details.
+  [Custom Status Bar Guide](Docs/custom_status_bar.md) - please read the guide for more information on how to use this script
   ![image](https://github.com/user-attachments/assets/05786688-b542-4050-95eb-1e85bf8d673d)
 
 - **fbw_a380_checklist.py** Allows keyboard control of built in A380 checklist.  This script requires a [Mobiflight "WASM" module installation](https://github.com/MobiFlight/MobiFlight-Connector/wiki/Verifying-the-WASM-module-installation-and-locating-the-MSFS2020-community-folder).
