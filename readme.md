@@ -22,8 +22,10 @@
 
 # Included Scripts
 - **virtual_pos_printer.py:** Allows print jobs from the Fenix A32x to show as popup 'notes' on the screen.
-![image](https://github.com/user-attachments/assets/5b0aac05-f1da-417e-a97b-be8261a4f1ba)
-  [Setup Guide](Docs/virtual_pos_printer.md) - please read this guide on how to use
+  - [Virtual Printer Setup Guide](Docs/virtual_pos_printer.md) - please read this guide on how to use
+    
+    ![image](https://github.com/user-attachments/assets/5b0aac05-f1da-417e-a97b-be8261a4f1ba)
+  
 - **custom_status_bar.py:** Shows a draggable status bar that shows the real world zulu time and sim zulu time, along with a countdown timer.  Double-click to program the count-down timer.
   - NEW: If 'SIMBRIEF_USERNAME' is set, it will look up the time for this flight to automatically set the countdown timer (thanks @leftos for this idea/initial implementation).
   - Uses an easily modifiable 'template' system to define variables that show on the bar.  See source file for more details.
