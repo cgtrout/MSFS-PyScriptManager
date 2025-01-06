@@ -3,7 +3,7 @@
 - This script will show a customizable status bar that pulls information dynamically from SimConnect and Simbrief.
 - Uses an easily modifiable 'template' system to define variables that show on the bar.  On first run, a file will be created at /Settings/status_bar_templates.py.
     - This file can be modified to create multiple templates.  Documentation for this is provided in the status_bar_templates.py file.
-    - To change a template, right click the status bar - this will bring up a menu allowing you to select a different template.
+    - To change the displayed template (when script is running), right click the status bar - this will bring up a menu allowing you to select a different template.
 ## Setting the Countdown Timer 
 If the status bar is double-clicked, it will bring up a settings dialog for the countdown timer:
 
