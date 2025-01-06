@@ -1,4 +1,8 @@
-**MSFS-PyScriptManager** is a tool designed for managing and executing custom Python scripts tailored for Microsoft Flight Simulator (MSFS). This tool leverages the [WinPython](https://github.com/winpython) portable Python environment for ease of installation.  Simply download the release and extract it - no further installation required to run scripts!  Comes with some useful scripts, such as "virtual_pos_printer.py" that can print popup notes on the screen from the Fenix A32x printer.
+**MSFS-PyScriptManager** is a tool designed for running custom Python scripts tailored for Microsoft Flight Simulator (MSFS). This tool leverages the [WinPython](https://github.com/winpython) portable Python environment for ease of installation.  Simply download the release and extract it - no further installation required to run scripts!  
+
+**Comes with several useful scripts, such as:**
+- "virtual_pos_printer.py" that can print popup notes on the screen from the Fenix A32x printer.
+- "custom_status_bar.py" that shows a status_bar that can dynamically pull information from the sim and Simbrief.
 
 # MSFS 2024 Update
  - All scripts should still work with MSFS 2024, but if you notice any issues with any of the scripts let me know.
@@ -28,7 +32,7 @@
    ![image](https://github.com/user-attachments/assets/5b0aac05-f1da-417e-a97b-be8261a4f1ba)
   
 ## Custom Status Bar - custom_status_bar.py: 
-  - Shows a draggable status bar that shows the real world zulu time and sim zulu time, along with a countdown timer.  Double-click to program the count-down timer.
+  - Shows a customizable draggable status bar that shows the real world zulu time and sim zulu time, along with a countdown timer (that can also fetch times from Simbrief). 
   - [Custom Status Bar Guide](Docs/custom_status_bar.md) - please read the guide for more information on how to use this script.
 
    ![image](https://github.com/user-attachments/assets/05786688-b542-4050-95eb-1e85bf8d673d)
