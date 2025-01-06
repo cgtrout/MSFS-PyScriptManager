@@ -420,7 +420,12 @@ class ScriptTab(Tab):
         print(f"[INFO] Reloading script for Tab ID: {self.tab_id}")
 
         def _reload():
-            self.process_tracker.terminate_process(self.tab_id)  # Now synchronous
+            self.process_tracker.terminate_process(self.tab_id)
+
+            # Clear the text widget (output page)
+            if self.text_widget and self.text_widget.winfo_exists():
+                self.text_widget.delete('1.0', tk.END)
+
             self.run_script()
 
         self.process_tracker.scheduler(0, _reload)  # Schedule the reload process
