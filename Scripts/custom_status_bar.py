@@ -213,8 +213,6 @@ class TemplateHandler:
             for name, obj in vars(templates_module).items():
                 if callable(obj):  # Only import functions
                     globals()[name] = obj
-
-            print(f"Successfully loaded functions from {TEMPLATE_FILE}")
         except Exception as e:
             print(f"Error loading template functions: {e}")
 
