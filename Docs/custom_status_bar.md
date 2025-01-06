@@ -30,7 +30,7 @@ If the status bar is double-clicked, it will bring up a settings dialog for the 
 - **Get Time Button:** when clicked will take the Simbrief time and use that to set the countdown timer.
 
 ### Additional Credits
-Thanks @leftos for the valuable feedback and ideas/initial implementations for:
+Thanks [@leftos](https://github.com/leftos) for the valuable feedback and ideas/initial implementations for:
 - Simbrief connectivity
 - VARIF template function.
 
