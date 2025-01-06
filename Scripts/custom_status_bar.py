@@ -34,7 +34,7 @@ print("custom_status_bar: Close this window to close status bar")
 # Default templates file - this will be created if it doesn't exist
 # in the settings directory as /Settings/status_bar_templates.py
 #
-#   All template modification should be done from this file
+# ALL template modification should be done from  /Settings/status_bar_templates.py
 DEFAULT_TEMPLATES = """
 # Defines the content and format of the data shown in the application's window, including dynamic data elements
 # ('VAR()' and 'VARIF()' blocks) and static text.
