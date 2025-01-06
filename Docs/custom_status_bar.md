@@ -1,9 +1,10 @@
 # Custom Status Bar (custom_status_bar.py)
 ![image](https://github.com/user-attachments/assets/05786688-b542-4050-95eb-1e85bf8d673d)
 - This script will show a customizable status bar that pulls information dynamically from SimConnect and Simbrief.
-- Uses an easily modifiable 'template' system to define variables that show on the bar.  On first run, a file will be created at /Settings/status_bar_templates.py.
-    - This file can be modified to create multiple templates.  Documentation for this is provided in the status_bar_templates.py file.
-    - To change the displayed template (when script is running), right click the status bar - this will bring up a menu allowing you to select a different template.
+- To open this script, ensure MSFS-PyScriptManager.exe is running, then click "Run Script" and then open "custom_status_bar.py".
+- This script uses an easily modifiable 'template' system to define the variables that show on the bar.  On first run, a file will be created at /Settings/status_bar_templates.py that defines these templates.
+    - This file can be modified to create multiple templates.  Documentation for these templates is provided in the status_bar_templates.py file.
+    - To change the displayed template (when the script is running), right click the status bar - this will bring up a menu allowing you to select a different template.
 ## Setting the Countdown Timer 
 If the status bar is double-clicked, it will bring up a settings dialog for the countdown timer:
 
