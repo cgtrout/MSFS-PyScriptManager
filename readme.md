@@ -21,16 +21,19 @@
 ![image](https://github.com/user-attachments/assets/b8e12084-afad-4cd8-9b4c-2ea9cbb59ff1)
 
 # Included Scripts
-- **virtual_pos_printer.py:** Allows print jobs from the Fenix A32x to show as popup 'notes' on the screen.
-   - [Virtual Printer Guide](Docs/virtual_pos_printer.md) - please read this guide on how to use
-    
-    ![image](https://github.com/user-attachments/assets/5b0aac05-f1da-417e-a97b-be8261a4f1ba)
+## **Virtual Pos Printer for Fenix A32x - virtual_pos_printer.py:** 
+   - Allows print jobs from the Fenix A32x to show as popup 'notes' on the screen.
+   - [Virtual Printer Guide](Docs/virtual_pos_printer.md) - please read this guide for further instructions on how to use.
+     
+   ![image](https://github.com/user-attachments/assets/5b0aac05-f1da-417e-a97b-be8261a4f1ba)
   
-- **custom_status_bar.py:** Shows a draggable status bar that shows the real world zulu time and sim zulu time, along with a countdown timer.  Double-click to program the count-down timer.
-  - [Custom Status Bar Guide](Docs/custom_status_bar.md) - please read the guide for more information on how to use this script
+## Custom Status Bar - custom_status_bar.py: 
+  - Shows a draggable status bar that shows the real world zulu time and sim zulu time, along with a countdown timer.  Double-click to program the count-down timer.
+  - [Custom Status Bar Guide](Docs/custom_status_bar.md) - please read the guide for more information on how to use this script.
 
    ![image](https://github.com/user-attachments/assets/05786688-b542-4050-95eb-1e85bf8d673d)
 
+## Other Scripts
 - **fbw_a380_checklist.py** Allows keyboard control of built in A380 checklist.  This script requires a [Mobiflight "WASM" module installation](https://github.com/MobiFlight/MobiFlight-Connector/wiki/Verifying-the-WASM-module-installation-and-locating-the-MSFS2020-community-folder).
 - **fenix_disable_efb.py:** Example script that shows how LVARS can be automated.  This script will hide the EFBs on the Fenix A32x. (Requires Mobiflight "WASM" module installation).
 - **fenix_radio.py:** Shows a draggable radio panel that shows RMP1 active/standby channels. (Requires Mobiflight "WASM" module installation).
