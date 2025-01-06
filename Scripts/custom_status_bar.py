@@ -181,7 +181,7 @@ class TemplateHandler:
 
         if not os.path.exists(TEMPLATE_FILE):
             with open(TEMPLATE_FILE, "w") as f:
-                f.write(self.DEFAULT_TEMPLATES.strip())
+                f.write(DEFAULT_TEMPLATES.strip())
             print(f"Created default template file at {TEMPLATE_FILE}")
 
         try:
