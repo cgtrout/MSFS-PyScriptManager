@@ -1,5 +1,6 @@
 # Virtual Printer Script (virtual_pos_printer.py)
- - This will automatically create a "Fake" network Windows printer called "VirtualTextPrinter".
+ - To open this script, run MSFS-PyScriptManager.exe, click "Run Script" and then open "virtual_pos_printer.py".
+ - When run, this will automatically create a "Fake" network Windows printer called "VirtualTextPrinter".
   - Set the printer in the Fenix EFB settings to use the "VirtualTextPrinter" created by the script.
 
      ![image](https://github.com/user-attachments/assets/13a472df-3aa1-4977-8001-cc7ec6170d92)
