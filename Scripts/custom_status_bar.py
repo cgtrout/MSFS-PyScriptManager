@@ -1,7 +1,7 @@
 # custom_status_bar.py: shows a draggable, customizable status bar using SimConnect to display real-time flight simulator metrics like time, altitude, and temperature in a compact GUI.
 #   - use instructions below to customize
 #   - Uses https://github.com/odwdinc/Python-SimConnect library to obtain values from SimConnect
-#   - Further SimConnect variables can be found at https://docs.flightsimulator.com/html/Programming_Tools/SimVars/Simulation_Variables.htm
+
 
 import tkinter as tk
 from tkinter import simpledialog, messagebox
@@ -72,6 +72,8 @@ TEMPLATES = {
 
 # This shows how you can also define your own functions to fetch dynamic values.
 # Functions defined here will be imported so they can be referenced
+# PLANE_ALTITUDE is a SimConnect variable
+# Further SimConnect variables can be found at https://docs.flightsimulator.com/html/Programming_Tools/SimVars/Simulation_Variables.htm
 def get_altitude():
     return get_formatted_value("PLANE_ALTITUDE", "{:.0f} ft")
 """
