@@ -213,16 +213,21 @@ def process_print_queue(default_font):
 
     root.after(100, process_print_queue, default_font)
 
-# Server code (a virtual printer server to intercept print jobs)
-def start_virtual_printer_server(printer_message_queue):
+# Initialize the virtual printer server
+def initialize_virtual_printer_server(PRINTER_SERVER_ADDRESS, PRINTER_SERVER_PORT):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_address = (PRINTER_SERVER_ADDRESS, PRINTER_SERVER_PORT)
     server_socket.bind(server_address)
     server_socket.listen(5)
 
-    print_info(f"Printer server is listening on {PRINTER_SERVER_ADDRESS}:{PRINTER_SERVER_PORT}\n")
+    # Print after the server is actually listening
+    print_info(f"Printer server is listening on {PRINTER_SERVER_ADDRESS}:{PRINTER_SERVER_PORT}")
 
+    return server_socket
+
+# Server code (a virtual printer server to intercept print jobs)
+def run_virtual_printer_server(server_socket, printer_message_queue, http_message_queue):
     while True:
         connection, client_address = server_socket.accept()
         print_info(f'Printer connection from {client_address}')
@@ -236,7 +241,7 @@ def start_virtual_printer_server(printer_message_queue):
                 data += part
 
             decoded_data = data.decode('utf-8')
-            print_debug("decoded_data------------\n\n")
+            print_debug("decoded_data------------")
             print(decoded_data)
             print_debug("decoded_data------------  END \n\n")
 
@@ -293,14 +298,18 @@ class HttpRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
 
 
-# Start the HTTP server
-def start_http_server():
-    with socketserver.TCPServer(("", HTTP_SERVER_PORT), HttpRequestHandler, bind_and_activate=False) as httpd:
-        httpd.allow_reuse_address = True
-        httpd.server_bind()
-        httpd.server_activate()
-        print_info(f"HTTP Server serving on port {HTTP_SERVER_PORT}\n")
-        httpd.serve_forever()
+def initialize_http_server(HTTP_SERVER_PORT):
+    httpd = socketserver.TCPServer(("", HTTP_SERVER_PORT), HttpRequestHandler, bind_and_activate=False)
+    httpd.allow_reuse_address = True
+    httpd.server_bind()
+    httpd.server_activate()
+
+    # Print after the server is actually bound and listening
+    print_info(f"HTTP Server serving on port {HTTP_SERVER_PORT}")
+    return httpd
+
+def run_http_server(httpd):
+    httpd.serve_forever()
 
 def setup_printer():
     printer_name = "VirtualTextPrinter"
@@ -397,13 +406,17 @@ printer_message_queue = queue.Queue()
 # Setup printer
 setup_printer()
 
-# Start printer server thread
-printer_thread = threading.Thread(target=start_virtual_printer_server, args=(printer_message_queue,))
+# Initialize and start the virtual printer server in a thread
+printer_socket = initialize_virtual_printer_server(PRINTER_SERVER_ADDRESS, PRINTER_SERVER_PORT)
+printer_thread = threading.Thread( target=run_virtual_printer_server,
+    args=(printer_socket, printer_message_queue, http_message_queue)
+)
 printer_thread.daemon = True
 printer_thread.start()
 
-# Start HTTP server thread
-http_server_thread = threading.Thread(target=start_http_server)
+# Initialize and start the server in a thread
+httpd = initialize_http_server(HTTP_SERVER_PORT)
+http_server_thread = threading.Thread(target=run_http_server, args=(httpd,))
 http_server_thread.daemon = True
 http_server_thread.start()
 
