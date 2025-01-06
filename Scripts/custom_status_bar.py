@@ -53,7 +53,6 @@ DEFAULT_TEMPLATES = """
 # - Static text can be included directly in the template.
 # - Dynamic function calls in labels (e.g., ## suffix) are supported.
 # - VARIF blocks are only displayed if the condition evaluates to True.
-# /Settings/status_bar_templates.py
 
 # Define your templates here in the TEMPLATES dictionary.
 
@@ -70,6 +69,11 @@ TEMPLATES = {
         "VAR(Temp:, get_temp, cyan)"
     ),
 }
+
+# This shows how you can also define your own functions to fetch dynamic values.
+# Functions defined here will be imported so they can be referenced
+def get_altitude():
+    return get_formatted_value("PLANE_ALTITUDE", "{:.0f} ft")
 """
 # --- Configurable Variables  ---
 ALPHA_TRANSPARENCY_LEVEL = 0.95  # Set transparency (0.0 = fully transparent, 1.0 = fully opaque)
@@ -168,6 +172,7 @@ class TemplateHandler:
         """Initialize templates and set the default selection."""
         self.parser = TemplateParser()  # Initialize the parser
         self.templates = self.load_templates()
+        self.load_template_functions()
         self.selected_template_name = next(iter(self.templates), None)
         if not self.selected_template_name:
             raise ValueError("No templates available to select.")
@@ -192,6 +197,24 @@ class TemplateHandler:
         except Exception as e:
             print(f"Error loading templates: {e}")
             return {}
+
+    def load_template_functions(self):
+        """
+        Dynamically import functions from the template file and add them to the global namespace.
+        """
+        try:
+            spec = importlib.util.spec_from_file_location("status_bar_templates", TEMPLATE_FILE)
+            templates_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(templates_module)
+
+            # Add all callable objects from the module to the global namespace
+            for name, obj in vars(templates_module).items():
+                if callable(obj):  # Only import functions
+                    globals()[name] = obj
+
+            print(f"Successfully loaded functions from {TEMPLATE_FILE}")
+        except Exception as e:
+            print(f"Error loading template functions: {e}")
 
     def get_current_template(self) -> str:
         """Return the content of the currently selected template."""
@@ -231,9 +254,7 @@ def get_real_world_time():
     """Fetch the real-world Zulu time."""
     return datetime.now(timezone.utc).strftime("%H:%M:%S")
 
-def get_altitude():
-    """Fetch the altitude from SimConnect, formatted in feet."""
-    return get_formatted_value("PLANE_ALTITUDE", "{:.0f} ft")
+
 
 def get_sim_rate():
     """Fetch the sim rate from SimConnect."""
