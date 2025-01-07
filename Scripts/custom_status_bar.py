@@ -254,8 +254,6 @@ def get_real_world_time():
     """Fetch the real-world Zulu time."""
     return datetime.now(timezone.utc).strftime("%H:%M:%S")
 
-
-
 def get_sim_rate():
     """Fetch the sim rate from SimConnect."""
     return get_formatted_value("SIMULATION_RATE", "{:.1f}")
@@ -799,7 +797,6 @@ class SimBriefFunctions:
         except Exception as e:
             print_error(f"Exception in update_countdown_from_simbrief: {e}")
         return False
-
 
     @staticmethod
     def auto_update_simbrief(root):
@@ -1743,7 +1740,6 @@ class TemplateParser:
 
             # Raise a single error summarizing all unmatched opening parentheses
             raise ValueError("\n\n".join(error_messages))
-
 
 if __name__ == "__main__":
     main()
