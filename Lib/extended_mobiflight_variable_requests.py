@@ -1,3 +1,7 @@
+# extended_mobiflight_variable_requests.py - Extends the MobiFlightVariableRequests library to
+# support multiple clients
+# https://github.com/Koseng/MSFSPythonSimConnectMobiFlightExtension/blob/main/README.md
+
 from ctypes import sizeof
 import ctypes
 import struct
@@ -7,7 +11,8 @@ from simconnect_mobiflight.mobiflight_variable_requests import MobiFlightVariabl
 from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
 from SimConnect.Enum import SIMCONNECT_CLIENT_DATA_PERIOD, SIMCONNECT_UNUSED
 
-# Borrow 'Mobiclient' from 'prototype'
+# Borrow 'Mobiclient' idea from 'prototype' version of the library
+# https://github.com/Koseng/MSFSPythonSimConnectMobiFlightExtension/blob/main/prototype/mobiflight_variable_requests.py
 class MobiClient:
 
     def __init__(self, client_name):
@@ -58,14 +63,14 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         # First add init_client
         self.sm.register_client_data_handler(self.client_data_callback_handler)
         self.initialize_client_data_areas(self.init_client)
-        self.send_command("Do Nothing", self.init_client)         
-        self.send_command(("MF.Clients.Add." + client_name), self.init_client) 
+        self.send_command("Do Nothing", self.init_client)
+        self.send_command(("MF.Clients.Add." + client_name), self.init_client)
         while not self.init_ready:
-           time.sleep(0.05)    
+           time.sleep(0.05)
 
     def register_client(self):
         print(f"register_client: Registering client '{self.client_name}'")
-        self.send_command("Do Nothing")   
+        self.send_command("Do Nothing")
         self.send_command(f"MF.Clients.Add.{self.client_name}")
         time.sleep(0.1)
 
@@ -80,7 +85,7 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
             offset = (id-self.SIMVAR_DEF_OFFSET)*sizeof(FLOAT)
             self.add_to_client_data_definition(id, offset, sizeof(FLOAT))
             self.subscribe_to_data_change(client.CLIENT_DATA_AREA_LVARS, id, id)
-            self.send_command(("MF.SimVars.Add." + variableString), client)  
+            self.send_command(("MF.SimVars.Add." + variableString), client)
         # determine id and return value
         variable_id = self.sim_var_name_to_id[variableString]
         float_value = self.sim_vars[variable_id].float_value
@@ -129,12 +134,12 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         print("send_data: client: %s, size=%s, dataBytes=%s", client, size, dataBytes)
         self.sm.dll.SetClientData(
             self.sm.hSimConnect,
-            client.CLIENT_DATA_AREA_CMD, 
+            client.CLIENT_DATA_AREA_CMD,
             client.DATA_STRING_DEFINITION_ID,
             self.FLAG_DEFAULT,
             0, # dwReserved
-            size, 
-            dataBytes)  
+            size,
+            dataBytes)
 
     def client_data_callback_handler(self, callback_data):
         # SimVar Data
