@@ -618,60 +618,68 @@ def update_display(template_handler):
     """
     global widget_pool
 
-    #try:
-    if is_moving:
-        root.after(UPDATE_INTERVAL, lambda: update_display(template_handler))
-        return
+    try:
+        if is_moving:
+            root.after(UPDATE_INTERVAL, lambda: update_display(template_handler))
+            return
 
-    # Re-parse the template if a change is pending
-    if template_handler.pending_template_change:
-        template_handler.cache_parsed_blocks()
-        template_handler.pending_template_change = False  # Reset the flag
+        # Re-parse the template if a change is pending
+        if template_handler.pending_template_change:
+            template_handler.cache_parsed_blocks()
+            template_handler.pending_template_change = False  # Reset the flag
 
-        # Reset the widget pool to clear old widgets
-        for widget in widget_pool.values():
-            if widget is not None and hasattr(widget, "destroy"):
-                widget.destroy()
-        widget_pool = {}
+            # Reset the widget pool to clear old widgets
+            for widget in widget_pool.values():
+                if widget is not None and hasattr(widget, "destroy"):
+                    widget.destroy()
+            widget_pool = {}
 
-    # Use cached parsed blocks
-    parsed_blocks = template_handler.cached_parsed_blocks
+        # Use cached parsed blocks
+        parsed_blocks = template_handler.cached_parsed_blocks
 
-    # Track which widgets should remain on the screen and which ones should be removed later.
-    new_widget_pool = {}
-    widget = None
+        # Track which widgets should remain on the screen and which ones should be removed later.
+        new_widget_pool = {}
+        widget = None
 
-    for block in parsed_blocks:
-        block_type = block["type"]
-        block_id = block.get("label", f"block_{id(block)}")
+        for block in parsed_blocks:
+            block_type = block["type"]
+            block_id = block.get("label", f"block_{id(block)}")
 
-        if block_id in widget_pool:
-            widget = widget_pool[block_id]
-            render_function = template_handler.parser.block_registry.get(block_type, {}).get("render")
-            if render_function:
-                updated_widget = render_function(block)
-                if updated_widget and widget.cget("text") != updated_widget.cget("text"):
-                    widget.config(text=updated_widget.cget("text"))
-        else:
-            render_function = template_handler.parser.block_registry.get(block_type, {}).get("render")
-            if render_function:
-                widget = render_function(block)
-                if widget:
-                    widget.pack(side=tk.LEFT, padx=0, pady=0)
+            if block_id in widget_pool:
+                widget = widget_pool[block_id]
+                render_function = template_handler.parser.block_registry.get(block_type, {}).get("render")
+                if render_function:
+                    updated_widget = render_function(block)
+                    if updated_widget and widget.cget("text") != updated_widget.cget("text"):
+                        widget.config(text=updated_widget.cget("text"))
+            else:
+                render_function = template_handler.parser.block_registry.get(block_type, {}).get("render")
+                if render_function:
+                    widget = render_function(block)
+                    if widget:
+                        widget.pack(side=tk.LEFT, padx=0, pady=0)
 
-        new_widget_pool[block_id] = widget
+            new_widget_pool[block_id] = widget
 
-    for old_block_id in set(widget_pool) - set(new_widget_pool):
-        widget_pool[old_block_id].destroy()
+        for old_block_id in set(widget_pool) - set(new_widget_pool):
+            widget_pool[old_block_id].destroy()
 
-    widget_pool = new_widget_pool
+        widget_pool = new_widget_pool
 
-    new_width = display_frame.winfo_reqwidth() + PADDING_X
-    new_height = display_frame.winfo_reqheight() + PADDING_Y
-    root.geometry(f"{new_width}x{new_height}")
+        new_width = display_frame.winfo_reqwidth() + PADDING_X
+        new_height = display_frame.winfo_reqheight() + PADDING_Y
 
-    #except Exception as e:
-    #    print_error(f"Error in update_display: {e}")
+        # Validate that calculated width/height make sense
+        min_dim = 10
+        if new_width < min_dim or new_height < min_dim:
+            print_warning(f"Detected an unusually small window size "
+                        f"({new_width}x{new_height})")
+
+        # Set to calculated geometry
+        root.geometry(f"{new_width}x{new_height}")
+
+    except Exception as e:
+        print_error(f"Error in update_display: {e}")
 
     root.after(UPDATE_INTERVAL, lambda: update_display(template_handler))
 
