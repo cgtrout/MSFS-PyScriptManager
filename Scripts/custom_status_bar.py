@@ -387,9 +387,10 @@ def prefetch_variables(*variables, default_value="N/A"):
                 simconnect_cache[variable_name] = default_value
                 variables_to_track.add(variable_name)
 
+last_successful_update_time = time.time()
 def simconnect_background_updater():
     """Background thread to update SimConnect variables with small sleep between updates."""
-    global sim_connected, aq
+    global sim_connected, aq, last_successful_update_time
 
     VARIABLE_SLEEP = 0.01  # Sleep for 10ms between each variable lookup
     MIN_UPDATE_INTERVAL = UPDATE_INTERVAL / 2  # Reduced interval for retry cycles (in milliseconds)
@@ -437,12 +438,28 @@ def simconnect_background_updater():
                 print_warning("SimConnect not connected. Retrying in 1 second.")
                 time.sleep(1)
 
+            # Adjust sleep interval dynamically
+            sleep_interval = MIN_UPDATE_INTERVAL if lookup_failed else STANDARD_UPDATE_INTERVAL
+            time.sleep(sleep_interval / 1000.0)
+
         except Exception as e:
             print_error(f"Unexpected error in background updater: {e}")
+        finally:
+            # Update the last successful update time - used for 'heartbeat' functionality
+            last_successful_update_time = time.time()
 
-        # Adjust sleep interval dynamically
-        sleep_interval = MIN_UPDATE_INTERVAL if lookup_failed else STANDARD_UPDATE_INTERVAL
-        time.sleep(sleep_interval / 1000.0)
+def background_thread_watchdog_function():
+    global last_successful_update_time
+    now = time.time()
+    threshold = 30  # seconds before we consider the updater "stuck"
+
+
+    if now - last_successful_update_time > threshold:
+        print_error(f"Watchdog: Background updater has not completed a cycle in {int(now - last_successful_update_time)} seconds. Possible stall detected.")
+
+    # Reschedule the watchdog to run again after 10 seconds
+    root.after(10_000, background_thread_watchdog_function)
+
 
 def get_formatted_value(variable_names, format_string=None):
     """
@@ -1064,6 +1081,9 @@ def main():
     # Start the background thread
     background_thread = threading.Thread(target=simconnect_background_updater, daemon=True)
     background_thread.start()
+
+    # Start the watchdog function to monitor the background thread
+    root.after(10_000, background_thread_watchdog_function)
 
     try:
         # Initialize TemplateHandler
