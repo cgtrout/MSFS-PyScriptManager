@@ -202,17 +202,34 @@ class TemplateHandler:
 
     def load_template_functions(self):
         """
-        Dynamically import functions from the template file and add them to the global namespace.
+        Dynamically import functions from the template file and inject only relevant globals.
         """
         try:
             spec = importlib.util.spec_from_file_location("status_bar_templates", TEMPLATE_FILE)
             templates_module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(templates_module)
 
-            # Add all callable objects from the module to the global namespace
+            # First, filter globals to exclude built-ins and modules
+            relevant_globals = {
+                k: v for k, v in globals().items()
+                if not k.startswith("__") and not isinstance(v, type(importlib))  # Exclude built-ins and modules
+            }
+
+            # Debug: Log the filtered globals being injected
+            print_debug("Filtered Globals to Inject:")
+            for name, obj in relevant_globals.items():
+                print_color(f"[green(]{name}:[)] {type(obj).__name__}")
+
+            # Inject filtered globals into the template module
+            templates_module.__dict__.update(relevant_globals)
+
+            # Add callable objects to this global namespace
             for name, obj in vars(templates_module).items():
-                if callable(obj):  # Only import functions
+                if callable(obj):
                     globals()[name] = obj
+
+            print_debug("load_template_functions: DONE\n")
+
         except Exception as e:
             print(f"Error loading template functions: {e}")
 
