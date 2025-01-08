@@ -874,14 +874,17 @@ class ProcessTracker:
             exit_code = process.poll()
 
             # Notify the ScriptTab directly
-            if script_tab:
-                if exit_code == 0:
-                    script_tab.insert_output(f"[INFO] Script '{script_name}' completed successfully.\n")
-                else:
-                    script_tab.insert_output(f"[ERROR] Script '{script_name}' terminated unexpectedly with code {exit_code}.\n")
+            try:
+                if script_tab:
+                    if exit_code == 0:
+                        script_tab.insert_output(f"[INFO] Script '{script_name}' completed successfully.\n")
+                    else:
+                        script_tab.insert_output(f"[ERROR] Script '{script_name}' terminated unexpectedly with code {exit_code}.\n")
 
-            # Clean up process metadata
-            self.processes.pop(tab_id, None)
+                # Clean up process metadata
+                self.processes.pop(tab_id, None)
+            except Exception as e:
+                print(f"[ERROR] Error notifying ScriptTab for Tab ID {tab_id}: {e}")
             return
 
         # Reschedule the next check
