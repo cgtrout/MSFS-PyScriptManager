@@ -89,8 +89,8 @@ SIMBRIEF_AUTO_UPDATE_INTERVAL_MS = 5 * 60 * 1000  # 5 minutes in milliseconds
 PADDING_X = 20  # Horizontal padding for each label
 PADDING_Y = 10  # Vertical padding for the window
 
-sm = None
-aq = None
+sim_connect = None
+aircraft_requests = None
 sim_connected = False
 
 # --- Timer Variables  --
@@ -358,17 +358,17 @@ def get_time_to_future() -> str:
 
 def initialize_simconnect():
     """Initialize the connection to SimConnect."""
-    global sm, aq, sim_connected
+    global sim_connect, aircraft_requests, sim_connected
     try:
-        sm = SimConnect()  # Connect to SimConnect
-        aq = AircraftRequests(sm, _time=0)
+        sim_connect = SimConnect()  # Connect to SimConnect
+        aircraft_requests = AircraftRequests(sim_connect, _time=0)
         sim_connected = True
     except Exception:
         sim_connected = False
 
 def get_simconnect_value(variable_name: str, default_value: Any = "N/A", retries: int = 10, retry_interval: float = 0.2) -> Any:
     """Fetch a SimConnect variable with caching and retry logic."""
-    if not sim_connected or sm is None or not sm.ok:
+    if not sim_connected or sim_connect is None or not sim_connect.ok:
         return "Sim Not Running"
 
     value = check_cache(variable_name)
@@ -407,7 +407,7 @@ def prefetch_variables(*variables, default_value="N/A"):
 last_successful_update_time = time.time()
 def simconnect_background_updater():
     """Background thread to update SimConnect variables with small sleep between updates."""
-    global sim_connected, aq, last_successful_update_time
+    global sim_connected, aircraft_requests, last_successful_update_time
 
     VARIABLE_SLEEP = 0.01  # Sleep for 10ms between each variable lookup
     MIN_UPDATE_INTERVAL = UPDATE_INTERVAL / 2  # Reduced interval for retry cycles (in milliseconds)
@@ -422,7 +422,7 @@ def simconnect_background_updater():
                 continue
 
             if sim_connected:
-                if sm is None or not sm.ok or sm.quit == 1:
+                if sim_connect is None or not sim_connect.ok or sim_connect.quit == 1:
                     print_warning("SimConnect state invalid. Disconnecting.")
                     sim_connected = False
                     continue
@@ -433,8 +433,8 @@ def simconnect_background_updater():
 
                 for variable_name in vars_to_update:
                     try:
-                        if aq is not None and hasattr(aq, 'get'):
-                            value = aq.get(variable_name)
+                        if aircraft_requests is not None and hasattr(aircraft_requests, 'get'):
+                            value = aircraft_requests.get(variable_name)
                             if value is not None:
                                 with cache_lock:
                                     simconnect_cache[variable_name] = value
@@ -490,7 +490,7 @@ def get_formatted_value(variable_names, format_string=None):
     - The formatted string, or an error message if retrieval fails.
     """
 
-    if not sim_connected or sm is None or not sm.ok:
+    if not sim_connected or sim_connect is None or not sim_connect.ok:
         return "Sim Not Running"
 
     if isinstance(variable_names, str):
