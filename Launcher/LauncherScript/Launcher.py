@@ -334,7 +334,8 @@ class ScriptTab(Tab):
             command=command,
             stdout_callback=self._insert_stdout,
             stderr_callback=self._insert_stderr,
-            script_name=self.script_path.name
+            script_tab=self,
+            script_name=self.script_path.name,
         )
 
     # TODO may not be best place for these
@@ -545,16 +546,18 @@ class ScriptLauncherApp:
         self.create_toolbar()
 
         self.tab_manager = TabManager(root, self.root.after)
-        self.process_tracker = ProcessTracker(scheduler=self.root.after)
 
         # Bind Events
         self.bind_events()
 
-        # Autoplay Scripts
-        self.autoplay_script_group()
-
         # Event for shutdown
         self.shutdown_event = Event()
+
+        self.process_tracker = ProcessTracker(scheduler=self.root.after,
+                                              shutdown_event=self.shutdown_event)
+
+        # Autoplay Scripts
+        self.autoplay_script_group()
 
     def configure_root(self):
         """Configure the main root window."""
@@ -725,14 +728,16 @@ class ScriptLauncherApp:
 
 class ProcessTracker:
     """Manages runtime of collection of processes"""
-    def __init__(self, scheduler):
+    def __init__(self, scheduler, shutdown_event):
         self.processes = {}  # Maps tab_id to process metadata
         self.queues = {}  # Maps tab_id to queues for stdout and stderr
         self.scheduler = scheduler  # Store the scheduler
         self.script_name = None
         self.queuefull_warning_issued = False
 
-    def start_process(self, tab_id, command, stdout_callback, stderr_callback, script_name=None):
+        self.shutdown_event = shutdown_event  # Store the shutdown event
+
+    def start_process(self, tab_id, command, stdout_callback, stderr_callback, script_tab, script_name=None):
         """Start a subprocess and manage its I/O."""
 
         # Add Lib path
@@ -752,7 +757,10 @@ class ProcessTracker:
             print(f"[INFO] Started process: {script_name}, PID: {process.pid}, Tab ID: {tab_id}")
 
             self.script_name = script_name
-            self.processes[tab_id] = {"process": process, "script_name": script_name or "Unknown"}
+            self.processes[tab_id] = {
+                "process": process,
+                "script_name": script_name or "Unknown",
+                "script_tab": script_tab}
 
             # Create queues for communication
             self.queues[tab_id] = {
@@ -790,6 +798,9 @@ class ProcessTracker:
                 daemon=True,
                 name=f"DispatcherStderr-{tab_id}"
             ).start()
+
+            # Start process monitoring
+            self.schedule_process_check(tab_id)
 
         except Exception as e:
             print(f"[ERROR] Failed to start process for Tab ID {tab_id}: {e}")
@@ -844,6 +855,51 @@ class ProcessTracker:
 
             # Use the provided scheduler to safely invoke the callback
             self.scheduler(0, lambda l=line: callback(l))
+
+    def schedule_process_check(self, tabid):
+        """Schedule a periodic check for process termination."""
+        self.scheduler(2000, lambda: self.check_termination(tabid))
+
+    def check_termination(self, tab_id):
+        """Check if the process has terminated and notify the associated ScriptTab."""
+        metadata = self.processes.get(tab_id)
+        if not metadata:
+            return  # Process already cleaned up or not found
+
+        process = metadata["process"]
+        script_tab = metadata.get("script_tab")
+        script_name = metadata.get("script_name", "Unknown")
+
+        if process.poll() is not None:  # Process has stopped
+            exit_code = process.poll()
+
+            # Notify the ScriptTab directly
+            if script_tab:
+                if exit_code == 0:
+                    script_tab.insert_output(f"[INFO] Script '{script_name}' completed successfully.\n")
+                else:
+                    script_tab.insert_output(f"[ERROR] Script '{script_name}' terminated unexpectedly with code {exit_code}.\n")
+
+            # Clean up process metadata
+            self.processes.pop(tab_id, None)
+            return
+
+        # Reschedule the next check
+        self.schedule_process_check(tab_id)
+
+    def terminate_process(self, tab_id):
+        """Terminate the process."""
+        metadata = self.processes.pop(tab_id, None)
+        if not metadata:
+            return
+
+        process = metadata["process"]
+        if process.poll() is None:  # Still running
+            process.terminate()
+        if tab_id in self.queues:
+            self.queues[tab_id]["stdout"].put("[INFO] Process terminated by user.\n")
+            self.queues[tab_id]["stdout"].put(None)  # Final EOF sentinel
+            del self.queues[tab_id]
 
     def terminate_process(self, tab_id):
         """Terminate the process for a given tab ID."""
