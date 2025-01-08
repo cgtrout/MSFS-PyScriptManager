@@ -36,8 +36,11 @@ print("custom_status_bar: Close this window to close status bar")
 #
 # ALL template modification should be done from  /Settings/status_bar_templates.py
 DEFAULT_TEMPLATES = """
-# Defines the content and format of the data shown in the application's window, including dynamic data elements
-# ('VAR()' and 'VARIF()' blocks) and static text.
+#  TEMPLATE DOCUMENTATION
+# ====================================
+#  Template string below defines the content and format of the data shown in the application's window,
+#  including dynamic data elements such as:
+# ('VAR()' and 'VARIF()' 'functions') and static text.
 
 # Syntax:
 # VAR(label, function_name, color)
