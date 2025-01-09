@@ -303,11 +303,9 @@ def remain_label():
 
 def get_time_to_future() -> str:
     """
-    Calculate the remaining time to the configured countdown target.
-    Handles transitions to negative time and midnight rollover as needed.
-    Returns the time difference as HH:MM:SS.
+    Calculate and return the countdown timer string.
     """
-    global countdown_state, simbrief_settings
+    global countdown_state
 
     if countdown_state.countdown_target_time == UNIX_EPOCH:  # Default unset state
         return "00:00:00"
@@ -318,46 +316,89 @@ def get_time_to_future() -> str:
         if countdown_state.countdown_target_time.tzinfo is None or current_sim_time.tzinfo is None:
             raise ValueError("Target time or simulator time is offset-naive. Ensure all times are offset-aware.")
 
-        # Extract only the time components
-        target_time_today = countdown_state.countdown_target_time.replace(
-            year=current_sim_time.year, month=current_sim_time.month, day=current_sim_time.day
+        # Fetch sim rate
+        sim_rate_str = get_sim_rate()
+        sim_rate = float(sim_rate_str) if sim_rate_str.replace('.', '', 1).isdigit() else 1.0
+
+        # Call the extracted compute function
+        countdown_str, new_last_time, new_is_neg = compute_countdown_timer(
+            current_sim_time=current_sim_time,
+            target_time=countdown_state.countdown_target_time,
+            last_countdown_time=countdown_state.last_countdown_time,
+            is_negative=countdown_state.is_negative,
+            sim_rate=sim_rate,
         )
 
-        # Adjust for midnight rollover - Check if the countdown is for tomorrow
-        if target_time_today < current_sim_time:
-            # Only adjust if we are not negative or close to zero (<5 seconds)
-            if not countdown_state.is_negative and (countdown_state.last_countdown_time is None or countdown_state.last_countdown_time > 5):
-                target_time_today += timedelta(days=1)
+        # Update state
+        countdown_state.last_countdown_time = new_last_time
+        countdown_state.is_negative = new_is_neg
 
-        # Calculate remaining time after any adjustment
-        remaining_time = target_time_today - current_sim_time
-
-        # Adjust for simulation rate
-        sim_rate = get_sim_rate()
-        adjusted_seconds = (
-            remaining_time.total_seconds() / float(sim_rate)
-            if sim_rate and float(sim_rate) > 0
-            else remaining_time.total_seconds()
-        )
-
-        # Update `last_countdown_time` for tracking
-        countdown_state.last_countdown_time = abs(remaining_time.total_seconds())
-
-        # Update `is_negative` flag
-        countdown_state.is_negative = remaining_time.total_seconds() < 0
-
-        # Format the adjusted remaining time as HH:MM:SS
-        total_seconds = int(adjusted_seconds)
-        sign = "-" if total_seconds < 0 else ""
-        total_seconds = abs(total_seconds)
-        hours, remainder = divmod(total_seconds, 3600)
-        minutes, seconds = divmod(remainder, 60)
-
-        return f"{sign}{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
+        return countdown_str
 
     except Exception as e:
-        #print(f"Error in get_time_to_future: {e}")
+        # Log or print error details if needed
         return "00:00:00"
+
+def compute_countdown_timer(
+    current_sim_time: datetime,
+    target_time: datetime,
+    last_countdown_time: Optional[float],
+    is_negative: bool,
+    sim_rate: float
+) -> tuple[str, float, bool]:
+    """
+    Compute the countdown timer string and update its state.
+
+    Parameters:
+    - current_sim_time (datetime): Current simulator time.
+    - target_time (datetime): Target countdown time.
+    - last_countdown_time (Optional[float]): Previously stored countdown time in seconds.
+    - is_negative (bool): Whether the last countdown was negative.
+    - sim_rate (float): Simulation rate.
+
+    Returns:
+    - countdown_str (str): Formatted countdown string "HH:MM:SS".
+    - new_last_countdown_time (float): Updated absolute countdown time in seconds.
+    - new_is_negative (bool): Whether the countdown has gone negative.
+    """
+    # Replace date for same-day calculation
+    target_time_today = target_time.replace(
+        year=current_sim_time.year, month=current_sim_time.month, day=current_sim_time.day
+    )
+
+    # Handle midnight rollover logic
+    if target_time_today < current_sim_time:
+        #print_debug("Target time is earlier than current simulator time.")
+        if not is_negative and (last_countdown_time is None or last_countdown_time > 5):
+            #print_debug("Midnight rollover detected. Adjusting target time to next day.")
+            target_time_today += timedelta(days=1)
+
+    # Calculate remaining time
+    remaining_time = target_time_today - current_sim_time
+
+    # HACK: Correct for MSFS 2024 bug if remaining time exceeds 24 hours
+    if remaining_time.total_seconds() > 24 * 3600:
+        remaining_time -= timedelta(days=1)
+
+    # Adjust for simulation rate
+    if sim_rate and sim_rate > 0:
+        adjusted_seconds = remaining_time.total_seconds() / sim_rate
+    else:
+        adjusted_seconds = remaining_time.total_seconds()
+
+    # Update internal tracking
+    new_last_countdown_time = abs(remaining_time.total_seconds())
+    new_is_negative = remaining_time.total_seconds() < 0
+
+    # Format the adjusted remaining time as HH:MM:SS
+    total_seconds = int(adjusted_seconds)
+    sign = "-" if total_seconds < 0 else ""
+    total_seconds = abs(total_seconds)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    countdown_str = f"{sign}{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
+
+    return countdown_str, new_last_countdown_time, new_is_negative
 
 def initialize_simconnect():
     """Initialize the connection to SimConnect."""
