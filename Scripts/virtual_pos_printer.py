@@ -246,8 +246,8 @@ def run_virtual_printer_server(server_socket, printer_message_queue, http_messag
             print_debug("decoded_data------------  END \n\n")
 
             cleaned_data = re.sub(r'[\r\n]+', '\n', decoded_data)
-            cleaned_data = cleaned_data.replace('\x0c', '')
-            if not cleaned_data.strip():
+            cleaned_data = cleaned_data.strip()
+            if not cleaned_data:
                 print_debug("Cleaned print job is empty after removing Form Feed and whitespace, ignoring.")
                 continue
 
