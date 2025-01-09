@@ -373,9 +373,12 @@ def compute_countdown_timer(
             #print_debug("Midnight rollover detected. Adjusting target time to next day.")
             target_time_today += timedelta(days=1)
 
-
     # Calculate remaining time
     remaining_time = target_time_today - current_sim_time
+
+    # HACK: Correct for MSFS 2024 bug if remaining time exceeds 24 hours
+    if remaining_time.total_seconds() > 24 * 3600:
+        remaining_time -= timedelta(days=1)
 
     # Adjust for simulation rate
     if sim_rate and sim_rate > 0:
