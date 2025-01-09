@@ -43,6 +43,7 @@
 - **fenix_radio.py:** Shows a draggable radio panel that shows RMP1 active/standby channels. (Requires Mobiflight "WASM" module installation).
 - **plot_altitude.py:** Shows a draggable graph panel of altitude - can easily be changed to other SimConnect variables.
 - **plot_joystick.py:** Show visualization of joystick and trim values state.
+- **metar_load.py:** Load metars based on Simulator time
 
 # Script Groups
 - "Script Groups" can be used to automate loading groups of scripts at once.
