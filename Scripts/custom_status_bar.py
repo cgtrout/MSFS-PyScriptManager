@@ -749,6 +749,9 @@ def update_display(template_handler:TemplateHandler):
         for widget in widget_pool.get_widgets_in_order(parsed_block_ids):
             widget.pack(side=tk.LEFT, padx=0, pady=0)
 
+        # Force Tkinter to update the display to avoid flickering on VARIF changes
+        display_frame.update_idletasks()
+
         # Dynamically adjust the window size
         new_width = display_frame.winfo_reqwidth() + PADDING_X
         new_height = display_frame.winfo_reqheight() + PADDING_Y
