@@ -688,11 +688,39 @@ def get_dynamic_value(function_name):
     except Exception as e:
         return "Err"
 
-widget_pool = {}
+class WidgetPool:
+    """Manages widgets and their order"""
+    def __init__(self):
+        self.pool = {}
 
-def update_display(template_handler):
+    def add_widget(self, block_id, widget):
+        if block_id not in self.pool:
+            self.pool[block_id] = widget
+
+    def remove_widget(self, block_id):
+        if block_id in self.pool:
+            del self.pool[block_id]
+
+    def get_widget(self, block_id):
+        return self.pool.get(block_id)
+
+    def has_widget(self, block_id):
+        return block_id in self.pool
+
+    def get_widgets_in_order(self, parsed_block_ids):
+        return [self.pool[block_id] for block_id in parsed_block_ids if block_id in self.pool]
+
+    def clear(self):
+        for widget in self.pool.values():
+            if widget and hasattr(widget, "destroy"):
+                widget.destroy()
+        self.pool.clear()
+
+widget_pool = WidgetPool()
+
+def update_display(template_handler:TemplateHandler):
     """
-    Render the parsed blocks onto the display frame, re-parsing if a template change is pending.
+    Render the parsed blocks onto the display frame
     """
     global widget_pool
 
@@ -704,54 +732,31 @@ def update_display(template_handler):
         # Re-parse the template if a change is pending
         if template_handler.pending_template_change:
             template_handler.cache_parsed_blocks()
-            template_handler.pending_template_change = False  # Reset the flag
-
-            # Reset the widget pool to clear old widgets
-            for widget in widget_pool.values():
-                if widget is not None and hasattr(widget, "destroy"):
-                    widget.destroy()
-            widget_pool = {}
+            template_handler.pending_template_change = False
 
         # Use cached parsed blocks
         parsed_blocks = template_handler.cached_parsed_blocks
 
-        # Track which widgets should remain on the screen and which ones should be removed later.
-        new_widget_pool = {}
-        widget = None
-
+        # Process each block and render the widgets
         for block in parsed_blocks:
-            block_type = block["type"]
-            block_id = block.get("label", f"block_{id(block)}")
+            process_block(block, widget_pool, template_handler)
 
-            if block_id in widget_pool:
-                widget = widget_pool[block_id]
-                render_function = template_handler.parser.block_registry.get(block_type, {}).get("render")
-                if render_function:
-                    updated_widget = render_function(block)
-                    if updated_widget and widget.cget("text") != updated_widget.cget("text"):
-                        widget.config(text=updated_widget.cget("text"))
-            else:
-                render_function = template_handler.parser.block_registry.get(block_type, {}).get("render")
-                if render_function:
-                    widget = render_function(block)
-                    if widget:
-                        widget.pack(side=tk.LEFT, padx=0, pady=0)
+        # Repack widgets in the correct order
+        # This is to avoid a dynamically added VARIF block from being placed at the end
+        parsed_block_ids = [block.get("label", f"block_{id(block)}") for block in parsed_blocks]
+        for widget in display_frame.winfo_children():
+            widget.pack_forget()
+        for widget in widget_pool.get_widgets_in_order(parsed_block_ids):
+            widget.pack(side=tk.LEFT, padx=0, pady=0)
 
-            new_widget_pool[block_id] = widget
-
-        for old_block_id in set(widget_pool) - set(new_widget_pool):
-            widget_pool[old_block_id].destroy()
-
-        widget_pool = new_widget_pool
-
+        # Dynamically adjust the window size
         new_width = display_frame.winfo_reqwidth() + PADDING_X
         new_height = display_frame.winfo_reqheight() + PADDING_Y
 
-        # Validate that calculated width/height make sense
         min_dim = 10
         if new_width < min_dim or new_height < min_dim:
             print_warning(f"Detected an unusually small window size "
-                        f"({new_width}x{new_height})")
+                          f"({new_width}x{new_height})")
 
         # Set to calculated geometry
         root.geometry(f"{new_width}x{new_height}")
@@ -759,7 +764,41 @@ def update_display(template_handler):
     except Exception as e:
         print_error(f"Error in update_display: {e}")
 
+    # Schedule the next update
     root.after(UPDATE_INTERVAL, lambda: update_display(template_handler))
+
+def process_block(block, widget_pool, template_handler):
+    """Process one block from the parsed template"""
+    block_type = block["type"]
+    block_id = block.get("label", f"block_{id(block)}")
+    block_metadata = template_handler.parser.block_registry.get(block_type, {})
+
+    # Dynamically handle blocks with conditions
+    if "condition" in block_metadata["keys"]:
+        condition_function = block.get("condition")
+        if condition_function:
+            condition = get_dynamic_value(condition_function)
+            if not condition:
+                # Skip adding this block if the condition is False
+                widget_pool.remove_widget(block_id)
+                return None
+
+    # Retrieve or create the widget
+    widget = widget_pool.get_widget(block_id)
+    if widget:
+        # Run render function
+        render_function = block_metadata.get("render")
+        if render_function:
+            updated_widget = render_function(block)
+            if updated_widget and widget.cget("text") != updated_widget.cget("text"):
+                widget.config(text=updated_widget.cget("text"))
+    else:
+        # Create a new widget
+        render_function = block_metadata.get("render")
+        if render_function:
+            widget = render_function(block)
+            if widget:
+                widget_pool.add_widget(block_id, widget)
 
 # --- Simbrief functionality ---
 class SimBriefFunctions:
