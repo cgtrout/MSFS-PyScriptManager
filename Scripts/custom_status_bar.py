@@ -386,6 +386,10 @@ def compute_countdown_timer(
     else:
         adjusted_seconds = remaining_time.total_seconds()
 
+    # Enforce allow_negative_timer setting
+    if not simbrief_settings.allow_negative_timer and adjusted_seconds < 0:
+        adjusted_seconds = 0
+
     # Update internal tracking
     new_last_countdown_time = abs(remaining_time.total_seconds())
     new_is_negative = remaining_time.total_seconds() < 0
