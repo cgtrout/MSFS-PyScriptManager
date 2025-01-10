@@ -1221,8 +1221,8 @@ def main():
         #### FAULT DETECTION ###########
         def reset_traceback_timer():
             """Reset the faulthandler timer to prevent a dump."""
-            faulthandler.dump_traceback_later(5, file=log_file, exit=True)
-            root.after(4000, reset_traceback_timer)  # Reset the timer every 4 seconds
+            faulthandler.dump_traceback_later(10, file=log_file, exit=True)
+            root.after(8000, reset_traceback_timer)  # Reset the timer every 4 seconds
 
         reset_traceback_timer()
         #### FAULT DETECTION ########### - END
