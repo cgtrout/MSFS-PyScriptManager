@@ -11,7 +11,6 @@ from datetime import datetime, timezone, timedelta
 import os
 import json
 import importlib
-import keyboard
 import requests
 import time
 from enum import Enum
@@ -102,12 +101,6 @@ log_file_path = "traceback.log"
 log_file = open(log_file_path, "w")
 faulthandler.enable(file=log_file)
 
-# Function to trigger a traceback dump manually
-def dump_traceback():
-    print("Dumping traceback...")
-    faulthandler.dump_traceback(file=log_file)
-
-keyboard.add_hotkey("ctrl+shift+t", dump_traceback)
 
 # --- Timer Variables  --
 # Define epoch value to use as default value
