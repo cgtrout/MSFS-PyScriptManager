@@ -3,9 +3,11 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import requests
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from SimConnect import SimConnect, AircraftRequests
 import subprocess
+import threading
+
 
 printer_name = "VirtualTextPrinter"  # Replace with your specific printer name
 
@@ -173,9 +175,15 @@ def show_metar_data(source_name, metar_dict, show_best_only=True):
         metar_dict (dict): Dictionary with datetime keys and METAR strings as values.
         show_best_only (bool): If True, only show the METAR closest to the current simulator time.
     """
+    # Create the new result window
     result_window = tk.Toplevel(root)
     result_window.title(f"METAR Data - {source_name}")
     result_window.configure(bg="#2e2e2e")  # Softer dark gray background
+
+    # Set a fixed size and center the window
+    window_width, window_height = 600, 1000  # Adjusted size
+    result_window.geometry(f"{window_width}x{window_height}")
+    center_window(result_window, window_width, window_height)
 
     # Title label (source and closest METAR timestamp)
     try:
@@ -197,13 +205,9 @@ def show_metar_data(source_name, metar_dict, show_best_only=True):
     )
     title_label.pack(pady=(5, 10))  # Padding for the title
 
-    # Frame for the text widget
-    frame = tk.Frame(result_window, bg="#2e2e2e")
-    frame.pack(fill="both", expand=True, padx=5, pady=5)
-
     # Text widget
     text_widget = tk.Text(
-        frame,
+        result_window,
         wrap="none",  # No word wrapping
         font=("Consolas", 12),
         bg="#222222",
@@ -213,7 +217,7 @@ def show_metar_data(source_name, metar_dict, show_best_only=True):
         highlightcolor="#3c3c3c",
         relief="flat",  # Remove border styles
     )
-    text_widget.pack(fill="both", expand=True)  # Fully expand within the frame
+    text_widget.pack(fill="both", expand=True, padx=10, pady=(0, 10))  # Padding below for the button
 
     # Populate the text widget
     if show_best_only:
@@ -230,7 +234,7 @@ def show_metar_data(source_name, metar_dict, show_best_only=True):
     text_widget.insert("1.0", content)
     text_widget.configure(state="disabled")
 
-
+    # Print METAR Data Function
     def print_metar_data():
         """Print the METAR data in the text widget using PowerShell."""
         metar_data = text_widget.get("1.0", "end").strip()  # Get text content
@@ -267,32 +271,61 @@ def show_metar_data(source_name, metar_dict, show_best_only=True):
         activeforeground="#FFFFFF",
         font=("Helvetica", 10),
     )
-    print_button.pack(pady=(10, 5))
+    print_button.pack(pady=(5, 5))
 
-def fetch_metar():
-    """Fetch METAR data using MetarFetcher."""
+def gui_fetch_metar():
+    """Fetch METAR data with a non-blocking popup loading window."""
     airport_code = entry.get().strip().upper()
     if not airport_code:
         messagebox.showerror("Error", "Please enter a valid airport ICAO code.")
         return
 
-    fetcher = MetarFetcher()
-    try:
-        source_name, metar_lines = fetcher.fetch_metar(airport_code)
-        show_metar_data(source_name, metar_lines)
-    except Exception as e:
-        messagebox.showerror("Error", str(e))
+    # Create a popup loading window
+    loading_popup = tk.Toplevel(root)
+    loading_popup.title("Loading")
+
+    # Set size and center the popup window
+    popup_width, popup_height = 300, 100
+    center_window(loading_popup, popup_width, popup_height)
+
+    loading_popup.configure(bg="#2E2E2E")
+
+    # Add a loading label
+    loading_label = tk.Label(
+        loading_popup,
+        text="Fetching METAR data, please wait...",
+        font=("Helvetica", 12, "italic"),
+        bg="#2E2E2E",
+        fg="#FFFFFF"
+    )
+    loading_label.pack(expand=True, fill="both", pady=20)
+
+    def fetch_data():
+        try:
+            fetcher = MetarFetcher()
+            source_name, metar_dict = fetcher.fetch_metar(airport_code)
+
+            root.after(0, lambda: show_metar_data(source_name, metar_dict))
+        except Exception as e:
+            root.after(0, lambda: messagebox.showerror("Error", str(e)))
+        finally:
+             # Safely destroy the popup and join the thread
+            root.after(0, lambda: (loading_popup.destroy()))
+
+    # Run the fetch_data function in a background thread
+    thread = threading.Thread(target=fetch_data, daemon=True)
+    thread.start()
 
 def find_best_metar(metar_dict):
     """
-    Find the METAR in metar_dict that is closest to, but not after, the simulator's current datetime.
+    Find the historical METAR closest in time to the simulator's current time, ensuring it's not in the future.
 
     Args:
         metar_dict (dict): Dictionary where keys are datetime objects (METAR timestamps) and
                            values are the corresponding METAR strings.
 
     Returns:
-        str: The METAR string closest to, but not after, the simulator's current time.
+        str: The METAR string closest in time (ignoring date mismatches but ensuring it's not in the future).
 
     Raises:
         ValueError: If no suitable METAR is found.
@@ -303,17 +336,42 @@ def find_best_metar(metar_dict):
     if not metar_dict:
         raise ValueError("No METAR data available.")
 
-    # Filter METARs to include only those before or at the simulator time
-    eligible_metars = {time: metar for time, metar in metar_dict.items() if time <= simulator_time}
+    # Extract only the time portion of the simulator time
+    simulator_time_only = simulator_time.time()
 
-    if not eligible_metars:
-        raise ValueError("No METARs are available before or at the current simulator time.")
+    # Sort METARs by datetime in reverse order (newest first)
+    sorted_metars = sorted(metar_dict.items(), key=lambda item: item[0], reverse=True)
 
-    # Find the METAR closest to the simulator time
-    best_time = max(eligible_metars.keys())  # Closest eligible METAR will have the latest timestamp
-    best_metar = eligible_metars[best_time]
+    # Find the METAR with the smallest time difference that is not in the future
+    best_metar = None
+    smallest_time_diff = timedelta.max  # Initialize with a very large time difference
 
-    return best_metar
+    for metar_time, metar in sorted_metars:
+        # Ensure the METAR is not in the future relative to the simulator's current full datetime
+        if metar_time > simulator_time:
+            continue  # Skip future METARs
+
+        # Extract only the time portion of the METAR timestamp
+        metar_time_only = metar_time.time()
+
+        # Calculate the absolute time difference
+        time_diff = abs(
+            timedelta(
+                hours=metar_time_only.hour, minutes=metar_time_only.minute
+            ) - timedelta(
+                hours=simulator_time_only.hour, minutes=simulator_time_only.minute
+            )
+        )
+
+        # Update the best METAR if this one is closer
+        if time_diff < smallest_time_diff:
+            smallest_time_diff = time_diff
+            best_metar = metar
+
+    if best_metar is not None:
+        return best_metar
+
+    raise ValueError("No suitable METAR found.")
 
 
 def main():
@@ -335,6 +393,10 @@ def main():
     root.title("METAR Data Processor")
     root.geometry("300x150")
     root.configure(bg=bg_color)  # Dark background color
+
+    main_width, main_height = 300, 150
+    center_window(root, main_width, main_height)
+    root.configure(bg="#2E2E2E")
 
     # Fonts
     small_font = ("Helvetica", 10)
@@ -372,7 +434,7 @@ def main():
     tk.Button(
         button_frame,
         text="Fetch METAR Data",
-        command=fetch_metar,
+        command=gui_fetch_metar,
         bg=button_bg_color,
         fg=button_fg_color,
         activebackground=entry_bg_color,  # Slightly lighter background when pressed
@@ -382,10 +444,16 @@ def main():
     ).pack(side="left", padx=5)
 
     # Bind Enter key to Fetch METAR Data
-    root.bind("<Return>", lambda event: fetch_metar())
+    root.bind("<Return>", lambda event: gui_fetch_metar())
+
+    root.protocol("WM_DELETE_WINDOW", on_close)
 
     # Start the Tkinter main loop
     root.mainloop()
+
+def on_close():
+
+    root.destroy()
 
 def get_simulator_datetime() -> datetime:
     """
@@ -440,6 +508,27 @@ def initialize_simconnect():
     except Exception as e:
         sim_connected = False
         print(f"Failed to initialize SimConnect: {e}")
+
+def center_window(window, width, height):
+    """
+    Center a Tkinter window on the screen.
+
+    Args:
+        window: The window to center (e.g., root or Toplevel instance).
+        width: The width of the window.
+        height: The height of the window.
+    """
+    # Get the screen dimensions
+    screen_width = window.winfo_screenwidth()
+    screen_height = window.winfo_screenheight()
+
+    # Calculate position coordinates
+    x = (screen_width - width) // 2
+    y = (screen_height - height) // 2
+
+    # Set the geometry of the window
+    window.geometry(f"{width}x{height}+{x}+{y}")
+
 
 if __name__ == "__main__":
     main()
