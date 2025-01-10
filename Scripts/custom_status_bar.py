@@ -3,6 +3,7 @@
 #   - Uses https://github.com/odwdinc/Python-SimConnect library to obtain values from SimConnect
 
 
+import faulthandler
 import tkinter as tk
 from tkinter import simpledialog, messagebox
 from SimConnect import SimConnect, AircraftRequests
@@ -10,6 +11,7 @@ from datetime import datetime, timezone, timedelta
 import os
 import json
 import importlib
+import keyboard
 import requests
 import time
 from enum import Enum
@@ -95,6 +97,17 @@ PADDING_Y = 10  # Vertical padding for the window
 sim_connect = None
 aircraft_requests = None
 sim_connected = False
+
+log_file_path = "traceback.log"
+log_file = open(log_file_path, "w")
+faulthandler.enable(file=log_file)
+
+# Function to trigger a traceback dump manually
+def dump_traceback():
+    print("Dumping traceback...")
+    faulthandler.dump_traceback(file=log_file)
+
+keyboard.add_hotkey("ctrl+shift+t", dump_traceback)
 
 # --- Timer Variables  --
 # Define epoch value to use as default value
