@@ -703,6 +703,7 @@ class WidgetPool:
 
     def remove_widget(self, block_id):
         if block_id in self.pool:
+            self.pool[block_id].destroy()
             del self.pool[block_id]
 
     def get_widget(self, block_id):
@@ -743,7 +744,7 @@ def update_display(template_handler:TemplateHandler):
 
         # Process each block and render the widgets
         for block in parsed_blocks:
-            process_block(block, widget_pool, template_handler)
+            process_block(block, template_handler)
 
         # Repack widgets in the correct order
         # This is to avoid a dynamically added VARIF block from being placed at the end
@@ -774,8 +775,8 @@ def update_display(template_handler:TemplateHandler):
     # Schedule the next update
     root.after(UPDATE_INTERVAL, lambda: update_display(template_handler))
 
-def process_block(block, widget_pool, template_handler):
-    """Process one block from the parsed template"""
+def process_block(block, template_handler):
+    """Process one block from the parsed template."""
     block_type = block["type"]
     block_id = block.get("label", f"block_{id(block)}")
     block_metadata = template_handler.parser.block_registry.get(block_type, {})
@@ -786,26 +787,35 @@ def process_block(block, widget_pool, template_handler):
         if condition_function:
             condition = get_dynamic_value(condition_function)
             if not condition:
-                # Skip adding this block if the condition is False
-                widget_pool.remove_widget(block_id)
-                return None
+                # Remove the widget from the pool if the condition fails
+                if widget_pool.has_widget(block_id):
+                    widget = widget_pool.get_widget(block_id)
+                    widget_pool.remove_widget(block_id)
+                return
 
-    # Retrieve or create the widget
+    # Attempt to retrieve an existing widget
     widget = widget_pool.get_widget(block_id)
+    render_function = block_metadata.get("render")
+
     if widget:
-        # Run render function
-        render_function = block_metadata.get("render")
+        # Generate a new widget from the render function
         if render_function:
             updated_widget = render_function(block)
-            if updated_widget and widget.cget("text") != updated_widget.cget("text"):
-                widget.config(text=updated_widget.cget("text"))
+
+            # Remove the old widget from the pool and destroy it
+            widget_pool.remove_widget(block_id)
+
+            # Only add the updated widget if it was successfully created
+            if updated_widget:
+                widget_pool.add_widget(block_id, updated_widget)
+                updated_widget.pack(side=tk.LEFT, padx=5, pady=5)
     else:
-        # Create a new widget
-        render_function = block_metadata.get("render")
+        # Create and register a new widget
         if render_function:
             widget = render_function(block)
             if widget:
                 widget_pool.add_widget(block_id, widget)
+                widget.pack(side=tk.LEFT, padx=5, pady=5)
 
 # --- Simbrief functionality ---
 class SimBriefFunctions:
