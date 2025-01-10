@@ -1225,6 +1225,17 @@ def main():
         # Bind the right-click menu
         root.bind("<Button-3>", lambda event: show_template_menu(event, template_handler))
 
+        #### FAULT DETECTION ###########
+        def reset_traceback_timer():
+            """Reset the faulthandler timer to prevent a dump."""
+            faulthandler.dump_traceback_later(5, file=log_file, exit=True)
+            root.after(4000, reset_traceback_timer)  # Reset the timer every 4 seconds
+
+        reset_traceback_timer()
+        #### FAULT DETECTION ########### - END
+
+        while True:
+            pass
         # Run the GUI event loop
         root.mainloop()
     except ValueError as e:
