@@ -98,9 +98,8 @@ aircraft_requests = None
 sim_connected = False
 
 log_file_path = "traceback.log"
-log_file = open(log_file_path, "w")
-faulthandler.enable(file=log_file)
-
+traceback_log_file = open(log_file_path, "w")
+faulthandler.enable(file=traceback_log_file)
 
 # --- Timer Variables  --
 # Define epoch value to use as default value
@@ -1221,7 +1220,7 @@ def main():
         #### FAULT DETECTION ###########
         def reset_traceback_timer():
             """Reset the faulthandler timer to prevent a dump."""
-            faulthandler.dump_traceback_later(10, file=log_file, exit=True)
+            faulthandler.dump_traceback_later(10, file=traceback_log_file, exit=True)
             root.after(8000, reset_traceback_timer)  # Reset the timer every 4 seconds
 
         reset_traceback_timer()
