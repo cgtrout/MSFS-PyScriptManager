@@ -803,22 +803,31 @@ def process_block(block, template_handler):
     render_function = block_metadata.get("render")
 
     if widget:
-        # Generate a new widget from the render function
-        if render_function:
-            updated_widget = render_function(block)
+            # Use render function to get new configuration
+            if render_function:
+                config = render_function(block)
 
-            # Remove the old widget from the pool and destroy it
-            widget_pool.remove_widget(block_id)
-
-            # Only add the updated widget if it was successfully created
-            if updated_widget:
-                widget_pool.add_widget(block_id, updated_widget)
-                updated_widget.pack(side=tk.LEFT, padx=5, pady=5)
+                # Check if the render function returned valid data
+                if config:
+                    # Update the existing widget if needed
+                    if widget.cget("text") != config["text"] or widget.cget("fg") != config["color"]:
+                        widget.config(text=config["text"], fg=config["color"])
+                else:
+                    # Remove the widget if the config is invalid (e.g., condition failed)
+                    widget_pool.remove_widget(block_id)
     else:
         # Create and register a new widget
         if render_function:
-            widget = render_function(block)
-            if widget:
+            config = render_function(block)
+            if config:
+                # Create a new widget based on the render function's config
+                widget = tk.Label(
+                    display_frame,
+                    text=config["text"],
+                    fg=config["color"],
+                    bg=DARK_BG,
+                    font=FONT
+                )
                 widget_pool.add_widget(block_id, widget)
                 widget.pack(side=tk.LEFT, padx=5, pady=5)
 
@@ -1809,34 +1818,48 @@ class TemplateParser:
 
     def render_var(self, block):
         """Render a VAR block."""
-        label = self.process_label_with_dynamic_functions(block["label"])
+        static_text = self.process_label_with_dynamic_functions(block["label"])
         value = get_dynamic_value(block["function"])
-        text = f"{label} {value}"
-        return tk.Label(display_frame, text=text, fg=block["color"], font=FONT, bg=DARK_BG)
+        return {
+            "text": f"{static_text} {value}",
+            "color": block["color"]
+        }
 
     def render_varif(self, block):
         """Render a VARIF block."""
         condition = get_dynamic_value(block["condition"])
         if condition:
-            label = self.process_label_with_dynamic_functions(block["label"])
+            static_text = self.process_label_with_dynamic_functions(block["label"])
             value = get_dynamic_value(block["function"])
-            text = f"{label} {value}"
-            return tk.Label(display_frame, text=text, fg=block["color"], font=FONT, bg=DARK_BG)
+            return {
+                "text": f"{static_text} {value}",
+                "color": block["color"]
+            }
         return None
 
     def render_static_text(self, block):
         """Render a STATIC_TEXT block."""
-        return tk.Label(display_frame, text=block["value"], fg="white", font=FONT, bg=DARK_BG)
+        return {
+            "text": block["value"],
+            "color": "white"
+        }
 
-    def process_label_with_dynamic_functions(self, label):
-        """Replace occurrences of `function_name##` in the label with dynamic values."""
-        while "##" in label:
-            pos = label.find("##")
-            before = label[:pos].strip()
-            function_name = before.split()[-1]
-            replacement_value = get_dynamic_value(function_name)
-            label = label.replace(f"{function_name}##", str(replacement_value) if replacement_value is not None else "", 1)
-        return label
+    def process_label_with_dynamic_functions(self, text):
+        """Replace placeholders in the label with dynamic values."""
+        while "##" in text:
+            # Find the placeholder
+            pos = text.find("##")
+            preceding_text = text[:pos].strip()
+            function_name = preceding_text.split()[-1]  # Get the last word before "##"
+
+            # Fetch the dynamic value
+            dynamic_value = get_dynamic_value(function_name)
+
+            # Replace the placeholder with the fetched value or an empty string
+            replacement = str(dynamic_value) if dynamic_value is not None else ""
+            text = text.replace(f"{function_name}##", replacement, 1)
+
+        return text
 
     def validate_blocks_and_parentheses(self, template_string):
         """Ensure parentheses are correctly balanced and block names are valid."""
