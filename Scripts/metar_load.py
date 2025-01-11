@@ -344,43 +344,53 @@ def find_best_metar(metar_dict):
     if not metar_dict:
         raise ValueError("No METAR data available.")
 
-    # Extract only the time portion of the simulator time
-    simulator_time_only = simulator_time.time()
-
     # Sort METARs by datetime in reverse order (newest first)
     sorted_metars = sorted(metar_dict.items(), key=lambda item: item[0], reverse=True)
 
-    # Find the METAR with the smallest time difference that is not in the future
-    best_metar = None
-    smallest_time_diff = timedelta.max  # Initialize with a very large time difference
+    # First print list for debugging purposes
+    print_color("METAR List:", color="yellow")
+    for metar_time, metar in sorted_metars:
+        print_debug(f"METAR: {metar_time} - {metar}")
+
+    print_color("Now Finding Best METAR:", color="yellow")
+
+    previous_metar_seconds = None  # To track the previous METAR's seconds
+    crossed_midnight = False  # Track whether we have crossed midnight
+
+    # Simulator time in seconds since midnight
+    simulator_seconds = ( simulator_time.hour * 3600 + simulator_time.minute * 60 + simulator_time.second )
 
     for metar_time, metar in sorted_metars:
-        # Ensure the METAR is not in the future relative to the simulator's current full datetime
-        if metar_time > simulator_time:
-            continue  # Skip future METARs
+        metar_seconds = (
+            metar_time.hour * 3600 + metar_time.minute * 60 + metar_time.second
+        )  # METAR time in seconds since midnight
 
-        # Extract only the time portion of the METAR timestamp
-        metar_time_only = metar_time.time()
+        print_debug(f"--Checking METAR: {metar_time} - {metar}-----------")
+        print_debug(f"Simulator seconds: {simulator_seconds}, METAR seconds: {metar_seconds}")
 
-        # Calculate the absolute time difference
-        time_diff = abs(
-            timedelta(
-                hours=metar_time_only.hour, minutes=metar_time_only.minute
-            ) - timedelta(
-                hours=simulator_time_only.hour, minutes=simulator_time_only.minute
-            )
-        )
+        # Detect midnight crossing if metar_seconds jumps backward
+        if previous_metar_seconds is not None and metar_seconds > previous_metar_seconds:
+            print_debug("Detected midnight crossing based on time jump.\n")
+            crossed_midnight = True
 
-        # Update the best METAR if this one is closer
-        if time_diff < smallest_time_diff:
-            smallest_time_diff = time_diff
-            best_metar = metar
+        previous_metar_seconds = metar_seconds  # Update for the next iteration
 
-    if best_metar is not None:
-        return best_metar
+        # Logic before or after midnight crossing
+        if not crossed_midnight:
+            if metar_seconds > simulator_seconds:
+                print_debug("Skipping future METAR.\n")
+                continue
+            else:
+                print_debug(f"Found valid METAR before midnight crossing: {metar}")
+                return metar
+        else:
+            # After midnight crossing, allow the first valid METAR
+            if metar_seconds > simulator_seconds:
+                print_debug(f"Found valid METAR after midnight crossing: {metar}")
+                return metar
 
+    # If no valid METAR is found, raise an error
     raise ValueError("No suitable METAR found.")
-
 
 def main():
     """Main function to initialize the GUI with reference-accurate styling."""
