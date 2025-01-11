@@ -7,7 +7,15 @@ from datetime import datetime, timedelta, timezone
 from SimConnect import SimConnect, AircraftRequests
 import subprocess
 import threading
+import sys
 
+try:
+    # Import all color print functions
+    from Lib.color_print import *
+
+except ImportError:
+    print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
+    sys.exit(1)
 
 printer_name = "VirtualTextPrinter"  # Replace with your specific printer name
 
