@@ -5,7 +5,7 @@
 
 import faulthandler
 import tkinter as tk
-from tkinter import simpledialog, messagebox
+from tkinter import messagebox
 from SimConnect import SimConnect, AircraftRequests
 from datetime import datetime, timezone, timedelta
 import os
