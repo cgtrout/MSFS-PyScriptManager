@@ -457,14 +457,14 @@ def prefetch_variables(*variables, default_value="N/A"):
                 simconnect_cache[variable_name] = default_value
                 variables_to_track.add(variable_name)
 
+VARIABLE_SLEEP = 0.01  # Sleep for 10ms between each variable looku
+MIN_UPDATE_INTERVAL = UPDATE_INTERVAL / 2  # Reduced interval for retry cycles (in milliseconds
+STANDARD_UPDATE_INTERVAL = UPDATE_INTERVAL  # Normal interval for successful cycles
+
 last_successful_update_time = time.time()
 def simconnect_background_updater():
     """Background thread to update SimConnect variables with small sleep between updates."""
-    global sim_connected, aircraft_requests, last_successful_update_time
-
-    VARIABLE_SLEEP = 0.01  # Sleep for 10ms between each variable lookup
-    MIN_UPDATE_INTERVAL = UPDATE_INTERVAL / 2  # Reduced interval for retry cycles (in milliseconds)
-    STANDARD_UPDATE_INTERVAL = UPDATE_INTERVAL  # Normal interval for successful cycles
+    global sim_connected, last_successful_update_time
 
     while True:
         lookup_failed = False  # Track if any variable lookup failed
@@ -495,7 +495,7 @@ def simconnect_background_updater():
                                 #print(f"DEBUG: Value for '{variable_name}' is None. Will retry in the next cycle.")
                                 lookup_failed = True
                         else:
-                            print_warning(f"'aq' is None or does not have a 'get' method.")
+                            print_warning("'aq' is None or does not have a 'get' method.")
                             lookup_failed = True
                     except Exception as e:
                         print_debug(f"Error fetching '{variable_name}': {e}. Will retry in the next cycle.")
@@ -519,10 +519,10 @@ def simconnect_background_updater():
             last_successful_update_time = time.time()
 
 def background_thread_watchdog_function():
+    """Check background thread function to see if it has locked up"""
     global last_successful_update_time
     now = time.time()
     threshold = 30  # seconds before we consider the updater "stuck"
-
 
     if now - last_successful_update_time > threshold:
         print_error(f"Watchdog: Background updater has not completed a cycle in {int(now - last_successful_update_time)} seconds. Possible stall detected.")
@@ -567,7 +567,6 @@ def get_simulator_datetime() -> datetime:
     Ensure it is simulator time and timezone-aware (UTC).
     If unavailable, return the Unix epoch as a default.
     """
-    global sim_connected
     try:
         # Prefetch variables - may speed up access in some cases
         prefetch_variables("ZULU_YEAR", "ZULU_MONTH_OF_YEAR", "ZULU_DAY_OF_MONTH", "ZULU_TIME")
@@ -729,10 +728,7 @@ class WidgetPool:
 widget_pool = WidgetPool()
 
 def update_display(template_handler:TemplateHandler):
-    """
-    Render the parsed blocks onto the display frame
-    """
-    global widget_pool
+    """Render the parsed blocks onto the display frame"""
 
     try:
         if is_moving:
@@ -803,18 +799,18 @@ def process_block(block, template_handler):
     render_function = block_metadata.get("render")
 
     if widget:
-            # Use render function to get new configuration
-            if render_function:
-                config = render_function(block)
+        # Use render function to get new configuration
+        if render_function:
+            config = render_function(block)
 
-                # Check if the render function returned valid data
-                if config:
-                    # Update the existing widget if needed
-                    if widget.cget("text") != config["text"] or widget.cget("fg") != config["color"]:
-                        widget.config(text=config["text"], fg=config["color"])
-                else:
-                    # Remove the widget if the config is invalid (e.g., condition failed)
-                    widget_pool.remove_widget(block_id)
+            # Check if the render function returned valid data
+            if config:
+                # Update the existing widget if needed
+                if widget.cget("text") != config["text"] or widget.cget("fg") != config["color"]:
+                    widget.config(text=config["text"], fg=config["color"])
+            else:
+                # Remove the widget if the config is invalid (e.g., condition failed)
+                widget_pool.remove_widget(block_id)
     else:
         # Create and register a new widget
         if render_function:
@@ -833,7 +829,7 @@ def process_block(block, template_handler):
 
 # --- Simbrief functionality ---
 class SimBriefFunctions:
-    # Last report gen time
+    """Contains grouping of static Simbrief Functions mainly for organizational purposes"""
     last_simbrief_generated_time = None
 
     @staticmethod
@@ -1032,7 +1028,7 @@ class SimBriefFunctions:
 
             adjusted_delta = user_gate_time_dt - simbrief_gate_time
 
-            print_debug(f"Gate Adjustment calculation")
+            print_debug("Gate Adjustment calculation")
             print_debug(f"user_gate_time_dt: {user_gate_time_dt}")
             print_debug(f"simbrief_gate_time: {simbrief_gate_time}")
             print_debug(f"adjusted_delta: {adjusted_delta}\n")
@@ -1375,7 +1371,6 @@ class CountdownTimerDialog(tk.Toplevel):
 
     def simbrief_content(self, frame, small_font, simbrief_username, use_simbrief_adjusted_time, gate_out_time):
         """Build the SimBrief components inside the collapsible section."""
-        border_color = "#444444"
 
         # Outer Frame for Padding
         outer_frame = tk.Frame(frame, bg=self.bg_color)
@@ -1505,8 +1500,6 @@ class CountdownTimerDialog(tk.Toplevel):
         """
         Validate user input, update SimBrief settings, and set the countdown timer if time is provided.
         """
-        global countdown_state, simbrief_settings
-
         try:
             print_debug("on_ok---------------------------")
 
@@ -1630,7 +1623,6 @@ class CountdownTimerDialog(tk.Toplevel):
         """
         Set the countdown timer and update global state.
         """
-        global countdown_state
         current_sim_time = get_simulator_datetime()
 
         if set_future_time_internal(future_time, current_sim_time):
