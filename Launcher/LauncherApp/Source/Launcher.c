@@ -120,6 +120,8 @@ int run_script(const char *pythonPath, const char *scriptPath)
         return -1;
     }
 
+
+
     // Generate a unique pipe name for shutdown signaling
     char scriptCommandPipeName[256];
     snprintf(scriptCommandPipeName, sizeof(scriptCommandPipeName), "\\\\.\\pipe\\PythonShutdownPipe_%lu_%d", pid, randomSuffix);
@@ -187,6 +189,18 @@ int run_script(const char *pythonPath, const char *scriptPath)
     printf("Reading Python script output...\n\n");
     printf("NOTE: Closing this window will close MSFS-PyScriptManager\n");
     printf("-------------------------------------------------------------------------------------------\n\n");
+
+    // Wait for the client to connect
+    printf("Waiting for Launcher...");
+    BOOL connected = ConnectNamedPipe(g_hCommandPipe, NULL) || GetLastError() == ERROR_PIPE_CONNECTED;
+    if (!connected)
+    {
+        displayErrorAndRestoreConsole("Failed to connect to shutdown named pipe.", hConsole, showWindow);
+        CloseHandle(hInboundPipe);
+        return -1;
+    }
+
+    printf("Launcher connected");
 
     // Bring the console window to the foreground and minimize it
     setForegroundWindow(hConsole);
