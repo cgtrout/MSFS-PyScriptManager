@@ -10,6 +10,7 @@ import time
 from multiprocessing import Process, Event
 from pathlib import Path
 from typing import Dict
+import ctypes
 
 # Import parse_ansi_colors from local parse_ansi.py
 from parse_ansi import parse_ansi_colors
@@ -1109,6 +1110,8 @@ def main():
         # Start monitoring shutdown_event
         root.after(100, check_shutdown)
 
+        dark_title_bar(root.winfo_id())
+
         root.mainloop()
 
         logging.info("Tkinter main loop has exited.")
@@ -1126,6 +1129,35 @@ def main():
                 monitor_process.terminate()
 
         logging.info("Application closed successfully.")
+
+def is_windows_11():
+    """Check if the system is running Windows 11 or later."""
+    if hasattr(sys, 'getwindowsversion'):
+        version = sys.getwindowsversion()
+        # Windows 11 has major version 10 and build number >= 22000
+        return (version.major == 10 and version.build >= 22000)
+    return False
+
+def dark_title_bar(hwnd):
+    """Enable dark mode for the title bar if supported."""
+    try:
+        if is_windows_11():
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            value = ctypes.c_int(1)  # Use 1 to enable dark mode
+            result = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE,
+                ctypes.byref(value),
+                ctypes.sizeof(value)
+            )
+            if result == 0:
+                print("[INFO] Dark mode applied successfully.")
+            else:
+                print(f"[ERROR] Failed to apply dark mode. Error code: {result}")
+        else:
+            print("[INFO] Dark mode is not supported on this version of Windows.")
+    except Exception as e:
+        print(f"[ERROR] An exception occurred while applying dark mode: {e}")
 
 if __name__ == "__main__":
     main()
