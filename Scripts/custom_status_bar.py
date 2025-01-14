@@ -432,7 +432,7 @@ def get_time_to_future() -> str:
         sim_rate_str = get_sim_rate()
         sim_rate = float(sim_rate_str) if sim_rate_str.replace('.', '', 1).isdigit() else 1.0
 
-        # Call the extracted compute function
+        # Compute the count-down time
         countdown_str, new_last_time, new_is_neg = compute_countdown_timer(
             current_sim_time=current_sim_time,
             target_time=countdown_state.countdown_target_time,
@@ -448,7 +448,7 @@ def get_time_to_future() -> str:
         return countdown_str
 
     except Exception as e:
-        # Log or print error details if needed
+        # TODO: investigate if we can handle errors better here
         return "00:00:00"
 
 def compute_countdown_timer(
@@ -569,7 +569,7 @@ def set_future_time_internal(future_time_input, current_sim_time):
             countdown_state.reset()
 
             # Log successful setting of the timer
-            print(f"Timer manually set to: {future_time_input}")
+            print(f"Timer set to: {future_time_input}")
             return True
         else:
             raise TypeError("Unsupported future_time_input type. Must be a datetime object.")
