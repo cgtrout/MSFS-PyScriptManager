@@ -37,20 +37,20 @@ void displayErrorAndRestoreConsole(const char *message, HWND hConsole, ShowWindo
 }
 
 // Global handle for the shutdown pipe
-HANDLE g_hShutdownPipe = NULL;
+HANDLE g_hCommandPipe = NULL;
 
 // Console control handler to send a shutdown signal to the Python script.
 BOOL WINAPI ConsoleHandler(DWORD dwCtrlType)
 {
     if (dwCtrlType == CTRL_CLOSE_EVENT || dwCtrlType == CTRL_C_EVENT || dwCtrlType == CTRL_SHUTDOWN_EVENT)
     {
-        if (g_hShutdownPipe)
+        if (g_hCommandPipe)
         {
             const char *shutdownMessage = "shutdown\n";
             DWORD bytesWritten;
-            WriteFile(g_hShutdownPipe, shutdownMessage, strlen(shutdownMessage), &bytesWritten, NULL);
-            CloseHandle(g_hShutdownPipe);
-            g_hShutdownPipe = NULL;
+            WriteFile(g_hCommandPipe, shutdownMessage, strlen(shutdownMessage), &bytesWritten, NULL);
+            CloseHandle(g_hCommandPipe);
+            g_hCommandPipe = NULL;
         }
         return TRUE; // Prevent further handling
     }
@@ -100,11 +100,11 @@ int run_script(const char *pythonPath, const char *scriptPath)
     srand((unsigned int)time(NULL)); // Seed the random number generator
     int randomSuffix = rand();       // Generate a random number
 
-    char outputPipeName[256];
-    snprintf(outputPipeName, sizeof(outputPipeName), "\\\\.\\pipe\\PythonOutputPipe_%lu_%d", pid, randomSuffix);
+    char scriptOutputPipeName[256];
+    snprintf(scriptOutputPipeName, sizeof(scriptOutputPipeName), "\\\\.\\pipe\\PythonOutputPipe_%lu_%d", pid, randomSuffix);
 
-    HANDLE hNamedPipe = CreateNamedPipe(
-        outputPipeName,             // Pipe name
+    HANDLE hInboundPipe = CreateNamedPipe(
+        scriptOutputPipeName,             // Pipe name
         PIPE_ACCESS_INBOUND,        // Read-only pipe
         PIPE_TYPE_BYTE | PIPE_WAIT, // Byte stream pipe, blocking mode
         1,                          // Max instances
@@ -114,18 +114,18 @@ int run_script(const char *pythonPath, const char *scriptPath)
         &sa                         // Security attributes
     );
 
-    if (hNamedPipe == INVALID_HANDLE_VALUE)
+    if (hInboundPipe == INVALID_HANDLE_VALUE)
     {
         displayErrorAndRestoreConsole("Failed to create named pipe.", hConsole, showWindow);
         return -1;
     }
 
     // Generate a unique pipe name for shutdown signaling
-    char shutdownPipeName[256];
-    snprintf(shutdownPipeName, sizeof(shutdownPipeName), "\\\\.\\pipe\\PythonShutdownPipe_%lu_%d", pid, randomSuffix);
+    char scriptCommandPipeName[256];
+    snprintf(scriptCommandPipeName, sizeof(scriptCommandPipeName), "\\\\.\\pipe\\PythonShutdownPipe_%lu_%d", pid, randomSuffix);
 
-    g_hShutdownPipe = CreateNamedPipe(
-        shutdownPipeName,           // Shutdown pipe name
+    g_hCommandPipe = CreateNamedPipe(
+        scriptCommandPipeName,           // Shutdown pipe name
         PIPE_ACCESS_OUTBOUND,       // Write-only pipe
         PIPE_TYPE_BYTE | PIPE_WAIT, // Byte stream pipe, blocking mode
         1,                          // Max instances
@@ -135,23 +135,23 @@ int run_script(const char *pythonPath, const char *scriptPath)
         &sa                         // Security attributes
     );
 
-    if (g_hShutdownPipe == INVALID_HANDLE_VALUE)
+    if (g_hCommandPipe == INVALID_HANDLE_VALUE)
     {
         displayErrorAndRestoreConsole("Failed to create shutdown named pipe.", hConsole, showWindow);
-        CloseHandle(hNamedPipe);
+        CloseHandle(hInboundPipe);
         return -1;
     }
 
     // Pass the pipe names as arguments to the Python script
     snprintf(commandLine, sizeof(commandLine),
              "\"%s\" -u \"%s\" --output-pipe \"%s\" --shutdown-pipe \"%s\"",
-             pythonPath, scriptPath, outputPipeName, shutdownPipeName);
+             pythonPath, scriptPath, scriptOutputPipeName, scriptCommandPipeName);
 
     STARTUPINFO si = {sizeof(si), 0};
     si.dwFlags = STARTF_USESTDHANDLES;
 
     si.hStdOutput = CreateFile(
-        outputPipeName,
+        scriptOutputPipeName,
         GENERIC_WRITE,
         0,
         &sa,
@@ -163,8 +163,8 @@ int run_script(const char *pythonPath, const char *scriptPath)
     if (si.hStdOutput == INVALID_HANDLE_VALUE)
     {
         displayErrorAndRestoreConsole("Failed to open named pipe for the Python process.", hConsole, showWindow);
-        CloseHandle(hNamedPipe);
-        CloseHandle(g_hShutdownPipe);
+        CloseHandle(hInboundPipe);
+        CloseHandle(g_hCommandPipe);
         return -1;
     }
 
@@ -174,8 +174,8 @@ int run_script(const char *pythonPath, const char *scriptPath)
     if (!CreateProcess(NULL, commandLine, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
     {
         displayErrorAndRestoreConsole("CreateProcess failed.", hConsole, showWindow);
-        CloseHandle(hNamedPipe);
-        CloseHandle(g_hShutdownPipe);
+        CloseHandle(hInboundPipe);
+        CloseHandle(g_hCommandPipe);
         CloseHandle(si.hStdOutput);
         return -1;
     }
@@ -198,7 +198,7 @@ int run_script(const char *pythonPath, const char *scriptPath)
 
     while (1)
     {
-        BOOL result = ReadFile(hNamedPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL);
+        BOOL result = ReadFile(hInboundPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL);
         if (!result || bytesRead == 0)
             break;
 
@@ -222,10 +222,10 @@ int run_script(const char *pythonPath, const char *scriptPath)
     }
 
     // Clean up
-    CloseHandle(hNamedPipe);
-    if (g_hShutdownPipe)
+    CloseHandle(hInboundPipe);
+    if (g_hCommandPipe)
     {
-        CloseHandle(g_hShutdownPipe);
+        CloseHandle(g_hCommandPipe);
     }
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
