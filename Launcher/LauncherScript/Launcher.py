@@ -1028,30 +1028,42 @@ class ProcessTracker:
         }
 
 def monitor_shutdown_pipe(pipe_name, shutdown_event):
-    """Monitor the named pipe for shutdown signals."""
+    """Monitor the named pipe for shutdown signals and heartbeats."""
     logging.info("Monitoring shutdown pipe in subprocess. Pipe: %s", pipe_name)
 
+    HEARTBEAT_TIMEOUT = 5  # Timeout in seconds to detect missed heartbeats
+    last_heartbeat_time = time.time()  # Track the last heartbeat time
+
     def pipe_reader():
-        """Threaded pipe reader."""
-        try:
-            with open(pipe_name, "r", encoding="utf-8") as pipe:
-                logging.info("Successfully connected to the shutdown pipe.")
-                while not shutdown_event.is_set():
-                    try:
-                        line = pipe.readline().strip()  # Blocking call
-                        if line:
-                            logging.debug("Read line from pipe: %s", line)
-                            if line == "shutdown":
-                                logging.info("Shutdown signal received in subprocess.")
-                                shutdown_event.set()
-                                break
-                    except Exception as e:
-                        logging.error("Exception while reading pipe: %s", e)
-                        break
-        except Exception as e:
-            logging.error("Failed to monitor shutdown pipe: %s", e)
-        finally:
-            logging.info("Exiting pipe_reader thread.")
+            """Threaded pipe reader."""
+            nonlocal last_heartbeat_time
+            try:
+                with open(pipe_name, "r", encoding="utf-8") as pipe:
+                    logging.info("Successfully connected to the shutdown pipe.")
+                    while not shutdown_event.is_set():
+                        try:
+                            # Read line from pipe (blocking)
+                            line = pipe.readline().strip()
+                            if line:
+                                logging.debug("Read line from pipe: %s", line)
+
+                                if line == "shutdown":
+                                    logging.info("Shutdown signal received in subprocess.")
+                                    shutdown_event.set()
+                                    break
+                                elif line == "HEARTBEAT":
+                                    logging.debug("Heartbeat received.")
+                                    last_heartbeat_time = time.time()  # Update last heartbeat time
+                        except Exception as e:
+                            logging.error("Exception while reading pipe: %s", e)
+                            break
+
+                        # Sleep briefly to prevent tight loop
+                        time.sleep(0.1)
+            except Exception as e:
+                logging.error("Failed to monitor shutdown pipe: %s", e)
+            finally:
+                logging.info("Exiting pipe_reader thread.")
 
     # Start the reader thread
     reader_thread = threading.Thread(target=pipe_reader, daemon=True)
@@ -1059,7 +1071,13 @@ def monitor_shutdown_pipe(pipe_name, shutdown_event):
 
     # Wait for shutdown event while pipe read runs in thread
     while not shutdown_event.is_set():
-        time.sleep(1)
+        # Check for heartbeat timeout
+        logging.debug(f"WHILE: Time since last heartbeat: {time.time() - last_heartbeat_time:.2f}s")
+        if time.time() - last_heartbeat_time > HEARTBEAT_TIMEOUT:
+            logging.info("Heartbeat timeout detected")
+            shutdown_event.set()
+            break
+        time.sleep(0.5)
 
     logging.debug("join reader_thread")
     reader_thread.join(timeout=1)  # Allow the thread to exit
