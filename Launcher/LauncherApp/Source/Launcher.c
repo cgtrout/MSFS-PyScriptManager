@@ -57,6 +57,8 @@ BOOL WINAPI ConsoleHandler(DWORD dwCtrlType)
     return FALSE;
 }
 
+// Processes data from the inbound pipe, sends periodic heartbeats, and monitors the
+// Python process.
 void processPipeDataLoop(HANDLE hInboundPipe, HANDLE hCommandPipe, PROCESS_INFORMATION *pi)
 {
     char buffer[4096];
@@ -106,6 +108,42 @@ void processPipeDataLoop(HANDLE hInboundPipe, HANDLE hCommandPipe, PROCESS_INFOR
     }
 }
 
+// Creates a named pipe with a unique name and specified access mode.
+HANDLE createNamedPipe(
+    const char *pipePrefix,         // Prefix for the pipe name
+    DWORD pid,                      // Process ID to include in the pipe name for uniqueness
+    int randomSuffix,               // Random number to further ensure uniqueness of the pipe name
+    DWORD accessMode,               // Access mode (e.g., PIPE_ACCESS_INBOUND or PIPE_ACCESS_OUTBOUND)
+    char *pipeNameBuffer,           // Buffer to store the generated pipe name
+    size_t pipeNameBufferSize,      // Size of the pipeNameBuffer
+    SECURITY_ATTRIBUTES *sa,        // Pointer to SECURITY_ATTRIBUTES for the pipe
+    HWND hConsole,                  // Handle to the console window (for error handling and restoration)
+    ShowWindow_t showWindow         // Function pointer to ShowWindow for console management
+) {
+    // Generate a unique pipe name
+    snprintf(pipeNameBuffer, pipeNameBufferSize, "\\\\.\\pipe\\%s_%lu_%d", pipePrefix, pid, randomSuffix);
+
+    HANDLE pipeHandle = CreateNamedPipe(
+        pipeNameBuffer,           // Pipe name
+        accessMode,               // Access mode (e.g., read-only or write-only)
+        PIPE_TYPE_BYTE | PIPE_WAIT, // Byte stream pipe, blocking mode
+        1,                        // Max instances
+        4096,                     // Output buffer size
+        4096,                     // Input buffer size
+        0,                        // Default timeout
+        sa                        // Security attributes
+    );
+
+    if (pipeHandle == INVALID_HANDLE_VALUE)
+    {
+        char errorMessage[256];
+        snprintf(errorMessage, sizeof(errorMessage), "Failed to create named pipe: %s", pipeNameBuffer);
+        displayErrorAndRestoreConsole(errorMessage, hConsole, showWindow);
+    }
+
+    return pipeHandle;
+}
+
 // Execute a Python script using the specified interpreter path and script file path
 // Returns the exit code from the Python process, or -1 if there was an error
 int run_script(const char *pythonPath, const char *scriptPath)
@@ -138,7 +176,7 @@ int run_script(const char *pythonPath, const char *scriptPath)
     // Minimize the console window
     Sleep(100); // Allow time for the operation to take effect
 
-    // Set up a named pipe for redirecting the output from the Python process
+    // Declare and initialize SECURITY_ATTRIBUTES
     SECURITY_ATTRIBUTES sa = {0};
     sa.nLength = sizeof(sa);
     sa.bInheritHandle = TRUE;
@@ -149,46 +187,45 @@ int run_script(const char *pythonPath, const char *scriptPath)
     srand((unsigned int)time(NULL)); // Seed the random number generator
     int randomSuffix = rand();       // Generate a random number
 
+    // Buffers to store pipe names
     char scriptOutputPipeName[256];
-    snprintf(scriptOutputPipeName, sizeof(scriptOutputPipeName), "\\\\.\\pipe\\PythonOutputPipe_%lu_%d", pid, randomSuffix);
+    char scriptCommandPipeName[256];
 
-    HANDLE hInboundPipe = CreateNamedPipe(
-        scriptOutputPipeName,             // Pipe name
-        PIPE_ACCESS_INBOUND,        // Read-only pipe
-        PIPE_TYPE_BYTE | PIPE_WAIT, // Byte stream pipe, blocking mode
-        1,                          // Max instances
-        4096,                       // Output buffer size
-        4096,                       // Input buffer size
-        0,                          // Default timeout
-        &sa                         // Security attributes
+    // Create the stdout inbound pipe
+    HANDLE hInboundPipe = createNamedPipe(
+        "PythonOutputPipe",        // Pipe prefix
+        pid,                       // Process ID
+        randomSuffix,              // Random suffix
+        PIPE_ACCESS_INBOUND,       // Read-only access
+        scriptOutputPipeName,      // Output: pipe name
+        sizeof(scriptOutputPipeName),
+        &sa,                       // Pass SECURITY_ATTRIBUTES
+        hConsole,                  // Console handle
+        showWindow                 // ShowWindow function pointer
     );
 
     if (hInboundPipe == INVALID_HANDLE_VALUE)
     {
-        displayErrorAndRestoreConsole("Failed to create named pipe.", hConsole, showWindow);
-        return -1;
+        return -1; // Exit if the pipe couldn't be created
     }
 
-    // Generate a unique pipe name for shutdown signaling
-    char scriptCommandPipeName[256];
-    snprintf(scriptCommandPipeName, sizeof(scriptCommandPipeName), "\\\\.\\pipe\\PythonShutdownPipe_%lu_%d", pid, randomSuffix);
-
-    g_hCommandPipe = CreateNamedPipe(
-        scriptCommandPipeName,           // Shutdown pipe name
-        PIPE_ACCESS_OUTBOUND,       // Write-only pipe
-        PIPE_TYPE_BYTE | PIPE_WAIT, // Byte stream pipe, blocking mode
-        1,                          // Max instances
-        4096,                       // Output buffer size
-        4096,                       // Input buffer size
-        0,                          // Default timeout
-        &sa                         // Security attributes
+    // Create shutdown pipe
+    g_hCommandPipe = createNamedPipe(
+        "PythonShutdownPipe",      // Pipe prefix
+        pid,                       // Process ID
+        randomSuffix,              // Random suffix
+        PIPE_ACCESS_OUTBOUND,      // Write-only access
+        scriptCommandPipeName,     // Output: pipe name
+        sizeof(scriptCommandPipeName),
+        &sa,                       // Pass SECURITY_ATTRIBUTES
+        hConsole,                  // Console handle
+        showWindow                 // ShowWindow function pointer
     );
 
     if (g_hCommandPipe == INVALID_HANDLE_VALUE)
     {
-        displayErrorAndRestoreConsole("Failed to create shutdown named pipe.", hConsole, showWindow);
         CloseHandle(hInboundPipe);
-        return -1;
+        return -1; // Exit if the pipe couldn't be created
     }
 
     // Pass the pipe names as arguments to the Python script
@@ -253,7 +290,7 @@ int run_script(const char *pythonPath, const char *scriptPath)
     Sleep(100);
     showWindow(hConsole, SW_MINIMIZE);
 
-    // Process data from inbound and outbound pipes
+    // MAIN LOOP - Process data from inbound and outbound pipes
     processPipeDataLoop(hInboundPipe, g_hCommandPipe, &pi);
 
     // Wait for the Python process to complete
@@ -282,8 +319,6 @@ int run_script(const char *pythonPath, const char *scriptPath)
 
     return exitCode;
 }
-
-
 
 int main()
 {
