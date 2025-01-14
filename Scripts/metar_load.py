@@ -189,7 +189,7 @@ def show_metar_data(source_name, metar_dict, show_best_only=True):
     result_window.configure(bg="#2e2e2e")  # Softer dark gray background
 
     # Set a fixed size and center the window
-    window_width, window_height = 600, 1000  # Adjusted size
+    window_width, window_height = 800, 125
     result_window.geometry(f"{window_width}x{window_height}")
     center_window(result_window, window_width, window_height)
 
@@ -211,7 +211,7 @@ def show_metar_data(source_name, metar_dict, show_best_only=True):
         fg="#d3d3d3",
         justify="left",
     )
-    title_label.pack(pady=(5, 10))  # Padding for the title
+    title_label.pack(pady=(5, 5))  # Padding for the title
 
     # Text widget
     text_widget = tk.Text(
@@ -224,8 +224,9 @@ def show_metar_data(source_name, metar_dict, show_best_only=True):
         highlightbackground="#3c3c3c",  # Border color
         highlightcolor="#3c3c3c",
         relief="flat",  # Remove border styles
+        height=1
     )
-    text_widget.pack(fill="both", expand=True, padx=10, pady=(0, 10))  # Padding below for the button
+    text_widget.pack(padx=10, pady=(0, 10))
 
     # Populate the text widget
     if show_best_only:
@@ -476,7 +477,7 @@ def on_close():
 def get_simulator_datetime() -> datetime:
     """
     Fetch the current simulator date and time dynamically (in ZULU/UTC format).
-    Ensures the result is timezone-aware and valid. If unavailable, defaults to the Unix epoch.
+    Ensures the result is timezone-aware and valid. If unavailable, defaults to the current system date/time.
     """
     global sim_connected
     try:
@@ -508,8 +509,8 @@ def get_simulator_datetime() -> datetime:
 
     except Exception as e:
         print(f"get_simulator_datetime: Failed to retrieve simulator datetime: {e}")
-        # Default to Unix epoch if simulator time is unavailable
-        return datetime(1970, 1, 1, tzinfo=timezone.utc)
+        # Fallback to current system date and time in UTC
+        return datetime.now(timezone.utc)
 
 def initialize_simconnect():
     """
