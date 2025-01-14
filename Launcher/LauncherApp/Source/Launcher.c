@@ -57,6 +57,55 @@ BOOL WINAPI ConsoleHandler(DWORD dwCtrlType)
     return FALSE;
 }
 
+void processPipeDataLoop(HANDLE hInboundPipe, HANDLE hCommandPipe, PROCESS_INFORMATION *pi)
+{
+    char buffer[4096];
+    DWORD bytesRead;
+    DWORD lastHeartbeatTime = GetTickCount(); // Track the last time a heartbeat was sent
+    const DWORD heartbeatInterval = 1000;    // Send heartbeat every 1 second
+    const char *heartbeatMessage = "HEARTBEAT\n";
+
+    while (1)
+    {
+        // Check if data is available in the pipe
+        DWORD bytesAvailable = 0;
+        BOOL hasData = PeekNamedPipe(hInboundPipe, NULL, 0, NULL, &bytesAvailable, NULL);
+
+        if (hasData && bytesAvailable > 0)
+        {
+            // Read the available data
+            BOOL result = ReadFile(hInboundPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL);
+            if (result && bytesRead > 0)
+            {
+                buffer[bytesRead] = '\0'; // Null-terminate the string
+                printf("%s", buffer);    // Display the script's output
+            }
+        }
+
+        // Send a heartbeat command periodically
+        DWORD currentTime = GetTickCount();
+        if (currentTime - lastHeartbeatTime >= heartbeatInterval)
+        {
+            DWORD bytesWritten;
+            if (!WriteFile(g_hCommandPipe, heartbeatMessage, strlen(heartbeatMessage), &bytesWritten, NULL))
+            {
+                printf("[ERROR] Failed to send heartbeat. Error: %lu\n", GetLastError());
+                continue;
+            }
+            lastHeartbeatTime = currentTime;
+        }
+
+        // Check if the Python process has exited
+        if (WaitForSingleObject(pi->hProcess, 0) == WAIT_OBJECT_0)
+        {
+            printf("[INFO] Python process has exited.\n");
+            break;
+        }
+
+        Sleep(10);
+    }
+}
+
 // Execute a Python script using the specified interpreter path and script file path
 // Returns the exit code from the Python process, or -1 if there was an error
 int run_script(const char *pythonPath, const char *scriptPath)
@@ -119,8 +168,6 @@ int run_script(const char *pythonPath, const char *scriptPath)
         displayErrorAndRestoreConsole("Failed to create named pipe.", hConsole, showWindow);
         return -1;
     }
-
-
 
     // Generate a unique pipe name for shutdown signaling
     char scriptCommandPipeName[256];
@@ -185,7 +232,6 @@ int run_script(const char *pythonPath, const char *scriptPath)
     // Close the write handle in the parent process
     CloseHandle(si.hStdOutput);
 
-    // Read the Python process's output
     printf("Reading Python script output...\n\n");
     printf("NOTE: Closing this window will close MSFS-PyScriptManager\n");
     printf("-------------------------------------------------------------------------------------------\n\n");
@@ -207,51 +253,8 @@ int run_script(const char *pythonPath, const char *scriptPath)
     Sleep(100);
     showWindow(hConsole, SW_MINIMIZE);
 
-    char buffer[4096];
-    DWORD bytesRead;
-    DWORD lastHeartbeatTime = GetTickCount(); // Track the last time a heartbeat was sent
-    const DWORD heartbeatInterval = 1000;    // Send heartbeat every 1 second
-    const char *heartbeatMessage = "HEARTBEAT\n";
-
-    while (1)
-    {
-        // Check if data is available in the pipe
-        DWORD bytesAvailable = 0;
-        BOOL hasData = PeekNamedPipe(hInboundPipe, NULL, 0, NULL, &bytesAvailable, NULL);
-
-        if (hasData && bytesAvailable > 0)
-        {
-            // Read the available data
-            BOOL result = ReadFile(hInboundPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL);
-            if (result && bytesRead > 0)
-            {
-                buffer[bytesRead] = '\0'; // Null-terminate the string
-                printf("%s", buffer);    // Display the script's output
-            }
-        }
-
-        // Send a heartbeat command periodically
-        DWORD currentTime = GetTickCount();
-        if (currentTime - lastHeartbeatTime >= heartbeatInterval)
-        {
-            DWORD bytesWritten;
-            if (!WriteFile(g_hCommandPipe, heartbeatMessage, strlen(heartbeatMessage), &bytesWritten, NULL))
-            {
-                printf("[ERROR] Failed to send heartbeat. Error: %lu\n", GetLastError());
-                continue;
-            }
-            lastHeartbeatTime = currentTime;
-        }
-
-        // Check if the Python process has exited
-        if (WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0)
-        {
-            printf("[INFO] Python process has exited.\n");
-            break;
-        }
-
-        Sleep(10);
-    }
+    // Process data from inbound and outbound pipes
+    processPipeDataLoop(hInboundPipe, g_hCommandPipe, &pi);
 
     // Wait for the Python process to complete
     WaitForSingleObject(pi.hProcess, INFINITE);
@@ -279,6 +282,8 @@ int run_script(const char *pythonPath, const char *scriptPath)
 
     return exitCode;
 }
+
+
 
 int main()
 {
