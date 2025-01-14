@@ -195,15 +195,48 @@ int run_script(const char *pythonPath, const char *scriptPath)
 
     char buffer[4096];
     DWORD bytesRead;
+    DWORD lastHeartbeatTime = GetTickCount(); // Track the last time a heartbeat was sent
+    const DWORD heartbeatInterval = 1000;    // Send heartbeat every 1 second
+    const char *heartbeatMessage = "HEARTBEAT\n";
 
     while (1)
     {
-        BOOL result = ReadFile(hInboundPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL);
-        if (!result || bytesRead == 0)
-            break;
+        // Check if data is available in the pipe
+        DWORD bytesAvailable = 0;
+        BOOL hasData = PeekNamedPipe(hInboundPipe, NULL, 0, NULL, &bytesAvailable, NULL);
 
-        buffer[bytesRead] = '\0';
-        printf("%s", buffer);
+        if (hasData && bytesAvailable > 0)
+        {
+            // Read the available data
+            BOOL result = ReadFile(hInboundPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL);
+            if (result && bytesRead > 0)
+            {
+                buffer[bytesRead] = '\0'; // Null-terminate the string
+                printf("%s", buffer);    // Display the script's output
+            }
+        }
+
+        // Send a heartbeat command periodically
+        DWORD currentTime = GetTickCount();
+        if (currentTime - lastHeartbeatTime >= heartbeatInterval)
+        {
+            DWORD bytesWritten;
+            if (!WriteFile(g_hCommandPipe, heartbeatMessage, strlen(heartbeatMessage), &bytesWritten, NULL))
+            {
+                printf("[ERROR] Failed to send heartbeat. Error: %lu\n", GetLastError());
+                continue;
+            }
+            lastHeartbeatTime = currentTime;
+        }
+
+        // Check if the Python process has exited
+        if (WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0)
+        {
+            printf("[INFO] Python process has exited.\n");
+            break;
+        }
+
+        Sleep(10);
     }
 
     // Wait for the Python process to complete
