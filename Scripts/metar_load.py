@@ -8,6 +8,7 @@ from SimConnect import SimConnect, AircraftRequests
 import subprocess
 import threading
 import sys
+import win32print
 
 try:
     # Import all color print functions
@@ -174,6 +175,27 @@ class MetarFetcher:
 
         raise Exception(f"Failed to fetch METAR data for {airport_code}.")
 
+def print_metar_data(metar_data, printer_name="VirtualTextPrinter"):
+    """Print the METAR data using the Windows printing API."""
+    try:
+        # Use the specified printer or fallback to the default
+        if not printer_name:
+            printer_name = win32print.GetDefaultPrinter()
+
+        # Open the printer and start a print job
+        hprinter = win32print.OpenPrinter(printer_name)
+        job = win32print.StartDocPrinter(hprinter, 1, ("METAR Print Job", None, "RAW"))
+        win32print.StartPagePrinter(hprinter)
+
+        # Send the data to the printer
+        win32print.WritePrinter(hprinter, metar_data.encode('utf-8'))
+        win32print.EndPagePrinter(hprinter)
+        win32print.EndDocPrinter(hprinter)
+        win32print.ClosePrinter(hprinter)
+
+    except Exception as e:
+        messagebox.showerror("Print Error", f"Failed to print METAR data: {e}")
+
 def show_metar_data(source_name, metar_dict, show_best_only=True):
     """
     Display processed METAR data in a new window.
@@ -243,37 +265,11 @@ def show_metar_data(source_name, metar_dict, show_best_only=True):
     text_widget.insert("1.0", content)
     text_widget.configure(state="disabled")
 
-    # Print METAR Data Function
-    def print_metar_data():
-        """Print the METAR data in the text widget using PowerShell."""
-        metar_data = text_widget.get("1.0", "end").strip()  # Get text content
-
-        try:
-            # PowerShell command to send the METAR data directly to the printer
-            powershell_cmd = f"""
-            $text = "{metar_data}";
-            $text | Out-Printer -Name '{printer_name}'
-            """
-
-            # Run the PowerShell command
-            result = subprocess.run(
-                ["powershell", "-Command", powershell_cmd],
-                capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
-            )
-
-            # Check if the command was successful
-            if result.returncode != 0:
-                raise Exception(f"PowerShell Error: {result.stderr.strip()}")
-
-        except Exception as e:
-            # Show an error message if printing fails
-            messagebox.showerror("Print Error", f"Failed to print METAR data: {e}")
-
     # Print Button
     print_button = tk.Button(
         result_window,
         text="Print METAR Data",
-        command=print_metar_data,
+        command=lambda: print_metar_data(content, printer_name),
         bg="#5A5A5A",
         fg="#FFFFFF",
         activebackground="#3A3A3A",
