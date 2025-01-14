@@ -22,6 +22,8 @@ import psutil
 import re
 from ttkthemes import ThemedTk
 
+from ordered_logger import OrderedLogger
+
 # Path to the WinPython Python executable and VS Code.exe
 current_dir = Path(__file__).resolve().parent
 project_root = current_dir.parents[1]
@@ -42,12 +44,10 @@ TEXT_WIDGET_INSERT_COLOR = "#FFFFFF"
 FRAME_BG_COLOR = "#2E2E2E"
 
 # Configure logging globally
-logging.basicConfig(
-    level=logging.DEBUG,  # Change to logging.DEBUG for more detailed output
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler("shutdown_log.txt", mode="w")  # Log to file
-    ]
+logging = OrderedLogger(
+    filename="shutdown_log.txt",  # Specify the log file
+    level=logging.DEBUG,
+    log_format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
 class Tab:
@@ -1045,14 +1045,12 @@ def monitor_shutdown_pipe(pipe_name, shutdown_event):
                             # Read line from pipe (blocking)
                             line = pipe.readline().strip()
                             if line:
-                                logging.debug("Read line from pipe: %s", line)
-
                                 if line == "shutdown":
                                     logging.info("Shutdown signal received in subprocess.")
                                     shutdown_event.set()
                                     break
                                 elif line == "HEARTBEAT":
-                                    logging.debug("Heartbeat received.")
+                                    #logging.debug("Heartbeat received.")
                                     last_heartbeat_time = time.time()  # Update last heartbeat time
                         except Exception as e:
                             logging.error("Exception while reading pipe: %s", e)
@@ -1072,9 +1070,8 @@ def monitor_shutdown_pipe(pipe_name, shutdown_event):
     # Wait for shutdown event while pipe read runs in thread
     while not shutdown_event.is_set():
         # Check for heartbeat timeout
-        logging.debug(f"WHILE: Time since last heartbeat: {time.time() - last_heartbeat_time:.2f}s")
         if time.time() - last_heartbeat_time > HEARTBEAT_TIMEOUT:
-            logging.info("Heartbeat timeout detected")
+            logging.info("!=================== Heartbeat timeout detected ===================!")
             shutdown_event.set()
             break
         time.sleep(0.5)
@@ -1144,6 +1141,7 @@ def main():
                 monitor_process.terminate()
 
         logging.info("Application closed successfully.")
+        logging.stop()
 
 if __name__ == "__main__":
     main()
