@@ -101,7 +101,7 @@ log_file_path = "traceback.log"
 traceback_log_file = open(log_file_path, "w")
 faulthandler.enable(file=traceback_log_file)
 
-# --- Timer Variables  --
+# --- Timer Variables  ---
 # Define epoch value to use as default value
 UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -159,7 +159,7 @@ class SimBriefSettings:
             auto_update_enabled=data.get("auto_update_enabled", False),
         )
 
-# Declare gobal instances for shared data
+# --- Globals  ---
 countdown_state = CountdownState()
 simbrief_settings = SimBriefSettings()
 
@@ -167,94 +167,6 @@ simbrief_settings = SimBriefSettings()
 simconnect_cache = {}
 variables_to_track = set()
 cache_lock = threading.Lock()
-
-# --- Template handling  ---
-@dataclass
-class TemplateHandler:
-    """Class to manage the template file and selected template."""
-    templates: dict[str, str] = field(init=False, default_factory=dict)
-    selected_template_name: Optional[str] = None
-    cached_parsed_blocks: list = field(init=False, default_factory=list)
-    pending_template_change: bool = field(init=False, default=False)
-    parser: "TemplateParser" = field(init=False)
-
-    def __post_init__(self):
-        """Initialize templates and set the default selection."""
-        self.parser = TemplateParser()  # Initialize the parser
-        self.templates = self.load_templates()
-        self.load_template_functions()
-        self.selected_template_name = next(iter(self.templates), None)
-        if not self.selected_template_name:
-            raise ValueError("No templates available to select.")
-
-        # Initially cache the parsed blocks for the first template
-        self.cache_parsed_blocks()
-
-    def load_templates(self) -> dict[str, str]:
-        """Load templates from the template file, creating the file if necessary."""
-        os.makedirs(SETTINGS_DIR, exist_ok=True)
-
-        if not os.path.exists(TEMPLATE_FILE):
-            with open(TEMPLATE_FILE, "w") as f:
-                f.write(DEFAULT_TEMPLATES.strip())
-            print(f"Created default template file at {TEMPLATE_FILE}")
-
-        try:
-            spec = importlib.util.spec_from_file_location("status_bar_templates", TEMPLATE_FILE)
-            templates_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(templates_module)
-            return templates_module.TEMPLATES if hasattr(templates_module, "TEMPLATES") else {}
-        except Exception as e:
-            print(f"Error loading templates: {e}")
-            return {}
-
-    def load_template_functions(self):
-        """
-        Dynamically import functions from the template file and inject only relevant globals.
-        """
-        try:
-            spec = importlib.util.spec_from_file_location("status_bar_templates", TEMPLATE_FILE)
-            templates_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(templates_module)
-
-            # First, filter globals to exclude built-ins and modules
-            relevant_globals = {
-                k: v for k, v in globals().items()
-                if not k.startswith("__") and not isinstance(v, type(importlib))  # Exclude built-ins and modules
-            }
-
-            # Debug: Log the filtered globals being injected
-            print_debug("Filtered Globals to Inject:")
-            for name, obj in relevant_globals.items():
-                print_color(f"[green(]{name}:[)] {type(obj).__name__}")
-
-            # Inject filtered globals into the template module
-            templates_module.__dict__.update(relevant_globals)
-
-            # Add callable objects to this global namespace
-            for name, obj in vars(templates_module).items():
-                if callable(obj):
-                    globals()[name] = obj
-
-            print_debug("load_template_functions: DONE\n")
-
-        except Exception as e:
-            print(f"Error loading template functions: {e}")
-
-    def get_current_template(self) -> str:
-        """Return the content of the currently selected template."""
-        if not self.selected_template_name or self.selected_template_name not in self.templates:
-            raise ValueError("No valid template selected.")
-        return self.templates[self.selected_template_name]
-
-    def cache_parsed_blocks(self):
-        """Cache the parsed blocks for the currently selected template."""
-        template_content = self.get_current_template()
-        self.cached_parsed_blocks = self.parser.parse_template(template_content)
-
-    def mark_template_change(self):
-        """Mark that a template change is pending."""
-        self.pending_template_change = True
 
 # --- SimConnect Lookup  ---
 def get_sim_time():
@@ -274,6 +186,48 @@ def get_sim_time():
         return sim_time.strftime("%H:%M:%S")
     except Exception as e:
         return "Err"
+
+def get_simulator_datetime() -> datetime:
+    """
+    Fetch the current simulator date and time as a datetime object.
+    Ensure it is simulator time and timezone-aware (UTC).
+    If unavailable, return the Unix epoch as a default.
+    """
+    try:
+        # Prefetch variables - may speed up access in some cases
+        prefetch_variables("ZULU_YEAR", "ZULU_MONTH_OF_YEAR", "ZULU_DAY_OF_MONTH", "ZULU_TIME")
+
+        # Fetch simulator date and time from SimConnect (ZULU time assumed as UTC)
+        zulu_year = get_simconnect_value("ZULU_YEAR")
+        zulu_month = get_simconnect_value("ZULU_MONTH_OF_YEAR")
+        zulu_day = get_simconnect_value("ZULU_DAY_OF_MONTH")
+        zulu_time_seconds = get_simconnect_value("ZULU_TIME")
+
+        # Ensure all fetched values are valid
+        if any(value is None or str(value) == "N/A" for value in [zulu_year, zulu_month, zulu_day, zulu_time_seconds]):
+            raise ValueError("SimConnect values are not available yet.")
+
+        # Convert values to integers and calculate datetime
+        zulu_year = int(zulu_year)
+        zulu_month = int(zulu_month)
+        zulu_day = int(zulu_day)
+        zulu_time_seconds = float(zulu_time_seconds)
+
+        # Convert ZULU_TIME (seconds since midnight) into hours, minutes, seconds
+        hours, remainder = divmod(int(zulu_time_seconds), 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        # Construct and return the current datetime object with UTC timezone
+        return datetime(zulu_year, zulu_month, zulu_day, hours, minutes, seconds, tzinfo=timezone.utc)
+
+    except ValueError as ve:
+        #print(ve)
+        pass
+    except Exception as e:
+        print(f"get_simulator_datetime: Failed to retrieve simulator datetime: {e}")
+
+    # Return the Unix epoch if simulator time is unavailable
+    return UNIX_EPOCH
 
 def get_real_world_time():
     """Fetch the real-world Zulu time."""
@@ -306,6 +260,159 @@ def remain_label():
         return "Rem(adj):"
     return "Remaining:"
 
+def initialize_simconnect():
+    """Initialize the connection to SimConnect."""
+    global sim_connect, aircraft_requests, sim_connected
+    try:
+        sim_connect = SimConnect()  # Connect to SimConnect
+        aircraft_requests = AircraftRequests(sim_connect, _time=0)
+        sim_connected = True
+    except Exception:
+        sim_connected = False
+
+def get_simconnect_value(variable_name: str, default_value: Any = "N/A", retries: int = 10, retry_interval: float = 0.2) -> Any:
+    """Fetch a SimConnect variable with caching and retry logic."""
+    if not sim_connected or sim_connect is None or not sim_connect.ok:
+        return "Sim Not Running"
+
+    value = check_cache(variable_name)
+    if value and value != default_value:
+        return value
+
+    add_to_cache(variable_name, default_value)
+    for _ in range(retries):
+        value = check_cache(variable_name)
+        if value and value != default_value:
+            return value
+        time.sleep(retry_interval)
+
+    print_debug(f"All {retries} retries failed for '{variable_name}'. Returning default: {default_value}")
+    return default_value
+
+def check_cache(variable_name):
+    """Return SimConnect cached value for variable if available, otherwise None."""
+    with cache_lock:
+        return simconnect_cache.get(variable_name)
+
+def add_to_cache(variable_name, default_value="N/A"):
+    """Add SimConnect variable to cache with default value and track it."""
+    with cache_lock:
+        simconnect_cache[variable_name] = default_value
+        variables_to_track.add(variable_name)
+
+def prefetch_variables(*variables, default_value="N/A"):
+    """Prefetch variables by initializing them in the cache and tracking list."""
+    with cache_lock:
+        for variable_name in variables:
+            if variable_name not in simconnect_cache:  # Ensure each variable is only added once
+                simconnect_cache[variable_name] = default_value
+                variables_to_track.add(variable_name)
+
+def get_formatted_value(variable_names, format_string=None):
+    """
+    Fetch one or more SimConnect variables, apply optional formatting if provided.
+
+    Parameters:
+    - variable_names: The SimConnect variable name(s) to retrieve (can be a single name or a list).
+    - format_string: An optional string format to apply to the retrieved values.
+
+    Returns:
+    - The formatted string, or an error message if retrieval fails.
+    """
+
+    if not sim_connected or sim_connect is None or not sim_connect.ok:
+        return "Sim Not Running"
+
+    if isinstance(variable_names, str):
+        variable_names = [variable_names]
+
+    # Fetch values for the given variables
+    values = [get_simconnect_value(var) for var in variable_names]
+
+    # Format the values if a format string is provided
+    if format_string:
+        formatted_values = format_string.format(*values)
+        return formatted_values
+
+    # Return raw value(s) if no format string is provided
+    result = values[0] if len(values) == 1 else values
+    return result
+
+# --- Background Updater ---
+VARIABLE_SLEEP = 0.01  # Sleep for 10ms between each variable looku
+MIN_UPDATE_INTERVAL = UPDATE_INTERVAL / 2  # Reduced interval for retry cycles (in milliseconds
+STANDARD_UPDATE_INTERVAL = UPDATE_INTERVAL  # Normal interval for successful cycles
+
+last_successful_update_time = time.time()
+def simconnect_background_updater():
+    """Background thread to update SimConnect variables with small sleep between updates."""
+    global sim_connected, last_successful_update_time
+
+    while True:
+        lookup_failed = False  # Track if any variable lookup failed
+
+        try:
+            if not sim_connected:
+                initialize_simconnect()
+                continue
+
+            if sim_connected:
+                if sim_connect is None or not sim_connect.ok or sim_connect.quit == 1:
+                    print_warning("SimConnect state invalid. Disconnecting.")
+                    sim_connected = False
+                    continue
+
+                # Make a copy of the variables to avoid holding the lock during network calls
+                with cache_lock:
+                    vars_to_update = list(variables_to_track)
+
+                for variable_name in vars_to_update:
+                    try:
+                        if aircraft_requests is not None and hasattr(aircraft_requests, 'get'):
+                            value = aircraft_requests.get(variable_name)
+                            if value is not None:
+                                with cache_lock:
+                                    simconnect_cache[variable_name] = value
+                            else:
+                                #print(f"DEBUG: Value for '{variable_name}' is None. Will retry in the next cycle.")
+                                lookup_failed = True
+                        else:
+                            print_warning("'aq' is None or does not have a 'get' method.")
+                            lookup_failed = True
+                    except Exception as e:
+                        print_debug(f"Error fetching '{variable_name}': {e}. Will retry in the next cycle.")
+                        lookup_failed = True
+
+                    # Introduce a small sleep between variable updates
+                    time.sleep(VARIABLE_SLEEP)
+
+            else:
+                print_warning("SimConnect not connected. Retrying in 1 second.")
+                time.sleep(1)
+
+            # Adjust sleep interval dynamically
+            sleep_interval = MIN_UPDATE_INTERVAL if lookup_failed else STANDARD_UPDATE_INTERVAL
+            time.sleep(sleep_interval / 1000.0)
+
+        except Exception as e:
+            print_error(f"Unexpected error in background updater: {e}")
+        finally:
+            # Update the last successful update time - used for 'heartbeat' functionality
+            last_successful_update_time = time.time()
+
+def background_thread_watchdog_function():
+    """Check background thread function to see if it has locked up"""
+    global last_successful_update_time
+    now = time.time()
+    threshold = 30  # seconds before we consider the updater "stuck"
+
+    if now - last_successful_update_time > threshold:
+        print_error(f"Watchdog: Background updater has not completed a cycle in {int(now - last_successful_update_time)} seconds. Possible stall detected.")
+
+    # Reschedule the watchdog to run again after 10 seconds
+    root.after(10_000, background_thread_watchdog_function)
+
+# --- Timer Calcuation  ---
 def get_time_to_future() -> str:
     """
     Calculate and return the countdown timer string.
@@ -409,200 +516,6 @@ def compute_countdown_timer(
 
     return countdown_str, new_last_countdown_time, new_is_negative
 
-def initialize_simconnect():
-    """Initialize the connection to SimConnect."""
-    global sim_connect, aircraft_requests, sim_connected
-    try:
-        sim_connect = SimConnect()  # Connect to SimConnect
-        aircraft_requests = AircraftRequests(sim_connect, _time=0)
-        sim_connected = True
-    except Exception:
-        sim_connected = False
-
-def get_simconnect_value(variable_name: str, default_value: Any = "N/A", retries: int = 10, retry_interval: float = 0.2) -> Any:
-    """Fetch a SimConnect variable with caching and retry logic."""
-    if not sim_connected or sim_connect is None or not sim_connect.ok:
-        return "Sim Not Running"
-
-    value = check_cache(variable_name)
-    if value and value != default_value:
-        return value
-
-    add_to_cache(variable_name, default_value)
-    for _ in range(retries):
-        value = check_cache(variable_name)
-        if value and value != default_value:
-            return value
-        time.sleep(retry_interval)
-
-    print_debug(f"All {retries} retries failed for '{variable_name}'. Returning default: {default_value}")
-    return default_value
-
-def check_cache(variable_name):
-    """Return SimConnect cached value for variable if available, otherwise None."""
-    with cache_lock:
-        return simconnect_cache.get(variable_name)
-
-def add_to_cache(variable_name, default_value="N/A"):
-    """Add SimConnect variable to cache with default value and track it."""
-    with cache_lock:
-        simconnect_cache[variable_name] = default_value
-        variables_to_track.add(variable_name)
-
-def prefetch_variables(*variables, default_value="N/A"):
-    """Prefetch variables by initializing them in the cache and tracking list."""
-    with cache_lock:
-        for variable_name in variables:
-            if variable_name not in simconnect_cache:  # Ensure each variable is only added once
-                simconnect_cache[variable_name] = default_value
-                variables_to_track.add(variable_name)
-
-VARIABLE_SLEEP = 0.01  # Sleep for 10ms between each variable looku
-MIN_UPDATE_INTERVAL = UPDATE_INTERVAL / 2  # Reduced interval for retry cycles (in milliseconds
-STANDARD_UPDATE_INTERVAL = UPDATE_INTERVAL  # Normal interval for successful cycles
-
-last_successful_update_time = time.time()
-def simconnect_background_updater():
-    """Background thread to update SimConnect variables with small sleep between updates."""
-    global sim_connected, last_successful_update_time
-
-    while True:
-        lookup_failed = False  # Track if any variable lookup failed
-
-        try:
-            if not sim_connected:
-                initialize_simconnect()
-                continue
-
-            if sim_connected:
-                if sim_connect is None or not sim_connect.ok or sim_connect.quit == 1:
-                    print_warning("SimConnect state invalid. Disconnecting.")
-                    sim_connected = False
-                    continue
-
-                # Make a copy of the variables to avoid holding the lock during network calls
-                with cache_lock:
-                    vars_to_update = list(variables_to_track)
-
-                for variable_name in vars_to_update:
-                    try:
-                        if aircraft_requests is not None and hasattr(aircraft_requests, 'get'):
-                            value = aircraft_requests.get(variable_name)
-                            if value is not None:
-                                with cache_lock:
-                                    simconnect_cache[variable_name] = value
-                            else:
-                                #print(f"DEBUG: Value for '{variable_name}' is None. Will retry in the next cycle.")
-                                lookup_failed = True
-                        else:
-                            print_warning("'aq' is None or does not have a 'get' method.")
-                            lookup_failed = True
-                    except Exception as e:
-                        print_debug(f"Error fetching '{variable_name}': {e}. Will retry in the next cycle.")
-                        lookup_failed = True
-
-                    # Introduce a small sleep between variable updates
-                    time.sleep(VARIABLE_SLEEP)
-
-            else:
-                print_warning("SimConnect not connected. Retrying in 1 second.")
-                time.sleep(1)
-
-            # Adjust sleep interval dynamically
-            sleep_interval = MIN_UPDATE_INTERVAL if lookup_failed else STANDARD_UPDATE_INTERVAL
-            time.sleep(sleep_interval / 1000.0)
-
-        except Exception as e:
-            print_error(f"Unexpected error in background updater: {e}")
-        finally:
-            # Update the last successful update time - used for 'heartbeat' functionality
-            last_successful_update_time = time.time()
-
-def background_thread_watchdog_function():
-    """Check background thread function to see if it has locked up"""
-    global last_successful_update_time
-    now = time.time()
-    threshold = 30  # seconds before we consider the updater "stuck"
-
-    if now - last_successful_update_time > threshold:
-        print_error(f"Watchdog: Background updater has not completed a cycle in {int(now - last_successful_update_time)} seconds. Possible stall detected.")
-
-    # Reschedule the watchdog to run again after 10 seconds
-    root.after(10_000, background_thread_watchdog_function)
-
-
-def get_formatted_value(variable_names, format_string=None):
-    """
-    Fetch one or more SimConnect variables, apply optional formatting if provided.
-
-    Parameters:
-    - variable_names: The SimConnect variable name(s) to retrieve (can be a single name or a list).
-    - format_string: An optional string format to apply to the retrieved values.
-
-    Returns:
-    - The formatted string, or an error message if retrieval fails.
-    """
-
-    if not sim_connected or sim_connect is None or not sim_connect.ok:
-        return "Sim Not Running"
-
-    if isinstance(variable_names, str):
-        variable_names = [variable_names]
-
-    # Fetch values for the given variables
-    values = [get_simconnect_value(var) for var in variable_names]
-
-    # Format the values if a format string is provided
-    if format_string:
-        formatted_values = format_string.format(*values)
-        return formatted_values
-
-    # Return raw value(s) if no format string is provided
-    result = values[0] if len(values) == 1 else values
-    return result
-
-def get_simulator_datetime() -> datetime:
-    """
-    Fetch the current simulator date and time as a datetime object.
-    Ensure it is simulator time and timezone-aware (UTC).
-    If unavailable, return the Unix epoch as a default.
-    """
-    try:
-        # Prefetch variables - may speed up access in some cases
-        prefetch_variables("ZULU_YEAR", "ZULU_MONTH_OF_YEAR", "ZULU_DAY_OF_MONTH", "ZULU_TIME")
-
-        # Fetch simulator date and time from SimConnect (ZULU time assumed as UTC)
-        zulu_year = get_simconnect_value("ZULU_YEAR")
-        zulu_month = get_simconnect_value("ZULU_MONTH_OF_YEAR")
-        zulu_day = get_simconnect_value("ZULU_DAY_OF_MONTH")
-        zulu_time_seconds = get_simconnect_value("ZULU_TIME")
-
-        # Ensure all fetched values are valid
-        if any(value is None or str(value) == "N/A" for value in [zulu_year, zulu_month, zulu_day, zulu_time_seconds]):
-            raise ValueError("SimConnect values are not available yet.")
-
-        # Convert values to integers and calculate datetime
-        zulu_year = int(zulu_year)
-        zulu_month = int(zulu_month)
-        zulu_day = int(zulu_day)
-        zulu_time_seconds = float(zulu_time_seconds)
-
-        # Convert ZULU_TIME (seconds since midnight) into hours, minutes, seconds
-        hours, remainder = divmod(int(zulu_time_seconds), 3600)
-        minutes, seconds = divmod(remainder, 60)
-
-        # Construct and return the current datetime object with UTC timezone
-        return datetime(zulu_year, zulu_month, zulu_day, hours, minutes, seconds, tzinfo=timezone.utc)
-
-    except ValueError as ve:
-        #print(ve)
-        pass
-    except Exception as e:
-        print(f"get_simulator_datetime: Failed to retrieve simulator datetime: {e}")
-
-    # Return the Unix epoch if simulator time is unavailable
-    return UNIX_EPOCH
-
 def get_simulator_time_offset():
     """
     Calculate the offset between simulator time and real-world UTC time.
@@ -681,6 +594,94 @@ def open_timer_dialog():
         # The dialog now handles all time and settings updates
     except Exception as e:
         messagebox.showerror("Error", f"Failed to open timer dialog: {str(e)}")
+
+# --- Template handling  ---
+@dataclass
+class TemplateHandler:
+    """Class to manage the template file and selected template."""
+    templates: dict[str, str] = field(init=False, default_factory=dict)
+    selected_template_name: Optional[str] = None
+    cached_parsed_blocks: list = field(init=False, default_factory=list)
+    pending_template_change: bool = field(init=False, default=False)
+    parser: "TemplateParser" = field(init=False)
+
+    def __post_init__(self):
+        """Initialize templates and set the default selection."""
+        self.parser = TemplateParser()  # Initialize the parser
+        self.templates = self.load_templates()
+        self.load_template_functions()
+        self.selected_template_name = next(iter(self.templates), None)
+        if not self.selected_template_name:
+            raise ValueError("No templates available to select.")
+
+        # Initially cache the parsed blocks for the first template
+        self.cache_parsed_blocks()
+
+    def load_templates(self) -> dict[str, str]:
+        """Load templates from the template file, creating the file if necessary."""
+        os.makedirs(SETTINGS_DIR, exist_ok=True)
+
+        if not os.path.exists(TEMPLATE_FILE):
+            with open(TEMPLATE_FILE, "w") as f:
+                f.write(DEFAULT_TEMPLATES.strip())
+            print(f"Created default template file at {TEMPLATE_FILE}")
+
+        try:
+            spec = importlib.util.spec_from_file_location("status_bar_templates", TEMPLATE_FILE)
+            templates_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(templates_module)
+            return templates_module.TEMPLATES if hasattr(templates_module, "TEMPLATES") else {}
+        except Exception as e:
+            print(f"Error loading templates: {e}")
+            return {}
+
+    def load_template_functions(self):
+        """
+        Dynamically import functions from the template file and inject only relevant globals.
+        """
+        try:
+            spec = importlib.util.spec_from_file_location("status_bar_templates", TEMPLATE_FILE)
+            templates_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(templates_module)
+
+            # First, filter globals to exclude built-ins and modules
+            relevant_globals = {
+                k: v for k, v in globals().items()
+                if not k.startswith("__") and not isinstance(v, type(importlib))  # Exclude built-ins and modules
+            }
+
+            # Debug: Log the filtered globals being injected
+            print_debug("Filtered Globals to Inject:")
+            for name, obj in relevant_globals.items():
+                print_color(f"[green(]{name}:[)] {type(obj).__name__}")
+
+            # Inject filtered globals into the template module
+            templates_module.__dict__.update(relevant_globals)
+
+            # Add callable objects to this global namespace
+            for name, obj in vars(templates_module).items():
+                if callable(obj):
+                    globals()[name] = obj
+
+            print_debug("load_template_functions: DONE\n")
+
+        except Exception as e:
+            print(f"Error loading template functions: {e}")
+
+    def get_current_template(self) -> str:
+        """Return the content of the currently selected template."""
+        if not self.selected_template_name or self.selected_template_name not in self.templates:
+            raise ValueError("No valid template selected.")
+        return self.templates[self.selected_template_name]
+
+    def cache_parsed_blocks(self):
+        """Cache the parsed blocks for the currently selected template."""
+        template_content = self.get_current_template()
+        self.cached_parsed_blocks = self.parser.parse_template(template_content)
+
+    def mark_template_change(self):
+        """Mark that a template change is pending."""
+        self.pending_template_change = True
 
 # --- Display Update  ---
 def get_dynamic_value(function_name):
@@ -1251,6 +1252,7 @@ def main():
         print_error(f"Error: {e}")
         print("Please check your DISPLAY_TEMPLATE and try again.")
 
+# --- Utility Classes  ---
 class CountdownTimerDialog(tk.Toplevel):
     """A dialog to set the countdown timer and SimBrief settings"""
     def __init__(self, parent, simbrief_settings: SimBriefSettings, initial_time=None, gate_out_time=None):
