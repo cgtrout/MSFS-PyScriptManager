@@ -743,20 +743,28 @@ def update_display(template_handler:TemplateHandler):
         # Use cached parsed blocks
         parsed_blocks = template_handler.cached_parsed_blocks
 
+        # Track whether a full refresh is needed
+        full_refresh_needed = False
+
         # Process each block and render the widgets
         for block in parsed_blocks:
-            process_block(block, template_handler)
+            needs_refresh = process_block(block, template_handler)
+            if needs_refresh:
+                full_refresh_needed = True
 
         # Repack widgets in the correct order
         # This is to avoid a dynamically added VARIF block from being placed at the end
-        parsed_block_ids = [block.get("label", f"block_{id(block)}") for block in parsed_blocks]
-        for widget in display_frame.winfo_children():
-            widget.pack_forget()
-        for widget in widget_pool.get_widgets_in_order(parsed_block_ids):
-            widget.pack(side=tk.LEFT, padx=0, pady=0)
 
-        # Force Tkinter to update the display to avoid flickering on VARIF changes
-        display_frame.update_idletasks()
+        # Repack widgets only if a full refresh is needed
+        if full_refresh_needed:
+            parsed_block_ids = [block.get("label", f"block_{id(block)}") for block in parsed_blocks]
+            for widget in display_frame.winfo_children():
+                widget.pack_forget()
+            for widget in widget_pool.get_widgets_in_order(parsed_block_ids):
+                widget.pack(side=tk.LEFT, padx=0, pady=0)
+
+            # Force Tkinter to update the display to avoid flickering on VARIF changes
+            display_frame.update_idletasks()
 
         # Dynamically adjust the window size
         new_width = display_frame.winfo_reqwidth() + PADDING_X
@@ -792,7 +800,8 @@ def process_block(block, template_handler):
                 if widget_pool.has_widget(block_id):
                     widget = widget_pool.get_widget(block_id)
                     widget_pool.remove_widget(block_id)
-                return
+                    return True # Need refresh
+                return False
 
     # Attempt to retrieve an existing widget
     widget = widget_pool.get_widget(block_id)
@@ -826,6 +835,8 @@ def process_block(block, template_handler):
                 )
                 widget_pool.add_widget(block_id, widget)
                 widget.pack(side=tk.LEFT, padx=5, pady=5)
+                return True # Full refresh
+        return False
 
 # --- Simbrief functionality ---
 class SimBriefFunctions:
