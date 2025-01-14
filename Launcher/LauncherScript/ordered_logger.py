@@ -1,8 +1,9 @@
+# ordered_logger.py - ensures logs are written in chronological order
+
 import logging
 import threading
 import time
 from queue import PriorityQueue, Empty
-
 
 class OrderedLogger:
     """Ensures logs are written in chronological order and writes only to a file."""
