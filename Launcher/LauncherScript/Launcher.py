@@ -12,8 +12,7 @@ from pathlib import Path
 from typing import Dict
 import ctypes
 
-# Import parse_ansi_colors from local parse_ansi.py
-from parse_ansi import parse_ansi_colors
+from parse_ansi import AnsiParser
 
 import tkinter as tk
 from tkinter import filedialog, scrolledtext, TclError
@@ -287,6 +286,8 @@ class ScriptTab(Tab):
         self.font_normal = ("Consolas", 12)
         self.font_bold = ("Consolas", 12, "bold")
 
+        self._ansi_parser = AnsiParser()
+
     def build_content(self):
         """Build the content of the ScriptTab."""
 
@@ -380,7 +381,7 @@ class ScriptTab(Tab):
     def _insert_text(self, text):
         """Parse and insert text with ANSI color handling."""
         if self.text_widget and self.text_widget.winfo_exists():
-            parsed_segments = parse_ansi_colors(text)
+            parsed_segments = self._ansi_parser.parse_ansi_colors(text)
             self.frame.after(0, lambda: self._safe_insert_segments(parsed_segments))
 
     def ensure_tag(self, color=None, bold=False):
@@ -897,7 +898,6 @@ class ProcessTracker:
         Read subprocess output with proper handling of lines and partial data.
         """
         print(f"[INFO] Starting output reader for {stream_name}, Tab ID: {tab_id}")
-        print(f"[DEBUG] Type of stream: {type(stream)}")  # Log the type of the stream
 
         fd = stream.fileno()  # Get the file descriptor for low-level reads
         buffer = ""  # Accumulate partial lines
@@ -915,20 +915,20 @@ class ProcessTracker:
                     buffer += chunk
 
                     # Debug: Log received chunk and updated buffer
-                    print(f"[DEBUG] Chunk received ({len(chunk)} chars): {repr(chunk)}")
-                    print(f"[DEBUG] Current buffer ({len(buffer)} chars): {repr(buffer)}")
+                    #print(f"[DEBUG] Chunk received ({len(chunk)} chars): {repr(chunk)}")
+                    #print(f"[DEBUG] Current buffer ({len(buffer)} chars): {repr(buffer)}")
 
                     # Process complete lines in the buffer
                     while "\n" in buffer:
                         line, buffer = buffer.split("\n", 1)
                         q.put_nowait(line + "\n")
-                        print(f"[DEBUG] Line enqueued: {repr(line)}")
+                        #print(f"[DEBUG] Line enqueued: {repr(line)}")
                         last_flushed_partial = None  # Reset partial tracking
 
                     # Handle partial line (e.g., prompts or incomplete output)
                     if buffer and buffer != last_flushed_partial:
                         q.put_nowait(buffer)
-                        print(f"[DEBUG] Partial buffer enqueued: {repr(buffer)}")
+                        #print(f"[DEBUG] Partial buffer enqueued: {repr(buffer)}")
                         last_flushed_partial = buffer
 
                         # Clear the buffer after enqueueing partial data
