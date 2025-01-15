@@ -55,6 +55,7 @@ class Tab:
     """Manages the content and behavior of an individual tab (its frame, widgets, etc.)."""
     def __init__(self, title):
         self.title = title
+        self.is_active = False
         self.text_widget = None
         self.frame = None
 
@@ -109,6 +110,21 @@ class TabManager:
         self.notebook.bind("<ButtonPress-1>", self.on_tab_drag_start)
         self.notebook.bind("<B1-Motion>", self.on_tab_drag_motion)
         self.notebook.bind("<ButtonRelease-1>", self.on_tab_drag_release)
+
+        # Bind the tab change event
+        self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_change)
+
+    def on_tab_change(self, event):
+        """Update active tab state."""
+        selected_frame = self.notebook.nametowidget(self.notebook.select())
+        for tab_id, tab in self.tabs.items():
+            if tab.frame == selected_frame:
+                # Mark the new tab as active
+                tab.is_active = True
+                self.current_tab_id = tab_id
+            else:
+                # Mark other tabs as inactive
+                tab.is_active = False
 
     def configure_notebook(self):
         """Configure notebook style and behavior."""
@@ -447,6 +463,25 @@ class ScriptTab(Tab):
 
         self.process_tracker.scheduler(0, _reload)  # Schedule the reload process
 
+    def handle_keypress(self, event):
+        """Handle keypress events."""
+        if not self.is_active:
+            return
+
+        key = event.char or ""  # Get the character, default to empty for non-character keys
+        if key == "\r":
+            key = "\n"  # Handle Enter key
+
+        # Add input to the queue
+        if self.tab_id in self.process_tracker.processes:
+            input_queue = self.process_tracker.queues[self.tab_id]["stdin"]
+            try:
+                input_queue.put_nowait(key)  # Non-blocking enqueue
+                self.insert_output(key)  # Optionally echo input in the GUI
+            except queue.Full:
+                self.insert_output("[WARNING] Input queue is full. Input dropped.\n")
+
+
 class PerfTab(Tab):
     """PerfTab - represents performance tab for monitoring performance of scripts"""
     def __init__(self, title, process_tracker):
@@ -574,6 +609,9 @@ class ScriptLauncherApp:
 
         # Autoplay Scripts
         self.autoplay_script_group()
+
+        # Bind key press globally - for script keyboard input support
+        self.root.bind("<Key>", self.on_key_press)
 
     def configure_root(self):
         """Configure the main root window."""
@@ -745,6 +783,25 @@ class ScriptLauncherApp:
         logging.debug("Schedule: finalize shutdown")
         self.root.after(0, lambda: (self.root.destroy(), finalize_shutdown()))
 
+    def on_key_press(self, event):
+        """Route keypress events to the active tab if it supports keypress handling."""
+        active_tab_id = self.tab_manager.current_tab_id
+        if not active_tab_id:
+            print("[INFO] No active tab to handle keypress.")
+            return  # No active tab to route input to
+
+        # Get the active tab
+        active_tab = self.tab_manager.tabs.get(active_tab_id)
+        if not active_tab:
+            print(f"[ERROR] No tab found for active_tab_id: {active_tab_id}")
+            return
+
+        # Check if the active tab has a 'handle_keypress' method
+        if callable(getattr(active_tab, "handle_keypress", None)):
+            active_tab.handle_keypress(event)
+        else:
+            print(f"[INFO] Active tab ID {active_tab_id} does not support keypress handling.")
+
 class ProcessTracker:
     """Manages runtime of collection of processes"""
     def __init__(self, scheduler, shutdown_event):
@@ -769,6 +826,7 @@ class ProcessTracker:
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                stdin=subprocess.PIPE,
                 text=True,
                 bufsize=1,
                 env=custom_env,
@@ -785,6 +843,7 @@ class ProcessTracker:
             self.queues[tab_id] = {
                 "stdout": queue.Queue(maxsize=1000),
                 "stderr": queue.Queue(maxsize=1000),
+                "stdin": queue.Queue(maxsize=1000),
                 "stop_event": threading.Event()
             }
 
@@ -801,6 +860,14 @@ class ProcessTracker:
                 args=(process.stderr, self.queues[tab_id]["stderr"], tab_id, "stderr"),
                 daemon=True,
                 name=f"StderrThread-{tab_id}"
+            ).start()
+
+            # Start a thread for writing to stdin
+            threading.Thread(
+                target=self._write_input,
+                args=(process.stdin, self.queues[tab_id]["stdin"], tab_id),
+                daemon=True,
+                name=f"StdinWriter-{tab_id}"
             ).start()
 
             # Start dispatcher threads to process queues and invoke callbacks
@@ -824,34 +891,94 @@ class ProcessTracker:
         except Exception as e:
             print(f"[ERROR] Failed to start process for Tab ID {tab_id}: {e}")
 
+
     def _read_output(self, stream, q, tab_id, stream_name):
-        """Read subprocess output line-by-line for real-time updates."""
+        """
+        Read subprocess output with proper handling of lines and partial data.
+        """
         print(f"[INFO] Starting output reader for {stream_name}, Tab ID: {tab_id}")
+        print(f"[DEBUG] Type of stream: {type(stream)}")  # Log the type of the stream
+
+        fd = stream.fileno()  # Get the file descriptor for low-level reads
+        buffer = ""  # Accumulate partial lines
+        last_flushed_partial = None  # Track the last flushed partial line
+
         try:
             while not self.queues[tab_id]["stop_event"].is_set():
-                line = stream.readline()  # Read one line at a time
-                if not line:  # End of stream
-                    logging.info("End of stream for %s, Tab ID: %d", stream_name, tab_id)
+                try:
+                    # Attempt to read a chunk of data (64 bytes at a time)
+                    chunk = os.read(fd, 64).decode("utf-8")
+                    if not chunk:  # EOF or no data available
+                        time.sleep(0.01)
+                        continue
+
+                    buffer += chunk
+
+                    # Debug: Log received chunk and updated buffer
+                    print(f"[DEBUG] Chunk received ({len(chunk)} chars): {repr(chunk)}")
+                    print(f"[DEBUG] Current buffer ({len(buffer)} chars): {repr(buffer)}")
+
+                    # Process complete lines in the buffer
+                    while "\n" in buffer:
+                        line, buffer = buffer.split("\n", 1)
+                        q.put_nowait(line + "\n")
+                        print(f"[DEBUG] Line enqueued: {repr(line)}")
+                        last_flushed_partial = None  # Reset partial tracking
+
+                    # Handle partial line (e.g., prompts or incomplete output)
+                    if buffer and buffer != last_flushed_partial:
+                        q.put_nowait(buffer)
+                        print(f"[DEBUG] Partial buffer enqueued: {repr(buffer)}")
+                        last_flushed_partial = buffer
+
+                        # Clear the buffer after enqueueing partial data
+                        buffer = ""
+
+                except BlockingIOError:
+                    # No data available yet; pause briefly to avoid busy-waiting
+                    time.sleep(0.01)
+                except Exception as read_error:
+                    # Catch unexpected read errors and log them
+                    print(f"[ERROR] Exception while reading {stream_name}: {read_error}")
                     break
 
-                # print(f"[DEBUG] Line read for {stream_name}, Tab ID {tab_id}: {line.strip()}")
-                q.put_nowait(line)
+        except Exception as loop_error:
+            # Log any unexpected errors that terminate the loop
+            print(f"[ERROR] Unexpected error in output reader for {stream_name}: {loop_error}")
 
-        except queue.Full:
-            # Handle scenario where queue is full
-            if not self.queuefull_warning_issued:
-                print(f"\n[WARNING] Queue line buffer limit reached for {self.script_name} - logging skipped.\n")
-                self.queuefull_warning_issued = True
-        except Exception as e:
-            print(f"[ERROR] Error reading {stream_name} for Tab ID {tab_id}: {e}")
         finally:
-            q.put(None)  # Sentinel to indicate EOF
+            # Handle cleanup: flush remaining buffer and signal end of stream
+            if buffer and buffer != last_flushed_partial:
+                q.put_nowait(buffer)
+                print(f"[DEBUG] Final buffer flushed: {repr(buffer)}")
+            q.put(None)  # Signal end of stream to the queue
+
             try:
-                stream.close()  # Safely close the stream
-                print(f"[INFO] {stream_name} stream closed successfully, Tab ID: {tab_id}")
-            except Exception as e:
-                print(f"[WARNING] Error closing {stream_name}: {e}")
+                stream.close()  # Close the stream gracefully
+            except Exception as close_error:
+                print(f"[WARNING] Error closing {stream_name}: {close_error}")
+
             print(f"[INFO] Output reader for {stream_name} finished, Tab ID: {tab_id}")
+
+    def _write_input(self, stdin, input_queue, tab_id):
+        """Write input from the queue to the subprocess's stdin."""
+        try:
+            while not self.queues[tab_id]["stop_event"].is_set():
+                try:
+                    input_data = input_queue.get(timeout=1)  # Block until input is available
+                    if input_data is None:  # Sentinel for EOF
+                        break
+                    stdin.write(input_data)
+                    stdin.flush()  # Ensure immediate delivery to the subprocess
+                except queue.Empty:
+                    continue  # Check for stop_event periodically
+        except Exception as e:
+            print(f"[ERROR] Failed to write to stdin for Tab ID {tab_id}: {e}")
+        finally:
+            try:
+                stdin.close()
+            except Exception as e:
+                print(f"[WARNING] Failed to close stdin for Tab ID {tab_id}: {e}")
 
     def _dispatch_queue(self, q, callback):
         """Consume items from the queue and invoke the callback."""
@@ -859,7 +986,7 @@ class ProcessTracker:
         while True:
             try:
                 line = q.get(timeout=1)  # Avoid indefinite blocking
-                #print("[DEBUG] Dispatcher received line from queue.")
+                print(f"[DEBUG] Dispatcher received line from queue: {line}")
             except queue.Empty:
                 # Check for shutdown periodically
                 if any(queue_data["stop_event"].is_set() for queue_data in self.queues.values()):
