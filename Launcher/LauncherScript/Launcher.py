@@ -27,7 +27,9 @@ from ttkthemes import ThemedTk
 from ordered_logger import OrderedLogger
 
 import faulthandler
+import traceback
 
+import signal
 
 # Path to the WinPython Python executable and VS Code.exe
 current_dir = Path(__file__).resolve().parent
@@ -62,6 +64,7 @@ class Tab:
         self.is_active = False
         self.text_widget = None
         self.frame = None
+        self.tabid = None
 
     def initialize_frame(self, notebook):
         """Create the frame for this tab within the given notebook."""
@@ -98,7 +101,8 @@ class TabManager:
         self.configure_notebook()
         self.notebook.pack(expand=True, fill="both", padx=5, pady=5)
         self.tabs = {}
-        self.current_tab_id = 0  # Counter for unique tab IDs
+        self.next_tab_id = 0        # Counter for unique tab IDs
+        self.active_tab_id = 0      # Counter for selected tab id
 
         self.scheduler = scheduler
 
@@ -131,7 +135,7 @@ class TabManager:
             for tab_id, tab in self.tabs.items():
                 if tab.frame == selected_frame:
                     tab.is_active = True
-                    self.current_tab_id = tab_id
+                    self.active_tab_id = tab_id
                 else:
                     tab.is_active = False
 
@@ -225,12 +229,24 @@ class TabManager:
         print(f"[DEBUG] Tabs swapped successfully. Updated tabs: {self.tabs}")
 
     def generate_tab_id(self):
-        """Generate a unique tab ID."""
-        self.current_tab_id += 1
-        return self.current_tab_id
+        """Generate a unique tab ID and log the caller and its caller."""
+        self.next_tab_id += 1
+
+        print(f"Generated new tab id: {self.next_tab_id} ")
+        return self.next_tab_id
 
     def add_tab(self, tab):
         """Add a new tab to the notebook."""
+
+        # Extract the caller function from the call stack
+        stack = traceback.extract_stack()
+        if len(stack) > 2:  # Ensure there's at least one caller before `add_tab`
+            caller_info = stack[-3]  # Get the caller before `_add_tab` scheduling
+            caller_name = f"{caller_info.name} (at {caller_info.filename})"
+        else:
+            caller_name = "Unknown"
+
+        print(f"[DEBUG] add_tab called by: {caller_name}")
 
         def _add_tab():
             tab_id = self.generate_tab_id()  # Generate tab ID on the main thread
@@ -306,7 +322,6 @@ class ScriptTab(Tab):
         super().__init__(title)
         self.script_path = script_path
         self.process_tracker:ProcessTracker = process_tracker
-        self.tab_id = None
 
         # Define font settings
         self.font_normal = ("Consolas", 12)
@@ -505,7 +520,6 @@ class ScriptTab(Tab):
             # Retrieve the correct process info
             process_info = self.process_tracker.processes.get(self.tab_id)
             if not process_info:
-                self.insert_output("[ERROR] No active process for this tab.\n")
                 return
 
             # Access the stdin_queue
@@ -520,7 +534,6 @@ class ScriptTab(Tab):
             self.insert_output(f"[ERROR] Missing key in process info: {e}\n")
         except Exception as e:
             self.insert_output(f"[ERROR] Unexpected error: {e}\n")
-
 
 class PerfTab(Tab):
     """PerfTab - represents performance tab for monitoring performance of scripts"""
@@ -626,6 +639,431 @@ class PerfTab(Tab):
         text_widget.pack(expand=True, fill="both")
         return text_widget
 
+class CommandLineTab(Tab):
+    """A tab that provides a terminal-like command-line interface."""
+    def __init__(self, title, command_callback):
+        super().__init__(title)
+        self.output_widget = None
+        self.input_entry = None
+        self.process = None
+        self.stop_event = threading.Event()
+        self.command_callback = command_callback
+
+        # Initialize the cached current working directory
+        self.cached_cwd = scripts_path
+
+        # Autocomplete state
+        self.is_autocompleting = False
+        self.cached_input = ""  # Tracks input at the start of the autocomplete cycle
+        self.original_partial_path = ""  # Tracks the prefix for the current autocomplete cycle
+        self.autocomplete_matches = []
+        self.autocomplete_index = -1
+
+        # Simple command history
+        self.history = []
+        self.history_index = -1
+
+    def build_content(self):
+        """Create the interactive terminal interface."""
+        # Output display area
+        consolas_font = ("Consolas", 12)
+        self.output_widget = scrolledtext.ScrolledText(
+            self.frame,
+            wrap="word",
+            bg=TEXT_WIDGET_BG_COLOR,
+            fg=TEXT_WIDGET_FG_COLOR,
+            state="normal",
+            height=20,
+            font=consolas_font
+        )
+        self.output_widget.pack(expand=True, fill="both", padx=5, pady=5)
+        self.output_widget.config(state="disabled")  # Prevent direct editing
+
+        # Input area
+        input_frame = tk.Frame(self.frame, bg=FRAME_BG_COLOR)
+        input_frame.pack(fill="x", padx=5, pady=5)
+
+        self.input_entry = tk.Entry(
+            input_frame,
+            bg=TEXT_WIDGET_BG_COLOR,
+            fg=TEXT_WIDGET_FG_COLOR,
+            insertbackground=TEXT_WIDGET_INSERT_COLOR,
+            font=consolas_font
+        )
+        self.input_entry.pack(fill="x", padx=5, pady=5)
+
+        self.input_entry.bind("<Return>", self.send_input)
+        self.input_entry.bind("<KeyRelease>", self.on_user_input)
+        self.input_entry.bind("<Tab>", self.autocomplete)
+        self.input_entry.bind("<Up>", self.handle_up_arrow)
+        self.input_entry.bind("<Down>", self.handle_down_arrow)
+        self.input_entry.bind("<Control-c>", self.handle_ctrl_c)
+
+        self.input_entry.focus_set()
+
+        # Start the shell process
+        self.start_shell()
+
+    def start_shell(self):
+        """Start a persistent shell process in the /Scripts directory."""
+        if self.process and self.process.poll() is None:
+            self.insert_output("[INFO] Shell is already running.\n")
+            return
+
+        try:
+            # Use the global paths defined earlier
+            winpython_bin_path = str(python_path.parent)
+            winpython_scripts_path = str(python_path.parent / "Scripts")
+            scripts_dir = scripts_path
+
+            # Create a custom environment for the shell process
+            custom_env = os.environ.copy()
+            system_path = os.environ.get("PATH", "")
+            custom_env["PATH"] = f"{winpython_bin_path};{winpython_scripts_path};{system_path}"
+
+            # Create the shell process
+            self.process = subprocess.Popen(
+                "cmd",
+                shell=False,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                cwd=scripts_dir,  # Set the working directory to /Scripts
+                env=custom_env,    # Inject custom env
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+            )
+
+            threading.Thread(target=self._read_output, daemon=True).start()
+            self.insert_output(f"[INFO] Shell started in {scripts_dir}. Type commands below.\n")
+
+            # List Python files in the /Scripts directory
+            list_command = "dir *.py\n"
+            self.process.stdin.write(list_command)
+            self.process.stdin.flush()
+        except Exception as e:
+            self.insert_output(f"[ERROR] Failed to start shell: {e}\n")
+
+    def on_user_input(self, event):
+        """Reset autocomplete state for non-autocomplete keys."""
+        # Ignore Tab (used for autocomplete)
+        if event.keysym == "Tab":
+            return
+
+        # Reset autocomplete for all other keypresses
+        self.is_autocompleting = False
+
+    def send_input(self, event=None):
+        """Capture and send user input to the shell process."""
+        user_input = self.input_entry.get().strip()
+
+        if not user_input:
+            return  # Ignore empty input
+
+        # Add the command to history
+        self.history.append(user_input)
+        self.history_index = len(self.history)  # Reset to “one past the end”
+
+        # Display the command in the output widget
+        self.insert_output(f"> {user_input}\n")
+
+        # Parse the base command and arguments
+        command_parts = user_input.split()
+        base_command = command_parts[0]
+        args = command_parts[1:]
+
+        # Handle `cd` command
+        if base_command == "cd":
+            self.handle_cd_command(args, user_input)
+        else:
+            # Delegate to the generalized callback with the current directory
+            success, message = self.command_callback(base_command, args, self.cached_cwd)
+            if success:
+                # Handle success: Display optional informational message
+                if message:
+                    self.insert_output(f"[INFO] {message}\n")
+            elif message and message.startswith("Unknown command"):
+                # Fallback to shell for unrecognized commands
+                self.run_shell_command(user_input)
+            else:
+                # Display any other errors
+                self.insert_output(f"[ERROR] {message or 'An unexpected error occurred.'}\n")
+
+        # Clear the input field
+        self.input_entry.delete(0, tk.END)
+
+    def handle_cd_command(self, args, user_input):
+        """Handle `cd` command logic, both internally and in the shell."""
+        # Always send the `cd` command to the shell process
+        self.run_shell_command(user_input)
+
+        # Handle directory changes internally if arguments are provided
+        # This will manually calculate the directory since there is no
+        # direct way to pull this from the process.
+        if args:
+            # Calculate the new directory (absolute or relative)
+            target_dir = args[0]
+            if os.path.isabs(target_dir):
+                new_dir = target_dir
+            else:
+                new_dir = os.path.abspath(os.path.join(self.cached_cwd, target_dir))
+
+            # Validate the directory
+            if os.path.isdir(new_dir):
+                self.cached_cwd = new_dir
+                self.insert_output(f"[INFO] Changed directory to: {self.cached_cwd}\n")
+            else:
+                self.insert_output(f"[ERROR] No such directory: {target_dir}\n")
+        else:
+            # For `cd` with no arguments, rely on the shell to manage behavior
+            self.insert_output("[INFO] Directory change handled by the shell.\n")
+
+    def run_shell_command(self, command):
+        """Send an unrecognized command to the shell for execution."""
+        try:
+            self.process.stdin.write(command + "\n")
+            self.process.stdin.flush()
+        except Exception as e:
+            self.insert_output(f"[ERROR] Failed to send command to shell: {e}\n")
+
+    def autocomplete(self, event):
+        """Handle tab-completion logic."""
+        # Get the current input and cursor position
+        current_input = self.input_entry.get()
+        cursor_position = self.input_entry.index(tk.INSERT)
+        base_command, partial_path = self.parse_command(current_input[:cursor_position])
+
+        # Start a new autocomplete cycle if not already active
+        if not self.is_autocompleting:
+            # New cycle: fetch matches and reset state
+            self.original_partial_path = partial_path
+            self.autocomplete_matches = self.get_autocomplete_matches(partial_path)
+            self.autocomplete_index = -1
+            self.is_autocompleting = True
+
+            if not self.autocomplete_matches:
+                self.insert_output("[INFO] No matches found.\n")
+                self.is_autocompleting = False
+                return "break"
+
+        # Cycle through matches
+        self.autocomplete_index = (self.autocomplete_index + 1) % len(self.autocomplete_matches)
+        selected_match = self.autocomplete_matches[self.autocomplete_index]
+        full_command = f"{base_command} {selected_match}" if base_command else selected_match
+
+        # Programmatically update the input field with the selected match
+        self.input_entry.delete(0, tk.END)
+        self.input_entry.insert(0, full_command)
+        self.input_entry.icursor(len(full_command))  # Place the cursor at the end
+
+        return "break"
+
+    def parse_command(self, command):
+        """
+        Parse the command to split the base command from the partial path.
+        For example:
+        - Input: "python te"
+        - Output: ("python", "te")
+        """
+        print(f"[DEBUG] Parsing command: '{command}'")
+        # Split the command into parts by spaces
+        parts = command.rsplit(" ", 1)
+        if len(parts) == 1:
+            # No space in the command, treat the whole thing as the path
+            base, path = "", parts[0]
+        else:
+            base, path = parts[0], parts[1]
+
+        print(f"[DEBUG] Parsed result - Base: '{base}', Path: '{path}'")
+        return base, path
+
+    def get_autocomplete_matches(self, prefix):
+        """Dynamically fetch files and directories matching the prefix, prioritizing files."""
+        try:
+            cwd = Path(self.cached_cwd)  # Use the cached working directory
+            files_and_dirs = cwd.iterdir()  # List all files and directories
+
+            # Perform case-insensitive matching
+            matches = [
+                f.name + ("/" if f.is_dir() else "")
+                for f in files_and_dirs
+                if f.name.lower().startswith(prefix.lower())
+            ]
+
+            # Sort matches: prioritize files, then directories
+            matches.sort(key=lambda x: (x.endswith("/"), x.lower()))
+            return matches
+        except Exception as e:
+            self.insert_output(f"[ERROR] Failed to list directory contents: {e}\n")
+            return []
+
+    def handle_up_arrow(self, event):
+        """Cycle backward through command history."""
+        if not self.history:
+            return "break"  # No history to cycle
+
+        if self.history_index > 0:
+            self.history_index -= 1
+        else:
+            self.history_index = 0  # Ensure index doesn't go below 0
+
+        # Fetch the command and update the input field
+        cmd = self.history[self.history_index]
+        self.input_entry.delete(0, tk.END)
+        self.input_entry.insert(0, cmd)
+        self.input_entry.icursor(len(cmd))  # Move cursor to the end
+
+        return "break"
+
+    def handle_down_arrow(self, event):
+        """Cycle forward through command history."""
+        if not self.history:
+            return "break"  # No history to cycle
+
+        if self.history_index < len(self.history) - 1:
+            self.history_index += 1
+            cmd = self.history[self.history_index]
+        else:
+            # If at the end of history, clear the input field
+            self.history_index = len(self.history)
+            cmd = ""
+
+        # Update the input field
+        self.input_entry.delete(0, tk.END)
+        self.input_entry.insert(0, cmd)
+        self.input_entry.icursor(len(cmd))  # Move cursor to the end
+
+        return "break"
+
+    def debug_associated_processes(self):
+        """Find and print all processes associated with the current process."""
+        if not self.process or not self.process.pid:
+            print("[ERROR] No process is currently running or the process PID is not set.")
+            return
+
+        try:
+            pid = self.process.pid
+            print(f"[DEBUG] Inspecting processes associated with PID: {pid}")
+
+            # Get the parent process
+            parent_process = psutil.Process(pid)
+            print(f"[DEBUG] Parent Process: PID={parent_process.pid}, Name={parent_process.name()}, Status={parent_process.status()}")
+
+            # Get all child processes
+            children = parent_process.children(recursive=True)
+            if not children:
+                print(f"[DEBUG] No child processes found for PID={pid}.")
+            else:
+                print(f"[DEBUG] Found {len(children)} child processes:")
+                for child in children:
+                    print(f"  - Child PID={child.pid}, Name={child.name()}, Status={child.status()}")
+
+        except psutil.NoSuchProcess:
+            print(f"[ERROR] No process found with PID: {self.process.pid}. It may have exited.")
+        except Exception as e:
+            print(f"[ERROR] Unexpected error while inspecting processes: {e}")
+
+    def handle_ctrl_c(self, target="child"):
+        """
+        Handle the Ctrl+C event to send SIGINT to the specified target.
+        """
+        if not self.process or not self.process.pid:
+            print("[ERROR] No process is currently running or the process PID is not set.")
+            return
+
+        try:
+            parent_pid = self.process.pid
+            print(f"[DEBUG] Inspecting processes associated with PID: {parent_pid}")
+
+            # Get the parent process and its children
+            parent = psutil.Process(parent_pid)
+            children = parent.children(recursive=True)
+
+            if target == "parent":
+                print("[INFO] Sending CTRL+C to the parent process...")
+                self._send_ctrl_c_to_process(parent_pid, target="parent")
+
+            elif target == "conhost":
+                conhost_process = next((p for p in children if p.name().lower() == "conhost.exe"), None)
+                if conhost_process:
+                    print("[INFO] Sending CTRL+C to the conhost process...")
+                    self._send_ctrl_c_to_process(conhost_process.pid, target="conhost")
+                else:
+                    print("[INFO] No conhost process found among children.")
+
+            elif target == "child":
+                other_children = [p for p in children if p.name().lower() != "conhost.exe"]
+                if not other_children:
+                    print("[INFO] No child processes found (excluding conhost).")
+                for child in other_children:
+                    print(f"[INFO] Sending CTRL+C to child process PID={child.pid}, Name={child.name()}...")
+                    self._send_ctrl_c_to_process(child.pid, target=f"child PID={child.pid}")
+
+            else:
+                print(f"[ERROR] Invalid target specified: {target}")
+
+        except psutil.NoSuchProcess:
+            print(f"[ERROR] Parent process PID {parent_pid} no longer exists.")
+        except Exception as e:
+            print(f"[ERROR] Unexpected error during handle_ctrl_c: {e}")
+
+    def _send_ctrl_c_to_process(self, pid, target="unknown"):
+        # This will kill subprocess, but not gracefully
+        # Good enough for now as to handle this better requires deep work with WIN32 API
+        #os.kill(pid, signal.SIGINT)
+        self.process.stdin.write("\x03")  # Ctrl+C ASCII (0x03)
+        self.process.stdin.flush()
+
+    def _read_output(self):
+        """Read and display output from the shell process."""
+        while True:
+            # Exit loop if the stop_event is set
+            if self.stop_event.is_set():
+                break
+
+            output = self.process.stdout.readline()
+            if not output and self.process.poll() is not None:
+                break
+
+            # Safeguard against widget destruction
+            if not self.output_widget or not self.output_widget.winfo_exists():
+                break
+
+            self.insert_output(output)
+
+    def insert_output(self, text):
+        """Insert shell output into the output widget."""
+        if not self.output_widget or not self.output_widget.winfo_exists():
+            return  # Widget has been destroyed, skip
+
+        self.output_widget.config(state="normal")
+        self.output_widget.insert(tk.END, text)
+        self.output_widget.see(tk.END)
+        self.output_widget.config(state="disabled")
+
+    def close(self):
+        """Terminate the shell process and clean up resources."""
+        if self.process and self.process.poll() is None:
+            # Send Ctrl+C to interrupt any running commands
+            self.handle_ctrl_c()
+
+            # Allow some time for the process to terminate gracefully
+            time.sleep(0.5)
+
+            # If the process is still running, terminate it forcefully
+            if self.process.poll() is None:
+                try:
+                    self.process.terminate()
+                except Exception as e:
+                    self.insert_output(f"[ERROR] Failed to terminate shell process: {e}\n")
+
+        # Signal the _read_output thread to stop
+        self.stop_event.set()
+
+        # Call the parent close method to clean up tab resources
+        super().close()
+
 class ScriptLauncherApp:
     """Represents the main application for launching and managing scripts."""
     def __init__(self, root):
@@ -653,6 +1091,23 @@ class ScriptLauncherApp:
         # Bind key press globally - for script keyboard input support
         self.root.bind("<Key>", self.on_key_press)
 
+        # Bind Control+` for toggling the console window
+        self.root.bind_all("<Control-`>", self.handle_control_tilde)
+
+    def handle_control_tilde(self, event=None):
+        """Bring up the CommandLineTab: Select if exists, create if not."""
+        # Check if a CommandLineTab exists
+        for tab_id, tab in self.tab_manager.tabs.items():
+            if isinstance(tab, CommandLineTab):
+                # Select the existing CommandLineTab
+                self.tab_manager.notebook.select(tab.frame)
+                if tab.input_entry:  # Focus on the input field
+                    tab.input_entry.focus_set()
+                return
+
+        # No CommandLineTab exists, create a new one
+        self.add_command_line_tab()
+
     def configure_root(self):
         """Configure the main root window."""
         self.root.title("Python Script Launcher")
@@ -670,6 +1125,7 @@ class ScriptLauncherApp:
             ("Load Script Group", self.load_script_group, "right"),
             ("Save Script Group", self.save_script_group, "right"),
             ("Performance Metrics", self.open_performance_metrics_tab, "right"),
+            ("Command Line", self.add_command_line_tab, "right")
         ]
 
         for text, command, side in buttons:
@@ -711,6 +1167,61 @@ class ScriptLauncherApp:
             process_tracker=self.process_tracker
         )
         self.tab_manager.add_tab(perf_tab)
+
+    def add_command_line_tab(self):
+        """Create and add a CommandLineTab."""
+        command_line_tab = CommandLineTab(
+            title="Command Line",
+            command_callback=self.handle_command  # Pass the generalized callback
+        )
+        self.tab_manager.add_tab(command_line_tab)
+
+    def handle_command(self, command, args, current_dir):
+        """Generalized command handler with directory context."""
+        if command in ["python", "py"]:
+            return self.handle_python_command(args, current_dir)
+        elif command == "switch":
+            return self.switch_tab_by_name(args)
+        elif command == "greet":
+            return True, f"Hello, {' '.join(args) or 'world'}!"
+        else:
+            return False, f"Unknown command: {command}"
+
+    def handle_python_command(self, args, current_dir):
+        """Handle intercepted Python commands with directory context."""
+        if not args:
+            return False, "No script specified for 'python'."
+
+        script_name = args[0]
+        extra_args = args[1:]  # Additional arguments for the script
+
+        # Resolve the script path relative to the current directory
+        script_path = Path(current_dir) / script_name
+        if not script_path.exists():
+            return False, f"Script '{script_path}' not found."
+
+        # Launch the script in a new ScriptTab
+        script_tab = ScriptTab(
+            title=script_path.name,
+            script_path=script_path,
+            process_tracker=self.process_tracker
+        )
+        self.tab_manager.add_tab(script_tab)
+
+        return True, None  # Success
+
+    def switch_tab_by_name(self, args):
+        """Switch to the tab with the specified script name."""
+        if not args:
+            return False, "No script name provided. Usage: switch <script_name>"
+
+        script_name = args[0]
+        for tab_id, tab in self.tab_manager.tabs.items():
+            if isinstance(tab, ScriptTab) and tab.script_path.name.lower() == script_name.lower():
+                self.tab_manager.notebook.select(tab.frame)
+                return True, None  # Success
+
+        return False, f"No tab found for script: {script_name}"
 
     def autoplay_script_group(self):
         """
@@ -825,7 +1336,7 @@ class ScriptLauncherApp:
 
     def on_key_press(self, event):
         """Route keypress events to the active tab if it supports keypress handling."""
-        active_tab_id = self.tab_manager.current_tab_id
+        active_tab_id = self.tab_manager.active_tab_id
         if not active_tab_id:
             print("[INFO] No active tab to handle keypress.")
             return  # No active tab to route input to
@@ -839,8 +1350,6 @@ class ScriptLauncherApp:
         # Check if the active tab has a 'handle_keypress' method
         if callable(getattr(active_tab, "handle_keypress", None)):
             active_tab.handle_keypress(event)
-        else:
-            print(f"[INFO] Active tab ID {active_tab_id} does not support keypress handling.")
 
 class ProcessTracker:
     """Manages runtime of collection of processes"""
@@ -1095,7 +1604,7 @@ class ProcessTracker:
         # Terminate the process if it is still running
         if process.poll() is None:  # Still running
             print(f"[INFO] Terminating process for Tab ID {tab_id} (PID {process.pid}).")
-            self._terminate_process_tree(process.pid)
+            self.terminate_process_tree(process.pid)
 
         # Signal threads to stop
         metadata["stop_event"].set()
@@ -1111,7 +1620,8 @@ class ProcessTracker:
         print(f"[INFO] Process for Tab ID {tab_id} terminated.")
         logging.info("[INFO] Process for Tab ID %s terminated.", tab_id)
 
-    def _terminate_process_tree(self, pid, timeout=5, force=True):
+    @staticmethod
+    def terminate_process_tree(pid, timeout=5, force=True):
         """Terminate a process tree."""
         print(f"[INFO] Terminating process tree for PID: {pid}")
         logging.info("[INFO] Terminating process tree for PID: %s", pid)
@@ -1121,7 +1631,7 @@ class ProcessTracker:
             logging.info(f"Process with PID {pid} already terminated. "
                   "Checking for orphaned children.")
             # Attempt to clean up orphaned child processes
-            self._terminate_orphaned_children(pid)
+            self.terminate_orphaned_children(pid)
             return
         except Exception as e:
             print(f"[ERROR] Failed to initialize process PID {pid}: {e}")
@@ -1180,7 +1690,8 @@ class ProcessTracker:
         except Exception as e:
             print(f"[ERROR] Unexpected error terminating process tree for PID {pid}: {e}")
 
-    def _terminate_orphaned_children(self, parent_pid):
+    @staticmethod
+    def terminate_orphaned_children(parent_pid):
         """Terminate orphaned children of a non-existent parent process."""
         try:
             for proc in psutil.process_iter(attrs=["pid", "ppid"]):
@@ -1291,7 +1802,7 @@ def main():
         faulthandler.dump_traceback_later(15, file=traceback_log_file, exit=True)
         root.after(5000, reset_traceback_timer)
 
-    reset_traceback_timer()
+    #reset_traceback_timer()
 
     # Start the shutdown monitoring subprocess if a pipe is provided
     monitor_process = None
