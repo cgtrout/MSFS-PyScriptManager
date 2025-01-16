@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Dict
 import ctypes
 
+from threading import Lock
+
 from parse_ansi import AnsiParser
 
 import tkinter as tk
@@ -23,6 +25,9 @@ import re
 from ttkthemes import ThemedTk
 
 from ordered_logger import OrderedLogger
+
+import faulthandler
+
 
 # Path to the WinPython Python executable and VS Code.exe
 current_dir = Path(__file__).resolve().parent
@@ -115,15 +120,22 @@ class TabManager:
 
     def on_tab_change(self, event):
         """Update active tab state."""
-        selected_frame = self.notebook.nametowidget(self.notebook.select())
-        for tab_id, tab in self.tabs.items():
-            if tab.frame == selected_frame:
-                # Mark the new tab as active
-                tab.is_active = True
-                self.current_tab_id = tab_id
-            else:
-                # Mark other tabs as inactive
-                tab.is_active = False
+
+        # Probably paranoid to call with scheduler as notebook event
+        # should call on main thread?
+        def _update_tab_state():
+            """Perform the actual tab state update on the main thread."""
+            selected_frame = self.notebook.nametowidget(self.notebook.select())
+
+            # Safely update tabs
+            for tab_id, tab in self.tabs.items():
+                if tab.frame == selected_frame:
+                    tab.is_active = True
+                    self.current_tab_id = tab_id
+                else:
+                    tab.is_active = False
+
+        self.scheduler(0, _update_tab_state)
 
     def configure_notebook(self):
         """Configure notebook style and behavior."""
@@ -279,7 +291,7 @@ class ScriptTab(Tab):
     def __init__(self, title, script_path, process_tracker):
         super().__init__(title)
         self.script_path = script_path
-        self.process_tracker = process_tracker
+        self.process_tracker:ProcessTracker = process_tracker
         self.tab_id = None
 
         # Define font settings
@@ -474,13 +486,25 @@ class ScriptTab(Tab):
             key = "\n"  # Handle Enter key
 
         # Add input to the queue
-        if self.tab_id in self.process_tracker.processes:
-            input_queue = self.process_tracker.queues[self.tab_id]["stdin"]
-            try:
-                input_queue.put_nowait(key)  # Non-blocking enqueue
-                self.insert_output(key)  # Optionally echo input in the GUI
-            except queue.Full:
-                self.insert_output("[WARNING] Input queue is full. Input dropped.\n")
+        try:
+            # Retrieve the correct process info
+            process_info = self.process_tracker.processes.get(self.tab_id)
+            if not process_info:
+                self.insert_output("[ERROR] No active process for this tab.\n")
+                return
+
+            # Access the stdin_queue
+            stdin_queue = process_info["stdin_queue"]
+
+            # Add the key to the queue
+            stdin_queue.put_nowait(key)  # Non-blocking enqueue
+
+        except queue.Full:
+            self.insert_output("[WARNING] Input queue is full. Input dropped.\n")
+        except KeyError as e:
+            self.insert_output(f"[ERROR] Missing key in process info: {e}\n")
+        except Exception as e:
+            self.insert_output(f"[ERROR] Unexpected error: {e}\n")
 
 
 class PerfTab(Tab):
@@ -807,11 +831,10 @@ class ProcessTracker:
     """Manages runtime of collection of processes"""
     def __init__(self, scheduler, shutdown_event):
         self.processes = {}  # Maps tab_id to process metadata
-        self.queues = {}  # Maps tab_id to queues for stdout and stderr
         self.scheduler = scheduler  # Store the scheduler
         self.script_name = None
         self.queuefull_warning_issued = False
-
+        self.lock = Lock()
         self.shutdown_event = shutdown_event  # Store the shutdown event
 
     def start_process(self, tab_id, command, stdout_callback, stderr_callback, script_tab, script_name=None):
@@ -835,30 +858,35 @@ class ProcessTracker:
             print(f"[INFO] Started process: {script_name}, PID: {process.pid}, Tab ID: {tab_id}")
 
             self.script_name = script_name
-            self.processes[tab_id] = {
-                "process": process,
-                "script_name": script_name or "Unknown",
-                "script_tab": script_tab}
 
-            # Create queues for communication
-            self.queues[tab_id] = {
-                "stdout": queue.Queue(maxsize=1000),
-                "stderr": queue.Queue(maxsize=1000),
-                "stdin": queue.Queue(maxsize=1000),
-                "stop_event": threading.Event()
-            }
+            # Create individual queues and stop event
+            stdout_queue = queue.Queue(maxsize=1000)
+            stderr_queue = queue.Queue(maxsize=1000)
+            stdin_queue = queue.Queue(maxsize=1000)
+            stop_event = threading.Event()
+
+            with self.lock:
+                self.processes[tab_id] = {
+                    "process": process,
+                    "script_name": script_name or "Unknown",
+                    "script_tab": script_tab,
+                    "stdout_queue": stdout_queue,
+                    "stderr_queue": stderr_queue,
+                    "stdin_queue": stdin_queue,
+                    "stop_event": stop_event,
+                }
 
             # Start threads for stdout and stderr reading
             threading.Thread(
                 target=self._read_output,
-                args=(process.stdout, self.queues[tab_id]["stdout"], tab_id, "stdout"),
+                args=(process.stdout, stdout_queue, stop_event, tab_id, "stdout"),
                 daemon=True,
                 name=f"StdoutThread-{tab_id}"
             ).start()
 
             threading.Thread(
                 target=self._read_output,
-                args=(process.stderr, self.queues[tab_id]["stderr"], tab_id, "stderr"),
+                args=(process.stderr, stderr_queue, stop_event, tab_id, "stderr"),
                 daemon=True,
                 name=f"StderrThread-{tab_id}"
             ).start()
@@ -866,7 +894,7 @@ class ProcessTracker:
             # Start a thread for writing to stdin
             threading.Thread(
                 target=self._write_input,
-                args=(process.stdin, self.queues[tab_id]["stdin"], tab_id),
+                args=(process.stdin, stdin_queue, stop_event, tab_id),
                 daemon=True,
                 name=f"StdinWriter-{tab_id}"
             ).start()
@@ -874,14 +902,14 @@ class ProcessTracker:
             # Start dispatcher threads to process queues and invoke callbacks
             threading.Thread(
                 target=self._dispatch_queue,
-                args=(self.queues[tab_id]["stdout"], stdout_callback),
+                args=(stdout_queue, stdout_callback, stop_event),
                 daemon=True,
                 name=f"DispatcherStdout-{tab_id}"
             ).start()
 
             threading.Thread(
                 target=self._dispatch_queue,
-                args=(self.queues[tab_id]["stderr"], stderr_callback),
+                args=(stderr_queue, stderr_callback, stop_event),
                 daemon=True,
                 name=f"DispatcherStderr-{tab_id}"
             ).start()
@@ -892,8 +920,7 @@ class ProcessTracker:
         except Exception as e:
             print(f"[ERROR] Failed to start process for Tab ID {tab_id}: {e}")
 
-
-    def _read_output(self, stream, q, tab_id, stream_name):
+    def _read_output(self, stream, output_queue, stop_event, tab_id, stream_name):
         """
         Read subprocess output with proper handling of lines and partial data.
         """
@@ -904,7 +931,7 @@ class ProcessTracker:
         last_flushed_partial = None  # Track the last flushed partial line
 
         try:
-            while not self.queues[tab_id]["stop_event"].is_set():
+            while not stop_event.is_set():
                 try:
                     # Attempt to read a chunk of data (64 bytes at a time)
                     chunk = os.read(fd, 64).decode("utf-8")
@@ -921,13 +948,13 @@ class ProcessTracker:
                     # Process complete lines in the buffer
                     while "\n" in buffer:
                         line, buffer = buffer.split("\n", 1)
-                        q.put_nowait(line + "\n")
+                        output_queue.put_nowait(line + "\n")
                         #print(f"[DEBUG] Line enqueued: {repr(line)}")
                         last_flushed_partial = None  # Reset partial tracking
 
                     # Handle partial line (e.g., prompts or incomplete output)
                     if buffer and buffer != last_flushed_partial:
-                        q.put_nowait(buffer)
+                        output_queue.put_nowait(buffer)
                         #print(f"[DEBUG] Partial buffer enqueued: {repr(buffer)}")
                         last_flushed_partial = buffer
 
@@ -949,9 +976,9 @@ class ProcessTracker:
         finally:
             # Handle cleanup: flush remaining buffer and signal end of stream
             if buffer and buffer != last_flushed_partial:
-                q.put_nowait(buffer)
+                output_queue.put_nowait(buffer)
                 print(f"[DEBUG] Final buffer flushed: {repr(buffer)}")
-            q.put(None)  # Signal end of stream to the queue
+            output_queue.put(None)  # Signal end of stream to the queue
 
             try:
                 stream.close()  # Close the stream gracefully
@@ -960,10 +987,10 @@ class ProcessTracker:
 
             print(f"[INFO] Output reader for {stream_name} finished, Tab ID: {tab_id}")
 
-    def _write_input(self, stdin, input_queue, tab_id):
+    def _write_input(self, stdin, input_queue, stop_event, tab_id):
         """Write input from the queue to the subprocess's stdin."""
         try:
-            while not self.queues[tab_id]["stop_event"].is_set():
+            while not stop_event.is_set():
                 try:
                     input_data = input_queue.get(timeout=1)  # Block until input is available
                     if input_data is None:  # Sentinel for EOF
@@ -980,18 +1007,17 @@ class ProcessTracker:
             except Exception as e:
                 print(f"[WARNING] Failed to close stdin for Tab ID {tab_id}: {e}")
 
-    def _dispatch_queue(self, q, callback):
+    def _dispatch_queue(self, q, callback, stop_event):
         """Consume items from the queue and invoke the callback."""
         print("[INFO] Starting dispatcher thread.")
         while True:
             try:
                 line = q.get(timeout=1)  # Avoid indefinite blocking
-                print(f"[DEBUG] Dispatcher received line from queue: {line}")
             except queue.Empty:
-                # Check for shutdown periodically
-                if any(queue_data["stop_event"].is_set() for queue_data in self.queues.values()):
-                    print("[INFO] Dispatcher stopping due to stop event.")
-                    logging.debug("Dispatcher stopping due to stop event.")
+                # Check if this process’s stop_event is set
+                if stop_event.is_set():
+                    print("[INFO] Dispatcher stopping due to its own stop_event.")
+                    logging.debug("Dispatcher stopping due to its own stop_event.")
                     break
                 continue
 
@@ -1008,9 +1034,10 @@ class ProcessTracker:
 
     def check_termination(self, tab_id):
         """Check if the process has terminated and notify the associated ScriptTab."""
-        metadata = self.processes.get(tab_id)
-        if not metadata:
-            return  # Process already cleaned up or not found
+        with self.lock:
+            metadata = self.processes.get(tab_id)
+            if not metadata:
+                return  # Process already cleaned up or not found
 
         process = metadata["process"]
         script_tab = metadata.get("script_tab")
@@ -1028,7 +1055,8 @@ class ProcessTracker:
                         script_tab.insert_output(f"[ERROR] Script '{script_name}' terminated unexpectedly with code {exit_code}.\n")
 
                 # Clean up process metadata
-                self.processes.pop(tab_id, None)
+                with self.lock:
+                    self.processes.pop(tab_id, None)
             except Exception as e:
                 print(f"[ERROR] Error notifying ScriptTab for Tab ID {tab_id}: {e}")
             return
@@ -1037,33 +1065,27 @@ class ProcessTracker:
         self.schedule_process_check(tab_id)
 
     def terminate_process(self, tab_id):
-        """Terminate the process."""
-        metadata = self.processes.pop(tab_id, None)
-        if not metadata:
-            return
-
-        process = metadata["process"]
-        if process.poll() is None:  # Still running
-            process.terminate()
-        if tab_id in self.queues:
-            self.queues[tab_id]["stdout"].put("[INFO] Process terminated by user.\n")
-            self.queues[tab_id]["stdout"].put(None)  # Final EOF sentinel
-            del self.queues[tab_id]
-
-    def terminate_process(self, tab_id):
         """Terminate the process for a given tab ID."""
         print(f"[INFO] Attempting to terminate process for Tab ID: {tab_id}")
         logging.info("[INFO] Attempting to terminate process for Tab ID: %s", tab_id)
 
-        metadata = self.processes.pop(tab_id, None)
-        if not metadata:
-            print(f"[INFO] No process found for Tab ID {tab_id}.")
-            return
+        # Remove metadata for this tab
+        with self.lock:
+            metadata = self.processes.pop(tab_id, None)
+            if not metadata:
+                print(f"[INFO] No process found for Tab ID {tab_id}.")
+                return
+            process = metadata["process"]
 
-        process = metadata["process"]
+        # Terminate the process if it is still running
         if process.poll() is None:  # Still running
             print(f"[INFO] Terminating process for Tab ID {tab_id} (PID {process.pid}).")
             self._terminate_process_tree(process.pid)
+
+        # Signal threads to stop
+        metadata["stop_event"].set()
+        metadata["stdout_queue"].put("[INFO] Process terminated by user.\n")
+        metadata["stdout_queue"].put(None)  # Final EOF sentinel
 
         # Close the process's I/O streams
         if process.stdout:
@@ -1071,12 +1093,8 @@ class ProcessTracker:
         if process.stderr:
             process.stderr.close()
 
-        # Signal threads to stop
-        if tab_id in self.queues:
-            self.queues[tab_id]["stop_event"].set()
-            del self.queues[tab_id]
-
         print(f"[INFO] Process for Tab ID {tab_id} terminated.")
+        logging.info("[INFO] Process for Tab ID %s terminated.", tab_id)
 
     def _terminate_process_tree(self, pid, timeout=5, force=True):
         """Terminate a process tree."""
@@ -1249,6 +1267,16 @@ def main():
     # Start app
     root = ThemedTk(theme="black")
     app = ScriptLauncherApp(root)
+
+    # Add fault handler
+    faulthandler.enable()
+    traceback_log_file = open("Launcher.log", "w")
+    def reset_traceback_timer():
+        """Reset the faulthandler timer to prevent a dump."""
+        faulthandler.dump_traceback_later(15, file=traceback_log_file, exit=True)
+        root.after(5000, reset_traceback_timer)
+
+    reset_traceback_timer()
 
     # Start the shutdown monitoring subprocess if a pipe is provided
     monitor_process = None

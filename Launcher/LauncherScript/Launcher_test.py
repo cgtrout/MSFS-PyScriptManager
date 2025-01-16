@@ -79,6 +79,7 @@ def network_worker(server_address):
 if __name__ == "__main__":
     network_worker({server_address})
 """
+    script_path.parent.mkdir(parents=True, exist_ok=True)
     script_path.write_text(script_content)
 
 def cleanup_test_script(script_path):
