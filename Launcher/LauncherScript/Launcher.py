@@ -10,6 +10,7 @@ import time
 from multiprocessing import Process, Event
 from pathlib import Path
 from typing import Dict
+import ctypes
 
 # Import parse_ansi_colors from local parse_ansi.py
 from parse_ansi import parse_ansi_colors
@@ -273,15 +274,30 @@ class ScriptTab(Tab):
     def build_content(self):
         """Build the content of the ScriptTab."""
 
-        self.text_widget = scrolledtext.ScrolledText(
-            self.frame,
+        # Create a frame to hold the text widget and scrollbar
+        content_frame = tk.Frame(self.frame, bg=FRAME_BG_COLOR)
+        content_frame.pack(side="top", expand=True, fill="both")  # Allow it to expand
+
+        # Create the text widget without a built-in scrollbar
+        self.text_widget = tk.Text(
+            content_frame,
             wrap="word",
             bg=TEXT_WIDGET_BG_COLOR,
             fg=TEXT_WIDGET_FG_COLOR,
             insertbackground=TEXT_WIDGET_INSERT_COLOR,
             font=self.font_normal
         )
-        self.text_widget.pack(expand=True, fill="both")
+        self.text_widget.pack(side="left", expand=True, fill="both")
+
+        # Create a styled ttk.Scrollbar and attach it to the text widget
+        scrollbar = ttk.Scrollbar(
+            content_frame,
+            orient="vertical",
+            command=self.text_widget.yview
+
+        )
+        self.text_widget.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")  # Place the scrollbar next to the text widget
 
         # Create the bottom frame for control buttons
         button_frame = tk.Frame(self.frame, bg=FRAME_BG_COLOR)  # Apply dark background color
@@ -1123,6 +1139,8 @@ def main():
 
         # Start monitoring shutdown_event
         root.after(100, check_shutdown)
+        root.after(100, lambda: DarkmodeUtils.apply_dark_mode(root))
+        #root.after(200, DarkmodeUtils.configure_ttk_scrollbar_style())
 
         root.mainloop()
 
@@ -1142,6 +1160,82 @@ def main():
 
         logging.info("Application closed successfully.")
         logging.stop()
+
+class DarkmodeUtils:
+    """Utility class for handling dark mode UI features."""
+
+    @staticmethod
+    def is_windows_11():
+        """Check if the system is running Windows 11 or later."""
+        if hasattr(sys, 'getwindowsversion'):
+            version = sys.getwindowsversion()
+            # Windows 11 has major version 10 and build number >= 22000
+            return version.major == 10 and version.build >= 22000
+        return False
+
+    @staticmethod
+    def dark_title_bar(hwnd):
+        """Enable dark mode for the title bar if supported."""
+        try:
+            if DarkmodeUtils.is_windows_11():
+                DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+                value = ctypes.c_int(1)  # Use 1 to enable dark mode
+                result = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd,
+                    DWMWA_USE_IMMERSIVE_DARK_MODE,
+                    ctypes.byref(value),
+                    ctypes.sizeof(value)
+                )
+                if result == 0:
+                    print("[INFO] Dark mode applied successfully.")
+                else:
+                    print(f"[ERROR] Failed to apply dark mode. Error code: {result}")
+            else:
+                print("[INFO] Dark mode is not supported on this version of Windows.")
+        except Exception as e:
+            print(f"[ERROR] An exception occurred while applying dark mode: {e}")
+
+    @staticmethod
+    def is_valid_window(hwnd):
+        """Check if the given HWND is a valid window handle."""
+        return ctypes.windll.user32.IsWindow(hwnd) != 0
+
+    @staticmethod
+    def get_top_level_hwnd(hwnd):
+        """Retrieve the top-level window handle."""
+        GA_ROOT = 2  # Constant for the top-level ancestor
+        return ctypes.windll.user32.GetAncestor(hwnd, GA_ROOT)
+
+    @staticmethod
+    def apply_dark_mode(root):
+        """Apply dark mode to the top-level window of a Tkinter root."""
+        hwnd = int(root.winfo_id())
+        top_level_hwnd = DarkmodeUtils.get_top_level_hwnd(hwnd)
+        if not DarkmodeUtils.is_valid_window(top_level_hwnd):
+            print("[ERROR] Invalid top-level window handle.")
+            return
+        print(f"Applying dark mode to Top-Level HWND: {top_level_hwnd}")
+        DarkmodeUtils.dark_title_bar(top_level_hwnd)
+        ctypes.windll.user32.RedrawWindow(top_level_hwnd, None, None, 0x85)
+
+    @staticmethod
+    def configure_ttk_scrollbar_style():
+        """Configure a dark theme for ttk.Scrollbar."""
+        from tkinter import ttk
+        style = ttk.Style()
+        style.theme_use("clam")  # Use a theme that supports customization
+
+        # Customize the Scrollbar for dark mode
+        style.configure(
+            "Vertical.TScrollbar",
+            gripcount=0,
+            background="#444444",  # Scrollbar background
+            darkcolor="#2E2E2E",   # Darker part of the scrollbar
+            lightcolor="#666666",  # Lighter part of the scrollbar
+            troughcolor="#1E1E1E",  # Background of the scrollbar's track
+            bordercolor="#2E2E2E",  # Border of the scrollbar
+            arrowcolor="#FFFFFF"    # Color of the arrows
+        )
 
 if __name__ == "__main__":
     main()
