@@ -1205,15 +1205,18 @@ class DarkmodeUtils:
     @staticmethod
     def apply_dark_mode(root):
         """Apply dark mode to the top-level window of a Tkinter root."""
-        if DarkmodeUtils.is_windows_11():
-            hwnd = int(root.winfo_id())
-            top_level_hwnd = DarkmodeUtils.get_top_level_hwnd(hwnd)
-            if not DarkmodeUtils.is_valid_window(top_level_hwnd):
-                print("[ERROR] Invalid top-level window handle.")
-                return
-            print(f"Applying dark mode to Top-Level HWND: {top_level_hwnd}")
-            DarkmodeUtils.dark_title_bar(top_level_hwnd)
-            ctypes.windll.user32.RedrawWindow(top_level_hwnd, None, None, 0x85)
+        try:
+            if DarkmodeUtils.is_windows_11():
+                hwnd = int(root.winfo_id())
+                top_level_hwnd = DarkmodeUtils.get_top_level_hwnd(hwnd)
+                if not DarkmodeUtils.is_valid_window(top_level_hwnd):
+                    print("[ERROR] Invalid top-level window handle.")
+                    return
+                print(f"Applying dark mode to Top-Level HWND: {top_level_hwnd}")
+                DarkmodeUtils.dark_title_bar(top_level_hwnd)
+                ctypes.windll.user32.RedrawWindow(top_level_hwnd, None, None, 0x85)
+        except Exception as e:
+            print(f"[ERROR] apply_dark_mode: An exception occurred while applying dark mode: {e}")
 
 if __name__ == "__main__":
     main()
