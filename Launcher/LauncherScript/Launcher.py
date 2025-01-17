@@ -1174,23 +1174,20 @@ class DarkmodeUtils:
 
     @staticmethod
     def dark_title_bar(hwnd):
-        """Enable dark mode for the title bar if supported."""
+        """Enable dark mode for the title bar."""
         try:
-            if DarkmodeUtils.is_windows_11():
-                DWMWA_USE_IMMERSIVE_DARK_MODE = 20
-                value = ctypes.c_int(1)  # Use 1 to enable dark mode
-                result = ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                    hwnd,
-                    DWMWA_USE_IMMERSIVE_DARK_MODE,
-                    ctypes.byref(value),
-                    ctypes.sizeof(value)
-                )
-                if result == 0:
-                    print("[INFO] Dark mode applied successfully.")
-                else:
-                    print(f"[ERROR] Failed to apply dark mode. Error code: {result}")
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            value = ctypes.c_int(1)  # Use 1 to enable dark mode
+            result = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE,
+                ctypes.byref(value),
+                ctypes.sizeof(value)
+            )
+            if result == 0:
+                print("[INFO] Dark mode applied successfully.")
             else:
-                print("[INFO] Dark mode is not supported on this version of Windows.")
+                print(f"[ERROR] Failed to apply dark mode. Error code: {result}")
         except Exception as e:
             print(f"[ERROR] An exception occurred while applying dark mode: {e}")
 
@@ -1208,14 +1205,15 @@ class DarkmodeUtils:
     @staticmethod
     def apply_dark_mode(root):
         """Apply dark mode to the top-level window of a Tkinter root."""
-        hwnd = int(root.winfo_id())
-        top_level_hwnd = DarkmodeUtils.get_top_level_hwnd(hwnd)
-        if not DarkmodeUtils.is_valid_window(top_level_hwnd):
-            print("[ERROR] Invalid top-level window handle.")
-            return
-        print(f"Applying dark mode to Top-Level HWND: {top_level_hwnd}")
-        DarkmodeUtils.dark_title_bar(top_level_hwnd)
-        ctypes.windll.user32.RedrawWindow(top_level_hwnd, None, None, 0x85)
+        if DarkmodeUtils.is_windows_11():
+            hwnd = int(root.winfo_id())
+            top_level_hwnd = DarkmodeUtils.get_top_level_hwnd(hwnd)
+            if not DarkmodeUtils.is_valid_window(top_level_hwnd):
+                print("[ERROR] Invalid top-level window handle.")
+                return
+            print(f"Applying dark mode to Top-Level HWND: {top_level_hwnd}")
+            DarkmodeUtils.dark_title_bar(top_level_hwnd)
+            ctypes.windll.user32.RedrawWindow(top_level_hwnd, None, None, 0x85)
 
 if __name__ == "__main__":
     main()
