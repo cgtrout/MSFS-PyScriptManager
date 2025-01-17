@@ -1169,7 +1169,7 @@ class DarkmodeUtils:
         if hasattr(sys, 'getwindowsversion'):
             version = sys.getwindowsversion()
             # Windows 11 has major version 10 and build number >= 22000
-            return version.major == 10 and version.build >= 22000
+            return (version.major == 10 and version.build >= 22000) or version.major > 10
         return False
 
     @staticmethod
