@@ -1109,8 +1109,7 @@ def main():
 
         # Start monitoring shutdown_event
         root.after(100, check_shutdown)
-
-        dark_title_bar(root.winfo_id())
+        root.after(100, lambda: apply_dark_mode(root))
 
         root.mainloop()
 
@@ -1158,6 +1157,26 @@ def dark_title_bar(hwnd):
             print("[INFO] Dark mode is not supported on this version of Windows.")
     except Exception as e:
         print(f"[ERROR] An exception occurred while applying dark mode: {e}")
+
+
+def is_valid_window(hwnd):
+    return ctypes.windll.user32.IsWindow(hwnd) != 0
+
+def get_top_level_hwnd(hwnd):
+    """Retrieve the top-level window handle."""
+    GA_ROOT = 2  # Constant for the top-level ancestor
+    return ctypes.windll.user32.GetAncestor(hwnd, GA_ROOT)
+
+def apply_dark_mode(root):
+    hwnd = int(root.winfo_id())
+    top_level_hwnd = get_top_level_hwnd(hwnd)
+    if not is_valid_window(top_level_hwnd):
+        print("[ERROR] Invalid top-level window handle.")
+        return
+    print(f"Applying dark mode to Top-Level HWND: {top_level_hwnd}")
+    dark_title_bar(top_level_hwnd)
+    ctypes.windll.user32.RedrawWindow(top_level_hwnd, None, None, 0x85)
+
 
 if __name__ == "__main__":
     main()
