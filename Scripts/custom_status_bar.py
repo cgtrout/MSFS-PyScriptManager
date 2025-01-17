@@ -189,6 +189,31 @@ def get_sim_time():
 
 def get_simulator_datetime() -> datetime:
     """
+    Fetches the absolute time from the simulator and converts it to a datetime object.
+    """
+    global sim_connected
+    try:
+        if not sim_connected:
+            raise ValueError("SimConnect is not connected.")
+
+        absolute_time = get_simconnect_value("ABSOLUTE_TIME")
+        if absolute_time is None:
+            raise ValueError("Absolute time is unavailable.")
+
+        base_datetime = datetime(1, 1, 1, tzinfo=timezone.utc)
+        return base_datetime + timedelta(seconds=float(absolute_time))
+
+    except ValueError as ve:
+        #print(ve)
+        pass
+    except Exception as e:
+        print(f"get_simulator_datetime: Failed to retrieve simulator datetime: {e}")
+
+    # Return the Unix epoch if simulator time is unavailable
+    return UNIX_EPOCH
+
+def get_simulator_datetime_old() -> datetime:
+    """
     Fetch the current simulator date and time as a datetime object.
     Ensure it is simulator time and timezone-aware (UTC).
     If unavailable, return the Unix epoch as a default.
@@ -487,10 +512,6 @@ def compute_countdown_timer(
 
     # Calculate remaining time
     remaining_time = target_time_today - current_sim_time
-
-    # HACK: Correct for MSFS 2024 bug if remaining time exceeds 24 hours
-    if remaining_time.total_seconds() > 24 * 3600:
-        remaining_time -= timedelta(days=1)
 
     # Adjust for simulation rate
     if sim_rate and sim_rate > 0:
