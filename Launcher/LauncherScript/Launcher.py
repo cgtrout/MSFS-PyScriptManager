@@ -1140,7 +1140,6 @@ def main():
         # Start monitoring shutdown_event
         root.after(100, check_shutdown)
         root.after(100, lambda: DarkmodeUtils.apply_dark_mode(root))
-        #root.after(200, DarkmodeUtils.configure_ttk_scrollbar_style())
 
         root.mainloop()
 
@@ -1217,25 +1216,6 @@ class DarkmodeUtils:
         print(f"Applying dark mode to Top-Level HWND: {top_level_hwnd}")
         DarkmodeUtils.dark_title_bar(top_level_hwnd)
         ctypes.windll.user32.RedrawWindow(top_level_hwnd, None, None, 0x85)
-
-    @staticmethod
-    def configure_ttk_scrollbar_style():
-        """Configure a dark theme for ttk.Scrollbar."""
-        from tkinter import ttk
-        style = ttk.Style()
-        style.theme_use("clam")  # Use a theme that supports customization
-
-        # Customize the Scrollbar for dark mode
-        style.configure(
-            "Vertical.TScrollbar",
-            gripcount=0,
-            background="#444444",  # Scrollbar background
-            darkcolor="#2E2E2E",   # Darker part of the scrollbar
-            lightcolor="#666666",  # Lighter part of the scrollbar
-            troughcolor="#1E1E1E",  # Background of the scrollbar's track
-            bordercolor="#2E2E2E",  # Border of the scrollbar
-            arrowcolor="#FFFFFF"    # Color of the arrows
-        )
 
 if __name__ == "__main__":
     main()
