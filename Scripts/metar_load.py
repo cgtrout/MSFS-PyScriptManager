@@ -346,71 +346,66 @@ def gui_fetch_metar():
 
 def find_best_metar(metar_dict):
     """
-    Find the historical METAR closest in time to the simulator's current time, ensuring it's not in the future.
+    Find the historical METAR closest in time to the simulator's current time,
+    ensuring the METAR timestamp is not after the simulator time. If the simulator
+    time is outside the range of available data, return all METARs.
 
     Args:
         metar_dict (dict): Dictionary where keys are datetime objects (METAR timestamps) and
                            values are the corresponding METAR strings.
 
     Returns:
-        str: The METAR string closest in time (ignoring date mismatches but ensuring it's not in the future).
+        str | list: The closest METAR string, or a list of all METARs if the simulator time
+                    is outside the data range.
 
     Raises:
-        ValueError: If no suitable METAR is found.
+        ValueError: If no METAR data is available.
     """
     simulator_time = get_simulator_datetime()  # Fetch the simulator's current datetime
+    simulator_time = datetime(2025, 1, 15, 1, 0, tzinfo=timezone.utc)
     print(f"Simulator Time: {simulator_time}")
 
     if not metar_dict:
         raise ValueError("No METAR data available.")
 
-    # Sort METARs by datetime in reverse order (newest first)
-    sorted_metars = sorted(metar_dict.items(), key=lambda item: item[0], reverse=True)
+    # Sort METARs by timestamp
+    sorted_metars = sorted(metar_dict.items(), key=lambda item: item[0])
 
-    # First print list for debugging purposes
-    print_color("METAR List:", color="yellow")
+    print_color("METAR List (Sorted):", color="yellow")
     for metar_time, metar in sorted_metars:
         print_debug(f"METAR: {metar_time} - {metar}")
 
-    print_color("Now Finding Best METAR:", color="yellow")
+    # Get the earliest and latest timestamps
+    earliest_time = sorted_metars[0][0]
+    latest_time = sorted_metars[-1][0]
 
-    previous_metar_seconds = None  # To track the previous METAR's seconds
-    crossed_midnight = False  # Track whether we have crossed midnight
+    # Check if the simulator time is outside the range
+    if simulator_time < earliest_time or simulator_time > latest_time:
+        print_color(
+            "Simulator time is outside the range of available METAR data. Returning all METARs.",
+            color="red"
+        )
+        return [metar for _, metar in sorted_metars]
 
-    # Simulator time in seconds since midnight
-    simulator_seconds = ( simulator_time.hour * 3600 + simulator_time.minute * 60 + simulator_time.second )
+    # Filter only METARs with timestamps <= simulator_time
+    valid_metars = {time: metar for time, metar in metar_dict.items() if time <= simulator_time}
 
-    for metar_time, metar in sorted_metars:
-        metar_seconds = (
-            metar_time.hour * 3600 + metar_time.minute * 60 + metar_time.second
-        )  # METAR time in seconds since midnight
+    print_color("Valid METAR List (Filtered):", color="cyan")
+    for metar_time, metar in valid_metars.items():
+        print_debug(f"Valid METAR: {metar_time} - {metar}")
 
-        print_debug(f"--Checking METAR: {metar_time} - {metar}-----------")
-        print_debug(f"Simulator seconds: {simulator_seconds}, METAR seconds: {metar_seconds}")
+    if not valid_metars:
+        print_color("No valid METARs found. All METARs are in the future.", color="red")
+        raise ValueError("No suitable METAR found (all METARs are in the future).")
 
-        # Detect midnight crossing if metar_seconds jumps backward
-        if previous_metar_seconds is not None and metar_seconds > previous_metar_seconds:
-            print_debug("Detected midnight crossing based on time jump.\n")
-            crossed_midnight = True
+    # Find the closest METAR by timestamp
+    closest_time = max(valid_metars.keys())  # The closest valid METAR will have the largest timestamp <= simulator_time
+    closest_metar = valid_metars[closest_time]
 
-        previous_metar_seconds = metar_seconds  # Update for the next iteration
+    print_color("Closest METAR Found:", color="green")
+    print_debug(f"METAR: {closest_metar} at {closest_time}")
 
-        # Logic before or after midnight crossing
-        if not crossed_midnight:
-            if metar_seconds > simulator_seconds:
-                print_debug("Skipping future METAR.\n")
-                continue
-            else:
-                print_debug(f"Found valid METAR before midnight crossing: {metar}")
-                return metar
-        else:
-            # After midnight crossing, allow the first valid METAR
-            if metar_seconds > simulator_seconds:
-                print_debug(f"Found valid METAR after midnight crossing: {metar}")
-                return metar
-
-    # If no valid METAR is found, raise an error
-    raise ValueError("No suitable METAR found.")
+    return closest_metar
 
 def main():
     """Main function to initialize the GUI with reference-accurate styling."""
