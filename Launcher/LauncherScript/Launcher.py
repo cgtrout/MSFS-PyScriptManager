@@ -665,10 +665,13 @@ class ScriptLauncherApp:
 
         # Collect script paths from all ScriptTabs
         script_paths = []
-        for tab in self.tab_manager.tabs.values():
-            if isinstance(tab, ScriptTab):
-                relative_path = os.path.relpath(tab.script_path, group_dir)
-                script_paths.append(relative_path)
+        for tab_frame_id in self.tab_manager.notebook.tabs():
+            for _, tab in self.tab_manager.tabs.items():
+                if tab.frame and str(tab.frame) == tab_frame_id:
+                    if isinstance(tab, ScriptTab):
+                        relative_path = os.path.relpath(tab.script_path, group_dir)
+                        script_paths.append(relative_path)
+                    break
 
         # Write the relative paths to the .script_group file
         with open(file_path, "w", encoding="utf-8") as f:
