@@ -295,7 +295,8 @@ def initialize_simconnect():
     except Exception:
         sim_connected = False
 
-def get_simconnect_value(variable_name: str, default_value: Any = "N/A", retries: int = 10, retry_interval: float = 0.2) -> Any:
+def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
+                         retries: int = 10, retry_interval: float = 0.2) -> Any:
     """Fetch a SimConnect variable with caching and retry logic."""
     if not sim_connected or sim_connect is None or not sim_connect.ok:
         return "Sim Not Running"
@@ -311,7 +312,10 @@ def get_simconnect_value(variable_name: str, default_value: Any = "N/A", retries
             return value
         time.sleep(retry_interval)
 
-    print_debug(f"All {retries} retries failed for '{variable_name}'. Returning default: {default_value}")
+    print_debug(
+        f"All {retries} retries failed for '{variable_name}'. "
+        f"Returning default: {default_value}"
+    )
     return default_value
 
 def check_cache(variable_name):
@@ -399,13 +403,13 @@ def simconnect_background_updater():
                                 with cache_lock:
                                     simconnect_cache[variable_name] = value
                             else:
-                                #print(f"DEBUG: Value for '{variable_name}' is None. Will retry in the next cycle.")
                                 lookup_failed = True
                         else:
                             print_warning("'aq' is None or does not have a 'get' method.")
                             lookup_failed = True
-                    except Exception as e:
-                        print_debug(f"Error fetching '{variable_name}': {e}. Will retry in the next cycle.")
+                    except OSError as e:
+                        print_debug(f"Error fetching '{variable_name}': {e}. "
+                                     "Will retry in the next cycle.")
                         lookup_failed = True
 
                     # Introduce a small sleep between variable updates
@@ -421,13 +425,13 @@ def simconnect_background_updater():
 
         except Exception as e:
             print_error(f"Unexpected error in background updater: {e}")
+            print(f"Exception type: {type(e).__name__}")
         finally:
             # Update the last successful update time - used for 'heartbeat' functionality
             last_successful_update_time = time.time()
 
 def background_thread_watchdog_function():
     """Check background thread function to see if it has locked up"""
-    global last_successful_update_time
     now = time.time()
     threshold = 30  # seconds before we consider the updater "stuck"
 
@@ -451,7 +455,8 @@ def get_time_to_future() -> str:
         current_sim_time = get_simulator_datetime()
 
         if countdown_state.countdown_target_time.tzinfo is None or current_sim_time.tzinfo is None:
-            raise ValueError("Target time or simulator time is offset-naive. Ensure all times are offset-aware.")
+            raise ValueError("Target time or simulator time is offset-naive. "
+                             "Ensure all times are offset-aware.")
 
         # Fetch sim rate
         sim_rate_str = get_sim_rate()
@@ -474,6 +479,8 @@ def get_time_to_future() -> str:
 
     except Exception as e:
         # TODO: investigate if we can handle errors better here
+        exception_type = type(e).__name__  # Get the exception type
+        print(f"Exception occurred: {e} (Type: {exception_type})")
         return "00:00:00"
 
 def compute_countdown_timer(
@@ -686,8 +693,8 @@ class TemplateHandler:
 
             print_debug("load_template_functions: DONE\n")
 
-        except Exception as e:
-            print(f"Error loading template functions: {e}")
+        except Exception as e: # pylint: disable=broad-except
+            print_error(f"Error loading template functions: {e}")
 
     def get_current_template(self) -> str:
         """Return the content of the currently selected template."""
