@@ -54,8 +54,8 @@ class NoaaSource(MetarSource):
         }
 
         all_metars = []
-        # Fetch data in 1.5-hour increments up to 12 hours
-        for hours in range(1, 13, 1):  # Fetch in hourly increments
+        # Fetch data
+        for hours in range(1, 25, 1):  # Fetch in hourly increments
             params = {
                 "ids": airport_code,
                 "format": "json",
@@ -88,7 +88,7 @@ class AviationWeatherSource(MetarSource):
             "ids": airport_code,
             "format":
             "json",
-            "hours": 12  # Fetch METARs for the past 12 hours
+            "hours": 24  # Fetch METARs for the past 24 hours
         }
         headers = {
             "User-Agent": "METAR Fetcher/1.0 (contact@example.com)",
@@ -196,32 +196,27 @@ def print_metar_data(metar_data, printer_name="VirtualTextPrinter"):
     except Exception as e:
         messagebox.showerror("Print Error", f"Failed to print METAR data: {e}")
 
-def show_metar_data(source_name, metar_dict, show_best_only=True):
+def show_metar_data(source_name, metar_dict):
     """
     Display processed METAR data in a new window.
 
     Args:
         source_name (str): The name of the METAR data source.
         metar_dict (dict): Dictionary with datetime keys and METAR strings as values.
-        show_best_only (bool): If True, only show the METAR closest to the current simulator time.
     """
     # Create the new result window
     result_window = tk.Toplevel(root)
     result_window.title(f"METAR Data - {source_name}")
     result_window.configure(bg="#2e2e2e")  # Softer dark gray background
 
-    # Set a fixed size and center the window
-    window_width, window_height = 800, 125
-    result_window.geometry(f"{window_width}x{window_height}")
-    center_window(result_window, window_width, window_height)
+    # Configure grid layout for resizing
+    result_window.rowconfigure(2, weight=1)  # Text widget row expands
+    result_window.columnconfigure(0, weight=1)
 
-    # Title label (source and closest METAR timestamp)
+    # Title label
     try:
         simulator_time = get_simulator_datetime()
-        if show_best_only:
-            title_text = f"METAR Data (Source: {source_name})\nClosest METAR to Simulator Time: {simulator_time}"
-        else:
-            title_text = f"METAR Data (Source: {source_name})"
+        title_text = f"METAR Data (Source: {source_name})\nClosest METAR to Simulator Time: {simulator_time}"
     except Exception as e:
         title_text = f"METAR Data (Source: {source_name})\nError fetching simulator time: {e}"
 
@@ -233,50 +228,88 @@ def show_metar_data(source_name, metar_dict, show_best_only=True):
         fg="#d3d3d3",
         justify="left",
     )
-    title_label.pack(pady=(5, 5))  # Padding for the title
+    title_label.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
 
-    # Text widget
-    text_widget = tk.Text(
-        result_window,
-        wrap="none",  # No word wrapping
+    # Subtitle label for multi-METAR indication
+    try:
+        result = find_best_metar(metar_dict)
+        if isinstance(result, list):  # Multiple METARs are being displayed
+            subtitle_text = "WARNING: Could not match METAR - showing all."
+        else:  # Single METAR returned
+            subtitle_text = None
+    except ValueError as e:
+        subtitle_text = None
+
+    if subtitle_text:
+        subtitle_label = tk.Label(
+            result_window,
+            text=subtitle_text,
+            font=("Arial", 12, "bold"),
+            bg="#2e2e2e",
+            fg="#FFaaaa",
+            justify="left",
+        )
+        subtitle_label.grid(row=1, column=0, sticky="ew", padx=10, pady=2)
+
+    # Create a frame for the Listbox and scrollbar
+    listbox_frame = tk.Frame(result_window, bg="#2e2e2e")
+    listbox_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
+
+    # Create the Listbox
+    metar_listbox = tk.Listbox(
+        listbox_frame,
         font=("Consolas", 12),
         bg="#222222",
         fg="#d3d3d3",
-        insertbackground="#d3d3d3",  # Cursor color
-        highlightbackground="#3c3c3c",  # Border color
+        selectbackground="#444444",
+        selectforeground="#ffffff",
+        activestyle="none",
+        highlightbackground="#3c3c3c",
         highlightcolor="#3c3c3c",
-        relief="flat",  # Remove border styles
-        height=1
+        width=120
     )
-    text_widget.pack(padx=10, pady=(0, 10))
+    metar_listbox.pack(side="left", fill="both", expand=True)
 
-    # Populate the text widget
-    if show_best_only:
-        try:
-            best_metar = find_best_metar(metar_dict)
-            content = best_metar  # Only show the closest METAR
-        except ValueError as e:
-            content = f"Error finding the closest METAR: {e}"
-    else:
-        content = "\n".join(
-            f"{key.strftime('%Y-%m-%d %H:%M:%S')} - {value}" for key, value in metar_dict.items()
-        )
+    sorted_metars = sorted(metar_dict.items(), key=lambda item: item[0])  # Sort by timestamp
 
-    text_widget.insert("1.0", content)
-    text_widget.configure(state="disabled")
+    # Populate output window
+    if isinstance(result, str):
+        metar_listbox.insert("end", result)
+        metar_listbox.selection_set(0)
+    else:  # Show all results if a match could not be found
+        for metar in sorted_metars:
+            metar_listbox.insert("end", metar[1])
 
-    # Print Button
+    def get_selected_content():
+        """Get the selected METAR content from the Listbox."""
+        if metar_listbox.size() == 1:
+            return metar_listbox.get(0)
+        selected_indices = metar_listbox.curselection()
+        if not selected_indices:
+            return None
+        return "\n".join(metar_listbox.get(i) for i in selected_indices)
+
+    # Print Button at the bottom
     print_button = tk.Button(
         result_window,
         text="Print METAR Data",
-        command=lambda: print_metar_data(content, printer_name),
+        command=lambda: (
+                print_metar_data(get_selected_content(), printer_name) if get_selected_content() else None,
+                result_window.destroy()
+            ),
         bg="#5A5A5A",
         fg="#FFFFFF",
         activebackground="#3A3A3A",
         activeforeground="#FFFFFF",
         font=("Helvetica", 10),
     )
-    print_button.pack(pady=(5, 5))
+    print_button.grid(row=3, column=0, padx=10, pady=5)
+
+    # Center the window
+    result_window.update_idletasks()  # Force geometry update
+    window_width = result_window.winfo_width()
+    window_height = result_window.winfo_height()
+    center_window(result_window, window_width, window_height)
 
 def gui_fetch_metar():
     """Fetch METAR data with a non-blocking popup loading window."""
@@ -323,71 +356,66 @@ def gui_fetch_metar():
 
 def find_best_metar(metar_dict):
     """
-    Find the historical METAR closest in time to the simulator's current time, ensuring it's not in the future.
+    Find the historical METAR closest in time to the simulator's current time,
+    ensuring the METAR timestamp is not after the simulator time. If the simulator
+    time is outside the range of available data, return all METARs.
 
     Args:
         metar_dict (dict): Dictionary where keys are datetime objects (METAR timestamps) and
                            values are the corresponding METAR strings.
 
     Returns:
-        str: The METAR string closest in time (ignoring date mismatches but ensuring it's not in the future).
+        str | list: The closest METAR string, or a list of all METARs if the simulator time
+                    is outside the data range.
 
     Raises:
-        ValueError: If no suitable METAR is found.
+        ValueError: If no METAR data is available.
     """
     simulator_time = get_simulator_datetime()  # Fetch the simulator's current datetime
+    #simulator_time = datetime(2025, 1, 15, 1, 0, tzinfo=timezone.utc)
     print(f"Simulator Time: {simulator_time}")
 
     if not metar_dict:
         raise ValueError("No METAR data available.")
 
-    # Sort METARs by datetime in reverse order (newest first)
-    sorted_metars = sorted(metar_dict.items(), key=lambda item: item[0], reverse=True)
+    # Sort METARs by timestamp
+    sorted_metars = sorted(metar_dict.items(), key=lambda item: item[0])
 
-    # First print list for debugging purposes
-    print_color("METAR List:", color="yellow")
+    print_color("METAR List (Sorted):", color="yellow")
     for metar_time, metar in sorted_metars:
         print_debug(f"METAR: {metar_time} - {metar}")
 
-    print_color("Now Finding Best METAR:", color="yellow")
+    # Get the earliest and latest timestamps
+    earliest_time = sorted_metars[0][0]
+    latest_time = sorted_metars[-1][0]
 
-    previous_metar_seconds = None  # To track the previous METAR's seconds
-    crossed_midnight = False  # Track whether we have crossed midnight
+    # Check if the simulator time is outside the range
+    if simulator_time < earliest_time or simulator_time > latest_time:
+        print_color(
+            "Simulator time is outside the range of available METAR data. Returning all METARs.",
+            color="red"
+        )
+        return [metar for _, metar in sorted_metars]
 
-    # Simulator time in seconds since midnight
-    simulator_seconds = ( simulator_time.hour * 3600 + simulator_time.minute * 60 + simulator_time.second )
+    # Filter only METARs with timestamps <= simulator_time
+    valid_metars = {time: metar for time, metar in metar_dict.items() if time <= simulator_time}
 
-    for metar_time, metar in sorted_metars:
-        metar_seconds = (
-            metar_time.hour * 3600 + metar_time.minute * 60 + metar_time.second
-        )  # METAR time in seconds since midnight
+    print_color("Valid METAR List (Filtered):", color="cyan")
+    for metar_time, metar in valid_metars.items():
+        print_debug(f"Valid METAR: {metar_time} - {metar}")
 
-        print_debug(f"--Checking METAR: {metar_time} - {metar}-----------")
-        print_debug(f"Simulator seconds: {simulator_seconds}, METAR seconds: {metar_seconds}")
+    if not valid_metars:
+        print_color("No valid METARs found. All METARs are in the future.", color="red")
+        raise ValueError("No suitable METAR found (all METARs are in the future).")
 
-        # Detect midnight crossing if metar_seconds jumps backward
-        if previous_metar_seconds is not None and metar_seconds > previous_metar_seconds:
-            print_debug("Detected midnight crossing based on time jump.\n")
-            crossed_midnight = True
+    # Find the closest METAR by timestamp
+    closest_time = max(valid_metars.keys())  # The closest valid METAR will have the largest timestamp <= simulator_time
+    closest_metar = valid_metars[closest_time]
 
-        previous_metar_seconds = metar_seconds  # Update for the next iteration
+    print_color("Closest METAR Found:", color="green")
+    print_debug(f"METAR: {closest_metar} at {closest_time}")
 
-        # Logic before or after midnight crossing
-        if not crossed_midnight:
-            if metar_seconds > simulator_seconds:
-                print_debug("Skipping future METAR.\n")
-                continue
-            else:
-                print_debug(f"Found valid METAR before midnight crossing: {metar}")
-                return metar
-        else:
-            # After midnight crossing, allow the first valid METAR
-            if metar_seconds > simulator_seconds:
-                print_debug(f"Found valid METAR after midnight crossing: {metar}")
-                return metar
-
-    # If no valid METAR is found, raise an error
-    raise ValueError("No suitable METAR found.")
+    return closest_metar
 
 def main():
     """Main function to initialize the GUI with reference-accurate styling."""
@@ -472,39 +500,28 @@ def on_close():
 
 def get_simulator_datetime() -> datetime:
     """
-    Fetch the current simulator date and time dynamically (in ZULU/UTC format).
-    Ensures the result is timezone-aware and valid. If unavailable, defaults to the current system date/time.
+    Fetch the current simulator date and time dynamically using ABSOLUTE_TIME (in ZULU/UTC format).
+    Ensures the result is timezone-aware and valid. Defaults to the current system date/time if unavailable.
     """
     global sim_connected
     try:
         if not sim_connected:
             raise ValueError("SimConnect is not connected.")
 
-        # Fetch simulator date and time variables directly
-        zulu_year = aq.get("ZULU_YEAR")
-        zulu_month = aq.get("ZULU_MONTH_OF_YEAR")
-        zulu_day = aq.get("ZULU_DAY_OF_MONTH")
-        zulu_time_seconds = aq.get("ZULU_TIME")
+        # Fetch ABSOLUTE_TIME from the simulator
+        absolute_time = aq.get("ABSOLUTE_TIME")
+        if absolute_time is None:
+            raise ValueError("ABSOLUTE_TIME is unavailable.")
 
-        # Ensure all values are retrieved and valid
-        if None in (zulu_year, zulu_month, zulu_day, zulu_time_seconds):
-            raise ValueError("Simulator date/time variables are unavailable or invalid.")
+        # Base datetime is 1 January, year 1 (Zulu/UTC)
+        base_datetime = datetime(1, 1, 1, tzinfo=timezone.utc)
 
-        # Convert variables to proper types
-        zulu_year = int(zulu_year)
-        zulu_month = int(zulu_month)
-        zulu_day = int(zulu_day)
-        zulu_time_seconds = float(zulu_time_seconds)
-
-        # Convert ZULU_TIME (seconds since midnight) into hours, minutes, seconds
-        hours, remainder = divmod(int(zulu_time_seconds), 3600)
-        minutes, seconds = divmod(remainder, 60)
-
-        # Construct and return the datetime object with UTC timezone
-        return datetime(zulu_year, zulu_month, zulu_day, hours, minutes, seconds, tzinfo=timezone.utc)
+        # Compute the simulator's current datetime by adding ABSOLUTE_TIME in seconds
+        return base_datetime + timedelta(seconds=float(absolute_time))
 
     except Exception as e:
         print(f"get_simulator_datetime: Failed to retrieve simulator datetime: {e}")
+
         # Fallback to current system date and time in UTC
         return datetime.now(timezone.utc)
 
