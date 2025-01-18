@@ -293,7 +293,10 @@ def show_metar_data(source_name, metar_dict):
     print_button = tk.Button(
         result_window,
         text="Print METAR Data",
-        command=lambda: print_metar_data(get_selected_content(), printer_name),
+        command=lambda: (
+                print_metar_data(get_selected_content(), printer_name) if get_selected_content() else None,
+                result_window.destroy()
+            ),
         bg="#5A5A5A",
         fg="#FFFFFF",
         activebackground="#3A3A3A",
