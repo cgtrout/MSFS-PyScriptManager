@@ -421,7 +421,7 @@ def main():
 
     # Create the main Tkinter window
     root = tk.Tk()
-    root.title("METAR Data Processor")
+    root.title("METAR Data Lookup")
     root.geometry("300x150")
     root.configure(bg=bg_color)  # Dark background color
 
