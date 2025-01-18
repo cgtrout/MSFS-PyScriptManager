@@ -374,8 +374,8 @@ def find_best_metar(metar_dict):
         print_debug(f"METAR: {metar_time} - {metar}")
 
     # Get the earliest and latest timestamps
-    earliest_time = sorted_metars[0][0]
-    latest_time = sorted_metars[-1][0]
+    earliest_time = sorted_metars[0][0] - timedelta(hours=1)
+    latest_time = sorted_metars[-1][0] + timedelta(hours=1)
 
     # Check if the simulator time is outside the range
     if simulator_time < earliest_time or simulator_time > latest_time:
