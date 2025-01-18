@@ -54,8 +54,8 @@ class NoaaSource(MetarSource):
         }
 
         all_metars = []
-        # Fetch data in 1.5-hour increments up to 12 hours
-        for hours in range(1, 13, 1):  # Fetch in hourly increments
+        # Fetch data
+        for hours in range(1, 25, 1):  # Fetch in hourly increments
             params = {
                 "ids": airport_code,
                 "format": "json",
@@ -88,7 +88,7 @@ class AviationWeatherSource(MetarSource):
             "ids": airport_code,
             "format":
             "json",
-            "hours": 12  # Fetch METARs for the past 12 hours
+            "hours": 24  # Fetch METARs for the past 24 hours
         }
         headers = {
             "User-Agent": "METAR Fetcher/1.0 (contact@example.com)",
@@ -196,24 +196,22 @@ def print_metar_data(metar_data, printer_name="VirtualTextPrinter"):
     except Exception as e:
         messagebox.showerror("Print Error", f"Failed to print METAR data: {e}")
 
-def show_metar_data(source_name, metar_dict, show_best_only=True):
+def show_metar_data(source_name, metar_dict):
     """
     Display processed METAR data in a new window.
 
     Args:
         source_name (str): The name of the METAR data source.
         metar_dict (dict): Dictionary with datetime keys and METAR strings as values.
-        show_best_only (bool): If True, only show the METAR closest to the current simulator time.
     """
     # Create the new result window
     result_window = tk.Toplevel(root)
     result_window.title(f"METAR Data - {source_name}")
     result_window.configure(bg="#2e2e2e")  # Softer dark gray background
 
-    # Set a fixed size and center the window
-    window_width, window_height = 800, 125
-    result_window.geometry(f"{window_width}x{window_height}")
-    center_window(result_window, window_width, window_height)
+    # Configure grid layout for resizing
+    result_window.rowconfigure(2, weight=1)  # Text widget row expands
+    result_window.columnconfigure(0, weight=1)
 
     # Title label (source and closest METAR timestamp)
     try:
