@@ -251,39 +251,49 @@ def show_metar_data(source_name, metar_dict):
         )
         subtitle_label.grid(row=1, column=0, sticky="ew", padx=10, pady=2)
 
-    # Text widget with scrollbar in a frame
-    text_frame = tk.Frame(result_window, bg="#2e2e2e")
-    text_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
+    # Create a frame for the Listbox and scrollbar
+    listbox_frame = tk.Frame(result_window, bg="#2e2e2e")
+    listbox_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
 
-    text_widget = tk.Text(
-        text_frame,
-        wrap="none",
+    # Create the Listbox
+    metar_listbox = tk.Listbox(
+        listbox_frame,
         font=("Consolas", 12),
         bg="#222222",
         fg="#d3d3d3",
-        insertbackground="#d3d3d3",  # Cursor color
-        highlightbackground="#3c3c3c",  # Border color
+        selectbackground="#444444",
+        selectforeground="#ffffff",
+        activestyle="none",
+        highlightbackground="#3c3c3c",
         highlightcolor="#3c3c3c",
-        relief="flat",  # Remove border styles
-        height=1
+        width=120
     )
-    text_widget.pack(side="left", fill="both", expand=True)
+    metar_listbox.pack(side="left", fill="both", expand=True)
 
-    # Populate the text widget
-    if isinstance(result, list):  # If multiple METARs are returned
-        text_widget.config(height=min(len(result), 20))
-        content = "\n".join(result)
-    else:  # Single METAR returned
-        content = result
+    sorted_metars = sorted(metar_dict.items(), key=lambda item: item[0])  # Sort by timestamp
 
-    text_widget.insert("1.0", content)
-    text_widget.configure(state="disabled")
+    # Populate output window
+    if isinstance(result, str):
+        metar_listbox.insert("end", result)
+        metar_listbox.selection_set(0)
+    else:  # Show all results if a match could not be found
+        for metar in sorted_metars:
+            metar_listbox.insert("end", metar[1])
+
+    def get_selected_content():
+        """Get the selected METAR content from the Listbox."""
+        if metar_listbox.size() == 1:
+            return metar_listbox.get(0)
+        selected_indices = metar_listbox.curselection()
+        if not selected_indices:
+            return None
+        return "\n".join(metar_listbox.get(i) for i in selected_indices)
 
     # Print Button at the bottom
     print_button = tk.Button(
         result_window,
         text="Print METAR Data",
-        command=lambda: print_metar_data(content, printer_name),
+        command=lambda: print_metar_data(get_selected_content(), printer_name),
         bg="#5A5A5A",
         fg="#FFFFFF",
         activebackground="#3A3A3A",
@@ -291,9 +301,6 @@ def show_metar_data(source_name, metar_dict):
         font=("Helvetica", 10),
     )
     print_button.grid(row=3, column=0, padx=10, pady=5)
-
-    print("Text widget height:", text_widget.cget("height"))
-    print("Text widget geometry:", text_widget.winfo_geometry())
 
     # Center the window
     result_window.update_idletasks()  # Force geometry update
@@ -362,7 +369,7 @@ def find_best_metar(metar_dict):
         ValueError: If no METAR data is available.
     """
     simulator_time = get_simulator_datetime()  # Fetch the simulator's current datetime
-    simulator_time = datetime(2025, 1, 15, 1, 0, tzinfo=timezone.utc)
+    #simulator_time = datetime(2025, 1, 15, 1, 0, tzinfo=timezone.utc)
     print(f"Simulator Time: {simulator_time}")
 
     if not metar_dict:
