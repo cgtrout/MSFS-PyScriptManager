@@ -495,39 +495,28 @@ def on_close():
 
 def get_simulator_datetime() -> datetime:
     """
-    Fetch the current simulator date and time dynamically (in ZULU/UTC format).
-    Ensures the result is timezone-aware and valid. If unavailable, defaults to the current system date/time.
+    Fetch the current simulator date and time dynamically using ABSOLUTE_TIME (in ZULU/UTC format).
+    Ensures the result is timezone-aware and valid. Defaults to the current system date/time if unavailable.
     """
     global sim_connected
     try:
         if not sim_connected:
             raise ValueError("SimConnect is not connected.")
 
-        # Fetch simulator date and time variables directly
-        zulu_year = aq.get("ZULU_YEAR")
-        zulu_month = aq.get("ZULU_MONTH_OF_YEAR")
-        zulu_day = aq.get("ZULU_DAY_OF_MONTH")
-        zulu_time_seconds = aq.get("ZULU_TIME")
+        # Fetch ABSOLUTE_TIME from the simulator
+        absolute_time = aq.get("ABSOLUTE_TIME")
+        if absolute_time is None:
+            raise ValueError("ABSOLUTE_TIME is unavailable.")
 
-        # Ensure all values are retrieved and valid
-        if None in (zulu_year, zulu_month, zulu_day, zulu_time_seconds):
-            raise ValueError("Simulator date/time variables are unavailable or invalid.")
+        # Base datetime is 1 January, year 1 (Zulu/UTC)
+        base_datetime = datetime(1, 1, 1, tzinfo=timezone.utc)
 
-        # Convert variables to proper types
-        zulu_year = int(zulu_year)
-        zulu_month = int(zulu_month)
-        zulu_day = int(zulu_day)
-        zulu_time_seconds = float(zulu_time_seconds)
-
-        # Convert ZULU_TIME (seconds since midnight) into hours, minutes, seconds
-        hours, remainder = divmod(int(zulu_time_seconds), 3600)
-        minutes, seconds = divmod(remainder, 60)
-
-        # Construct and return the datetime object with UTC timezone
-        return datetime(zulu_year, zulu_month, zulu_day, hours, minutes, seconds, tzinfo=timezone.utc)
+        # Compute the simulator's current datetime by adding ABSOLUTE_TIME in seconds
+        return base_datetime + timedelta(seconds=float(absolute_time))
 
     except Exception as e:
         print(f"get_simulator_datetime: Failed to retrieve simulator datetime: {e}")
+
         # Fallback to current system date and time in UTC
         return datetime.now(timezone.utc)
 
