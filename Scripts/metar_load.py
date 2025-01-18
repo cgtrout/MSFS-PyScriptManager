@@ -213,13 +213,10 @@ def show_metar_data(source_name, metar_dict):
     result_window.rowconfigure(2, weight=1)  # Text widget row expands
     result_window.columnconfigure(0, weight=1)
 
-    # Title label (source and closest METAR timestamp)
+    # Title label
     try:
         simulator_time = get_simulator_datetime()
-        if show_best_only:
-            title_text = f"METAR Data (Source: {source_name})\nClosest METAR to Simulator Time: {simulator_time}"
-        else:
-            title_text = f"METAR Data (Source: {source_name})"
+        title_text = f"METAR Data (Source: {source_name})\nClosest METAR to Simulator Time: {simulator_time}"
     except Exception as e:
         title_text = f"METAR Data (Source: {source_name})\nError fetching simulator time: {e}"
 
@@ -231,12 +228,36 @@ def show_metar_data(source_name, metar_dict):
         fg="#d3d3d3",
         justify="left",
     )
-    title_label.pack(pady=(5, 5))  # Padding for the title
+    title_label.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
 
-    # Text widget
+    # Subtitle label for multi-METAR indication
+    try:
+        result = find_best_metar(metar_dict)
+        if isinstance(result, list):  # Multiple METARs are being displayed
+            subtitle_text = "WARNING: Could not match METAR - showing all."
+        else:  # Single METAR returned
+            subtitle_text = None
+    except ValueError as e:
+        subtitle_text = None
+
+    if subtitle_text:
+        subtitle_label = tk.Label(
+            result_window,
+            text=subtitle_text,
+            font=("Arial", 12, "bold"),
+            bg="#2e2e2e",
+            fg="#FFaaaa",
+            justify="left",
+        )
+        subtitle_label.grid(row=1, column=0, sticky="ew", padx=10, pady=2)
+
+    # Text widget with scrollbar in a frame
+    text_frame = tk.Frame(result_window, bg="#2e2e2e")
+    text_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
+
     text_widget = tk.Text(
-        result_window,
-        wrap="none",  # No word wrapping
+        text_frame,
+        wrap="none",
         font=("Consolas", 12),
         bg="#222222",
         fg="#d3d3d3",
@@ -246,24 +267,19 @@ def show_metar_data(source_name, metar_dict):
         relief="flat",  # Remove border styles
         height=1
     )
-    text_widget.pack(padx=10, pady=(0, 10))
+    text_widget.pack(side="left", fill="both", expand=True)
 
     # Populate the text widget
-    if show_best_only:
-        try:
-            best_metar = find_best_metar(metar_dict)
-            content = best_metar  # Only show the closest METAR
-        except ValueError as e:
-            content = f"Error finding the closest METAR: {e}"
-    else:
-        content = "\n".join(
-            f"{key.strftime('%Y-%m-%d %H:%M:%S')} - {value}" for key, value in metar_dict.items()
-        )
+    if isinstance(result, list):  # If multiple METARs are returned
+        text_widget.config(height=min(len(result), 20))
+        content = "\n".join(result)
+    else:  # Single METAR returned
+        content = result
 
     text_widget.insert("1.0", content)
     text_widget.configure(state="disabled")
 
-    # Print Button
+    # Print Button at the bottom
     print_button = tk.Button(
         result_window,
         text="Print METAR Data",
@@ -274,7 +290,16 @@ def show_metar_data(source_name, metar_dict):
         activeforeground="#FFFFFF",
         font=("Helvetica", 10),
     )
-    print_button.pack(pady=(5, 5))
+    print_button.grid(row=3, column=0, padx=10, pady=5)
+
+    print("Text widget height:", text_widget.cget("height"))
+    print("Text widget geometry:", text_widget.winfo_geometry())
+
+    # Center the window
+    result_window.update_idletasks()  # Force geometry update
+    window_width = result_window.winfo_width()
+    window_height = result_window.winfo_height()
+    center_window(result_window, window_width, window_height)
 
 def gui_fetch_metar():
     """Fetch METAR data with a non-blocking popup loading window."""
