@@ -49,27 +49,15 @@ class NoaaSource(MetarSource):
 
     def fetch(self, airport_code):
         url = "https://aviationweather.gov/api/data/metar"
-        headers = {
-            "Accept": "application/json",
+        params = {
+            "ids": airport_code,
+            "format": "json",
+            "hours": 24,  # Fetch all 24 hours in one request
         }
-
-        all_metars = []
-        # Fetch data
-        for hours in range(1, 25, 1):  # Fetch in hourly increments
-            params = {
-                "ids": airport_code,
-                "format": "json",
-                "hours": hours,
-            }
-
-            response = requests.get(url, params=params, headers=headers, timeout=10)
-            response.raise_for_status()
-            raw_data = response.json()
-
-            if raw_data:
-                all_metars.extend(raw_data)
-
-        return all_metars
+        headers = {"Accept": "application/json"}
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        response.raise_for_status()
+        return response.json()
 
     def parse(self, raw_data):
         metar_lines = []
