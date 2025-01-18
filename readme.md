@@ -1,4 +1,4 @@
-**MSFS-PyScriptManager** is a tool designed for running custom Python scripts tailored for Microsoft Flight Simulator (MSFS). This tool leverages the [WinPython](https://github.com/winpython) portable Python environment for ease of installation.  Simply download the release and extract it - no further installation required to run scripts!  
+**MSFS-PyScriptManager** is a tool designed for running custom Python scripts tailored for Microsoft Flight Simulator (MSFS). This tool leverages the [WinPython](https://github.com/winpython) portable Python environment for ease of installation.  Simply download the release and extract it - no further installation required to run scripts!
 
 **Comes with several useful scripts, such as:**
 - [virtual_pos_printer.py](#virtual-pos-printer-for-fenix-a32x---virtual_pos_printerpy)- that can print popup notes on the screen from the Fenix A32x printer.
@@ -25,25 +25,25 @@
 ![image](https://github.com/user-attachments/assets/b8e12084-afad-4cd8-9b4c-2ea9cbb59ff1)
 
 # Included Scripts
-## **Virtual Pos Printer for Fenix A32x - virtual_pos_printer.py:** 
+## **Virtual Pos Printer for Fenix A32x - virtual_pos_printer.py:**
    - Allows print jobs from the Fenix A32x to show as popup 'notes' on the screen.
    - [Virtual Printer Guide](Docs/virtual_pos_printer.md) - please read this guide for further instructions on how to use.
-     
+
    ![image](https://github.com/user-attachments/assets/5b0aac05-f1da-417e-a97b-be8261a4f1ba)
-  
-## Custom Status Bar - custom_status_bar.py: 
-  - Shows a customizable draggable status bar that shows the real world zulu time and sim zulu time, along with a countdown timer (that can also fetch times from Simbrief). 
+
+## Custom Status Bar - custom_status_bar.py:
+  - Shows a customizable draggable status bar that shows the real world zulu time and sim zulu time, along with a countdown timer (that can also fetch times from Simbrief).
   - [Custom Status Bar Guide](Docs/custom_status_bar.md) - please read the guide for more information on how to use this script.
 
    ![image](https://github.com/user-attachments/assets/05786688-b542-4050-95eb-1e85bf8d673d)
 
 ## Other Scripts
 - **fbw_a380_checklist.py** Allows keyboard control of built in A380 checklist.  This script requires a [Mobiflight "WASM" module installation](https://github.com/MobiFlight/MobiFlight-Connector/wiki/Verifying-the-WASM-module-installation-and-locating-the-MSFS2020-community-folder).
-- **fenix_disable_efb.py:** Example script that shows how LVARS can be automated.  This script will hide the EFBs on the Fenix A32x. (Requires Mobiflight "WASM" module installation).
-- **fenix_radio.py:** Shows a draggable radio panel that shows RMP1 active/standby channels. (Requires Mobiflight "WASM" module installation).
+- **fenix_disable_efb.py:** Hides the EFBs on the Fenix A32x when run. (Requires Mobiflight "WASM" module installation).
+- **fenix_radio.py:** Shows a draggable radio panel that shows A32x RMP1 active/standby channels. (Requires Mobiflight "WASM" module installation).
+- **metar_load.py:** Load a historical metar based on Simulator time - can print to virtual_pos_printer.
 - **plot_altitude.py:** Shows a draggable graph panel of altitude - can easily be changed to other SimConnect variables.
-- **plot_joystick.py:** Show visualization of joystick and trim values state.
-- **metar_load.py:** Load metars based on Simulator time
+- **plot_joystick.py:** Show visualization of joystick and trim values state. Will either show heli or plane trims dynamically.
 
 # Script Groups
 - "Script Groups" can be used to automate loading groups of scripts at once.
