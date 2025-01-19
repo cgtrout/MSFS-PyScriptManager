@@ -964,10 +964,15 @@ class SimBriefFunctions:
 
             # Fetch selected SimBrief time
             selected_time = simbrief_settings.selected_time_option
-            if selected_time == SimBriefTimeOption.ESTIMATED_IN:
-                future_time = SimBriefFunctions.get_simbrief_ofp_arrival_datetime(simbrief_json)
-            elif selected_time == SimBriefTimeOption.ESTIMATED_TOD:
-                future_time = SimBriefFunctions.get_simbrief_ofp_tod_datetime(simbrief_json)
+
+            # Use mapping to fetch the corresponding function
+            function_to_call = SIMBRIEF_TIME_OPTION_FUNCTIONS.get(selected_time)
+
+            if function_to_call:
+                # Call the selected function
+                future_time = function_to_call(simbrief_json)
+                if not future_time:
+                    return False  # Handle the case where the function returns no time
             else:
                 return False
 
@@ -1081,6 +1086,12 @@ class SimBriefFunctions:
         print_info("No user-provided gate-out time. Using SimBrief default gate-out time.")
         countdown_state.gate_out_time = None
         return timedelta(0)
+
+# MAP SimBriefTimeOption to corresponding functions
+SIMBRIEF_TIME_OPTION_FUNCTIONS = {
+    SimBriefTimeOption.ESTIMATED_IN: SimBriefFunctions.get_simbrief_ofp_arrival_datetime,
+    SimBriefTimeOption.ESTIMATED_TOD: SimBriefFunctions.get_simbrief_ofp_tod_datetime,
+}
 
 # --- Drag functionality ---
 is_moving = False
