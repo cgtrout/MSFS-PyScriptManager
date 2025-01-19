@@ -136,7 +136,7 @@ class SimBriefTimeOption(Enum):
 class SimBriefSettings:
     username: str = ""
     use_adjusted_time: bool = False
-    selected_time_option: SimBriefTimeOption = SimBriefTimeOption.ESTIMATED_IN
+    selected_time_option: Any = SimBriefTimeOption.ESTIMATED_IN
     allow_negative_timer: bool = False
     auto_update_enabled: bool = False
 
@@ -144,7 +144,11 @@ class SimBriefSettings:
         return {
             "username": self.username,
             "use_adjusted_time": self.use_adjusted_time,
-            "selected_time_option": self.selected_time_option.value,
+            "selected_time_option": (
+                self.selected_time_option.value
+                if isinstance(self.selected_time_option, SimBriefTimeOption)
+                else SimBriefTimeOption.ESTIMATED_IN.value
+            ),
             "allow_negative_timer": self.allow_negative_timer,
             "auto_update_enabled": self.auto_update_enabled,
         }
@@ -974,6 +978,7 @@ class SimBriefFunctions:
                 if not future_time:
                     return False  # Handle the case where the function returns no time
             else:
+                print_error(f"No function mapped for selected_time_option: {selected_time}")
                 return False
 
             if not future_time:
