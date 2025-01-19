@@ -727,8 +727,8 @@ def get_dynamic_value(function_name):
                 return func()
         return ""  # Return an empty string if the function doesn't exist
     except Exception as e:
+        print_debug(f"get_dynamic_value exception [{type(e).__name__ }]: {e}")
         return "Err"
-
 class WidgetPool:
     """Manages widgets and their order"""
     def __init__(self):
