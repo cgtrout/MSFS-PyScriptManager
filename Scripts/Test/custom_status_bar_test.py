@@ -24,7 +24,8 @@ def generate_mock_simbrief_data():
     """
     Dynamically generate mock SimBrief data with a custom offset applied directly to the gate-out time.
     """
-    custom_offset = -24 * 60 * 60  # Custom offset: 24 hours ago
+    #custom_offset = -24 * 60 * 60  # Custom offset: 24 hours ago
+    custom_offset = 0
     now_simulated = fixed_test_start_time
 
     # Calculate the times

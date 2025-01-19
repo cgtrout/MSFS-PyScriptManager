@@ -1082,35 +1082,6 @@ class SimBriefFunctions:
         countdown_state.gate_out_time = None
         return timedelta(0)
 
-    @staticmethod
-    def set_countdown_timer_from_simbrief(
-        simbrief_json, selected_time_option: SimBriefTimeOption, simbrief_settings: SimBriefSettings, gate_time_offset: timedelta
-    ) -> Optional[datetime]:
-        """
-        Set the countdown timer based on SimBrief data, selected time option, and adjustments.
-        Returns the adjusted countdown time or None on failure.
-        """
-        if selected_time_option == SimBriefTimeOption.ESTIMATED_IN:
-            simbrief_time = SimBriefFunctions.get_simbrief_ofp_arrival_datetime(simbrief_json)
-        elif selected_time_option == SimBriefTimeOption.ESTIMATED_TOD:
-            simbrief_time = SimBriefFunctions.get_simbrief_ofp_tod_datetime(simbrief_json)
-        else:
-            raise ValueError("Invalid SimBrief time option.")
-
-        if simbrief_time:
-            print_debug(f"Original SimBrief time: {simbrief_time}")
-
-            if simbrief_settings.use_adjusted_time:
-                simulator_to_real_world_offset = get_simulator_time_offset()
-                simbrief_time += simulator_to_real_world_offset
-                print_debug(f"Adjusted SimBrief time: {simbrief_time}")
-
-            adjusted_simbrief_time = simbrief_time + gate_time_offset
-            print_debug(f"Final SimBrief countdown time: {adjusted_simbrief_time}")
-            return adjusted_simbrief_time
-
-        return None
-
 # --- Drag functionality ---
 is_moving = False
 
