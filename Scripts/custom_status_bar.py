@@ -1240,6 +1240,14 @@ def save_settings(settings, simbrief_settings):
     except Exception as e:
         print_error(f"Error saving settings: {e}")
 
+def is_debugging():
+    """Check if the script is running in a debugging environment."""
+    try:
+        if sys.monitoring.get_tool(sys.monitoring.DEBUGGER_ID) is not None:
+            return True
+    except Exception:
+        return False
+
 def check_user_functions():
     global USER_UPDATE_FUNCTION_DEFINED, USER_SLOW_UPDATE_FUNCTION_DEFINED
 
@@ -1336,8 +1344,11 @@ def main():
             """Reset the faulthandler timer to prevent a dump."""
             faulthandler.dump_traceback_later(30, file=traceback_log_file, exit=True)
             root.after(10000, reset_traceback_timer)
-
-        reset_traceback_timer()
+        if not is_debugging():
+            print_info("Traceback fault timer started")
+            reset_traceback_timer()
+        else:
+            print_info("Traceback fault timer NOT started (debugging detected)")
         #### FAULT DETECTION ########### - END
 
         # Uncomment to test out traceback timer
