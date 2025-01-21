@@ -18,8 +18,9 @@ from dataclasses import dataclass, field
 
 import threading
 import sys
-
+import traceback
 from typing import Any, Optional
+
 
 try:
     # Import all color print functions
@@ -80,6 +81,22 @@ TEMPLATES = {
 # Further SimConnect variables can be found at https://docs.flightsimulator.com/html/Programming_Tools/SimVars/Simulation_Variables.htm
 def get_altitude():
     return get_formatted_value("PLANE_ALTITUDE", "{:.0f} ft")
+
+## USER FUNCTIONS ##
+# The following functions are hooks for user-defined behaviors and will be called by the
+# custom_status_bar script.
+
+# Runs once per display update (approx. 30 times per second).
+def user_update():
+    pass
+
+# Runs approx every 500ms for less frequent, CPU-intensive tasks.
+def user_slow_update():
+    pass
+
+# Runs once during startup for initialization tasks.
+def user_init():
+    pass
 """
 # --- Configurable Variables  ---
 ALPHA_TRANSPARENCY_LEVEL = 0.95  # Set transparency (0.0 = fully transparent, 1.0 = fully opaque)
@@ -89,6 +106,8 @@ FONT = ("Helvetica", 16)
 UPDATE_INTERVAL = 33  # in milliseconds
 
 SIMBRIEF_AUTO_UPDATE_INTERVAL_MS = 5 * 60 * 1000  # 5 minutes in milliseconds
+USER_UPDATE_FUNCTION_DEFINED = False
+USER_SLOW_UPDATE_FUNCTION_DEFINED = False
 
 PADDING_X = 20  # Horizontal padding for each label
 PADDING_Y = 10  # Vertical padding for the window
@@ -760,10 +779,20 @@ class WidgetPool:
 
 widget_pool = WidgetPool()
 
+# Frame counters used for slow update frequency
+UPDATE_DISPLAY_FRAME_COUNT = 0
+SLOW_UPDATE_INTERVAL = 15 # Approx every 500ms
+
 def update_display(template_handler:TemplateHandler):
     """Render the parsed blocks onto the display frame"""
+    # Call user update function
+    call_user_functions()
+
+    # Update frame counters - used for determining 'slow' updates
+    update_frame_counter()
 
     try:
+        # Do not update if drag move is occuring
         if is_moving:
             root.after(UPDATE_INTERVAL, lambda: update_display(template_handler))
             return
@@ -870,6 +899,29 @@ def process_block(block, template_handler):
                 widget.pack(side=tk.LEFT, padx=5, pady=5)
                 return True # Full refresh
         return False
+
+def call_user_functions():
+    """Invoke user-defined update functions with exception handling."""
+    if USER_UPDATE_FUNCTION_DEFINED:
+        try:
+            user_update()
+        except Exception as e:
+            print_error(f"Error in user_update [{type(e).__name__}]: {e}")
+
+    if USER_SLOW_UPDATE_FUNCTION_DEFINED:
+        try:
+            # Only call this every UPDATE_DISPLAY_FRAME_COUNT cycles
+            if UPDATE_DISPLAY_FRAME_COUNT == 0:
+                user_slow_update()
+        except Exception as e:
+            print_error(f"Error in user_slow_update [{type(e).__name__}]: {e}")
+
+def update_frame_counter():
+    """Increment and reset the frame counter based on the slow update interval."""
+    global UPDATE_DISPLAY_FRAME_COUNT
+    UPDATE_DISPLAY_FRAME_COUNT += 1
+    if UPDATE_DISPLAY_FRAME_COUNT == SLOW_UPDATE_INTERVAL:
+        UPDATE_DISPLAY_FRAME_COUNT = 0
 
 # --- Simbrief functionality ---
 class SimBriefFunctions:
@@ -1188,6 +1240,33 @@ def save_settings(settings, simbrief_settings):
     except Exception as e:
         print_error(f"Error saving settings: {e}")
 
+def check_user_functions():
+    global USER_UPDATE_FUNCTION_DEFINED, USER_SLOW_UPDATE_FUNCTION_DEFINED
+
+    try:
+        user_init()
+    except NameError:
+        print_warning("No user_init function defined in template file")
+    except Exception as e:
+        print_error(f"Error calling user_init [{type(e).__name__}]: {e}")
+        traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
+
+    # Check for user update function
+    function_name = "user_update"
+    if function_name in globals() and callable(globals()[function_name]):
+        USER_UPDATE_FUNCTION_DEFINED = True
+    else:
+        USER_UPDATE_FUNCTION_DEFINED = False
+        print_warning("No user_update function defined in template file")
+
+    function_name = "user_slow_update"
+    if function_name in globals() and callable(globals()[function_name]):
+        USER_SLOW_UPDATE_FUNCTION_DEFINED = True
+    else:
+        USER_SLOW_UPDATE_FUNCTION_DEFINED = False
+        print_warning("No user_slow_update function defined in template file")
+
 def main():
     global root, display_frame, simbrief_settings
 
@@ -1242,6 +1321,9 @@ def main():
     try:
         # Initialize TemplateHandler
         template_handler = TemplateHandler()
+
+        # Check if user functions are defined
+        check_user_functions()
 
         # Render the initial display
         update_display(template_handler)
