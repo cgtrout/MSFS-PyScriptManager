@@ -701,10 +701,8 @@ class TemplateHandler:
                 if not k.startswith("__") and not isinstance(v, type(importlib))  # Exclude built-ins and modules
             }
 
-            # Debug: Log the filtered globals being injected
-            print_debug("Filtered Globals to Inject:")
-            for name, obj in relevant_globals.items():
-                print_color(f"[green(]{name}:[)] {type(obj).__name__}")
+            # Debug: Log the filtered globals being injected, grouping functions properly
+            self._print_sorted_globals(relevant_globals)
 
             # Inject filtered globals into the template module
             templates_module.__dict__.update(relevant_globals)
@@ -718,6 +716,39 @@ class TemplateHandler:
 
         except Exception as e: # pylint: disable=broad-except
             print_error(f"Error loading template functions: {e}")
+
+    def _print_sorted_globals(self, globals_dict):
+        """Sorts and prints the provided globals dictionary in two columns with colors."""
+        def sort_by_type_and_name(item):
+            obj_type = type(item[1]).__name__ if item[1] is not None else "NoneType"
+            priority = {"function": 0, "type": 1}.get(obj_type, 2)
+            return priority, item[0]
+
+        sorted_globals = sorted(globals_dict.items(), key=sort_by_type_and_name)
+
+        max_name_length = max(len(name) for name, _ in sorted_globals) + 1
+        max_type_length = min(8, max(len(type(obj).__name__) for _, obj in sorted_globals))
+
+        mid_index = (len(sorted_globals) + 1) // 2
+        left_column = sorted_globals[:mid_index]
+        right_column = sorted_globals[mid_index:]
+
+        print_debug("Filtered Globals to Inject:")
+
+        # Helper to format a single column
+        def format_column(name, obj):
+            obj_type = type(obj).__name__ if obj is not None else "NoneType"
+            return f"[green(]{name.ljust(max_name_length)}:[)] {obj_type.ljust(max_type_length)}"
+
+        # Loop and print each row
+        for i in range(max(len(left_column), len(right_column))):
+            left = left_column[i] if i < len(left_column) else ("", None)
+            right = right_column[i] if i < len(right_column) else ("", None)
+
+            left_col = format_column(*left)
+            right_col = format_column(*right)
+
+            print_color(f" {left_col} {right_col}")
 
     def get_current_template(self) -> str:
         """Return the content of the currently selected template."""
