@@ -511,7 +511,8 @@ def compute_countdown_timer(
     target_time: datetime,
     last_countdown_time: Optional[float],
     is_negative: bool,
-    sim_rate: float
+    sim_rate: float,
+    negative_timer_threshold: timedelta = timedelta(hours=-2),
 ) -> tuple[str, float, bool]:
     """
     Compute the countdown timer string and update its state.
@@ -537,8 +538,9 @@ def compute_countdown_timer(
     if target_time_today < current_sim_time:
         #print_debug("Target time is earlier than current simulator time.")
         if not is_negative and (last_countdown_time is None or last_countdown_time > 5):
-            #print_debug("Midnight rollover detected. Adjusting target time to next day.")
-            target_time_today += timedelta(days=1)
+            if target_time_today - current_sim_time < negative_timer_threshold:
+                #print_debug("Midnight rollover detected. Adjusting target time to next day.")
+                target_time_today += timedelta(days=1)
 
     # Calculate remaining time
     remaining_time = target_time_today - current_sim_time
