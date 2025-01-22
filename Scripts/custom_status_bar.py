@@ -614,7 +614,7 @@ def set_future_time_internal(future_time_input, current_sim_time):
 
         if isinstance(future_time_input, datetime):
             # Validate that the future time is after the current simulator time
-            if future_time_input <= current_sim_time:
+            if future_time_input <= current_sim_time and not simbrief_settings.allow_negative_timer:
                 raise ValueError("Future time must be later than the current simulator time.")
 
             countdown_state.reset()
