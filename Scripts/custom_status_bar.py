@@ -493,9 +493,11 @@ def get_time_to_future(adjusted_for_sim_rate: bool) -> str:
             raise ValueError("Target time or simulator time is offset-naive. "
                              "Ensure all times are offset-aware.")
 
-        # Fetch sim rate
-        sim_rate_str = get_sim_rate() if adjusted_for_sim_rate else "1.0"
-        sim_rate = float(sim_rate_str) if sim_rate_str.replace('.', '', 1).isdigit() else 1.0
+        # Fetch sim rate if we want to adjust for it, otherwise default to 1.0 (normal time progression)
+        sim_rate = 1.0
+        if adjusted_for_sim_rate:
+            sim_rate_str = get_sim_rate()
+            sim_rate = float(sim_rate_str) if sim_rate_str.replace('.', '', 1).isdigit() else 1.0
 
         # Compute the count-down time
         countdown_str, new_last_time, new_is_neg = compute_countdown_timer(
