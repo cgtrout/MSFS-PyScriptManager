@@ -1607,7 +1607,18 @@ class CountdownTimerDialog(tk.Toplevel):
             time_selection_frame, text="Select SimBrief Time:", bg=self.bg_color, fg=self.fg_color, font=small_font
         ).grid(row=0, column=0, sticky="w", padx=5, pady=2)
 
-        self.selected_time_option = tk.StringVar(value=self.simbrief_settings.selected_time_option.value)
+        if isinstance(self.simbrief_settings.selected_time_option, str):
+            # If it's already a string, assign it directly
+            self.selected_time_option = tk.StringVar(value=self.simbrief_settings.selected_time_option)
+        elif isinstance(self.simbrief_settings.selected_time_option, Enum):
+            # If it's an Enum, use its value
+            self.selected_time_option = tk.StringVar(value=self.simbrief_settings.selected_time_option.value)
+        else:
+            # Handle unexpected types
+            print_warning("Invalid type for selected_time_option")
+            return  # Optional: exit the function if the type is invalid
+
+        # Create the OptionMenu regardless of input type
         self.time_dropdown = tk.OptionMenu(
             time_selection_frame,
             self.selected_time_option,
@@ -1731,7 +1742,12 @@ class CountdownTimerDialog(tk.Toplevel):
         """Update SimBrief settings from dialog inputs."""
         simbrief_settings.username = self.simbrief_entry.get().strip()
         simbrief_settings.use_adjusted_time = self.simbrief_checkbox_var.get()
-        simbrief_settings.selected_time_option = SimBriefTimeOption(self.selected_time_option.get())
+
+        # Validate selected_time_option - ignore custom values
+        selected_time = self.selected_time_option.get()
+        if selected_time in [option.value for option in SimBriefTimeOption]:
+            simbrief_settings.selected_time_option = SimBriefTimeOption(selected_time)
+
         simbrief_settings.allow_negative_timer = self.negative_timer_checkbox_var.get()
         simbrief_settings.auto_update_enabled = self.auto_update_var.get()
 
