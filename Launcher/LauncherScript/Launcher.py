@@ -206,20 +206,23 @@ class TabManager:
             print(f"[ERROR] Drag release failed: {e}")
 
     def swap_tabs(self, index1, index2):
-        """Swap two tabs in the notebook."""
+        """Swap two tabs in the notebook and update their internal state."""
         if index1 == index2:
             print("[DEBUG] Swap not needed: Dragged tab is already in the correct position.")
             return
 
-        tab1_frame = self.notebook.tabs()[index1]
-        tab2_frame = self.notebook.tabs()[index2]
+        # Get all tabs as a list of frames
+        tabs_list = self.notebook.tabs()
+        tab1_frame = tabs_list[index1]
+        tab2_frame = tabs_list[index2]
 
         print(f"[DEBUG] Swapping tab frames: {tab1_frame} <-> {tab2_frame}")
 
+        # Swap the positions in the notebook widget
         self.notebook.insert(index2, tab1_frame)
         self.notebook.insert(index1, tab2_frame)
 
-        print("[DEBUG] Tabs swapped successfully.")
+        print(f"[DEBUG] Tabs swapped successfully. Updated tabs: {self.tabs}")
 
     def generate_tab_id(self):
         """Generate a unique tab ID."""
@@ -244,6 +247,7 @@ class TabManager:
         """Close a tab and clean up resources."""
         def _close_tab():
             logging.debug("close_tab inner")
+            print(f"[DEBUG] Type of self.tabs: {type(self.tabs)}")
             tab = self.tabs.pop(tab_id, None)
             if not tab:
                 print(f"[WARNING] Tab with ID {tab_id} not found.")
@@ -262,15 +266,25 @@ class TabManager:
         print("[INFO] All tabs closed.")
 
     def on_tab_right_click(self, event):
-        """Handle right-click to close a tab."""
         def _close_tab_on_click():
             try:
                 clicked_tab_index = self.notebook.index(f"@{event.x},{event.y}")
-                self.close_tab_by_index(clicked_tab_index)
+
+                # Get the actual frame name from the Notebook’s tab list
+                frame_name = self.notebook.tabs()[clicked_tab_index]
+
+                # Convert that string name to the actual frame widget
+                frame = self.notebook.nametowidget(frame_name)
+
+                # Now find which tab in self.tabs owns that frame
+                for tab_id, tab in list(self.tabs.items()):
+                    if tab.frame == frame:
+                        self.close_tab(tab_id)
+                        return
             except TclError:
                 print("[ERROR] Right-click did not occur on a valid tab. Ignoring.")
 
-        self.scheduler(0, _close_tab_on_click)  # Schedule operation on the main thread
+        self.scheduler(0, _close_tab_on_click)
 
     def close_tab_by_index(self, index):
         """Close a tab by its notebook index."""
@@ -365,6 +379,7 @@ class ScriptTab(Tab):
 
     def close(self):
         """Clean up resources associated with the tab."""
+        print(f"ScriptTab: close tabid={self.tabid}")
         self.process_tracker.terminate_process(self.tab_id)
         super().close()
 
