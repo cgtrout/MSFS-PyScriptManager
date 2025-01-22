@@ -25,71 +25,118 @@ class AnsiParser:
         """
         segments = []  # Parsed text segments
         buffer = self.partial_sequence + text  # Combine retained partial sequence with new text
-        self.partial_sequence = ""  # Clear partial sequence buffer for now
+        self.partial_sequence = ""  # Clear the buffer for now
 
-        #print(f"parse_ansi_colors text={repr(text)}")
-        #print(f"[DEBUG] Starting parse with buffer: {repr(buffer)}")
-        #print(f"[DEBUG] Initial style: {self.current_style}")
+        while buffer:
+            escape_start = buffer.find('\x1b')
 
-        i = 0  # Current parsing index
-        while i < len(buffer):
-            # Detect the start of an ANSI escape sequence
-            if buffer[i:i + 2] == '\x1b[':
-                # Add plain text before the escape sequence
-                if i > 0:
-                    plain_text = buffer[:i]
-                    segments.append((plain_text, self.current_style.copy()))
-                    #print(f"[DEBUG] Added plain text: {repr(plain_text)}, Style: {self.current_style}")
-                    buffer = buffer[i:]  # Trim processed part
-                    i = 0  # Reset index for the new buffer
-
-                # Parse the ANSI escape sequence
-                end_idx = buffer.find('m', i)
-                if end_idx == -1:
-                    # Incomplete sequence; retain it for the next chunk
-                    self.partial_sequence = buffer
-                    #print(f"[DEBUG] Retaining incomplete sequence: {repr(buffer)}")
-                    return segments
-
-                # Extract and process the full escape sequence
-                sequence = buffer[2:end_idx].split(';')
-                buffer = buffer[end_idx + 1:]  # Remove the processed sequence
-                i = 0  # Reset index for the new buffer
-                #print(f"[DEBUG] Detected ANSI sequence: {sequence}")
-
-                # Update the current style based on the sequence
-                for code in sequence:
-                    if code == '0':  # Reset
-                        self.current_style = {"color": None, "bold": False}
-                        #print(f"[DEBUG] Style reset: {self.current_style}")
-                    elif code == '1':  # Bold
-                        self.current_style["bold"] = True
-                        #print(f"[DEBUG] Bold enabled: {self.current_style}")
-                    elif code in self.ANSI_COLOR_MAP:  # Color
-                        self.current_style["color"] = self.ANSI_COLOR_MAP[code]
-                        #print(f"[DEBUG] Color set: {self.current_style}")
-
+            if escape_start == -1:
+                # No escape sequences found, treat the entire buffer as plain text
+                segments.append((buffer, self.current_style.copy()))
+                buffer = ""
             else:
-                # Process remaining plain text
-                escape_start = buffer.find('\x1b[')
-                if escape_start == -1:
-                    # No more escape sequences; process all remaining text
-                    segments.append((buffer, self.current_style.copy()))
-                    #print(f"[DEBUG] Added remaining plain text: {repr(buffer)}, Style: {self.current_style}")
-                    buffer = ""
-                    break
-                elif escape_start > 0:
-                    # Add plain text up to the next escape sequence
+                # Process text before the escape sequence
+                if escape_start > 0:
                     plain_text = buffer[:escape_start]
                     segments.append((plain_text, self.current_style.copy()))
-                    #print(f"[DEBUG] Added plain text before escape: {repr(plain_text)}, Style: {self.current_style}")
                     buffer = buffer[escape_start:]
-                    i = 0  # Reset index for the new buffer
 
-        # Add any remaining buffer text
-        if buffer:
-            segments.append((buffer, self.current_style.copy()))
-            #print(f"[DEBUG] Added final buffer text: {repr(buffer)}, Style: {self.current_style}")
+                # Check for the start of an escape sequence
+                if buffer.startswith('\x1b['):
+                    # Look for the end of the ANSI sequence
+                    escape_end = buffer.find('m', 2)  # Start looking after '\x1b['
+                    if escape_end == -1:
+                        # Incomplete sequence, retain it for the next call
+                        self.partial_sequence = buffer
+                        buffer = ""
+                    else:
+                        # Extract and process the complete escape sequence
+                        sequence = buffer[2:escape_end].split(';')  # Extract codes after '\x1b['
+                        buffer = buffer[escape_end + 1:]  # Trim the processed sequence
 
-        #print(f"[DEBUG] Final segments: {segments}")
+                        # Update the current style based on the sequence
+                        for code in sequence:
+                            if code == '0':  # Reset
+                                self.current_style = {"color": None, "bold": False}
+                            elif code == '1':  # Bold
+                                self.current_style["bold"] = True
+                            elif code in self.ANSI_COLOR_MAP:  # Color
+                                self.current_style["color"] = self.ANSI_COLOR_MAP[code]
+                else:
+                    # Handle an incomplete escape sequence like '\x1b' or invalid sequences
+                    if buffer == '\x1b':
+                        self.partial_sequence = buffer
+                        buffer = ""
+                    else:
+                        # If it's not valid but starts with '\x1b', discard or handle appropriately
+                        segments.append((buffer, self.current_style.copy()))
+                        buffer = ""
+
         return segments
+
+def test_partial_matches():
+    # Test cases: input chunks and expected partial matches
+     # Additional test cases
+    test_cases = [
+        # Test max length for escape sequences
+        ("\x1b[" + "1;" * 15 + "31mText", ""),  # Valid sequence right at the max length
+        ("\x1b[" + "1;" * 16 + "31mText", ""),  # Exceeds max length, should discard
+        ("\x1b[31;" + "1;" * 14 + "mText", ""),  # Borderline valid with trailing plain text
+        ("\x1b[31;" + "1;" * 15, "\x1b[31;" + "1;" * 15),  # Too long, partial retained
+
+        # Malformed escape sequences
+        ("\x1b[foo;bar", "\x1b[foo;bar"),  # Completely invalid codes
+        ("\x1b[123;456z", "\x1b[123;456z"),  # Ends with unknown terminator
+        ("\x1b[;;mText", ""),  # Valid escape but unusual empty codes
+        ("\x1b[mText", ""),  # Reset escape sequence
+        ("\x1b[1;mText", ""),  # Bold and reset
+
+        # Partial escape with plain text after it
+        ("\x1b[31", "\x1b[31"),  # Incomplete color escape
+        ("Hello", ""),  # Text after incomplete escape
+
+        # Rapid succession of escape sequences
+        ("\x1b[31m\x1b[32m\x1b[33m", ""),  # Multiple valid sequences in one chunk
+        ("\x1b[31;\x1b[32m", "\x1b[31;"),  # Partially nested sequences, retain invalid partial
+
+        # Plain text mixed with escape sequences
+        ("Text\x1b[31mColor\x1b[0m", ""),  # Reset style works correctly
+        ("\x1b[31mRed\x1b[32mGreen\x1b[33mYellow", ""),  # Chained colored segments
+
+        # Escape sequences split across multiple calls
+        ("\x1b[31", "\x1b[31"),  # First call starts incomplete
+        (";1mHello", ""),        # Second call completes and outputs text
+
+        # Edge cases
+        ("\x1b[", "\x1b["),                  # Incomplete start
+        ("m\x1b[31;1", "\x1b[31;1"),        # New sequence starts after finishing the first
+        ("Hello\x1b[31", "\x1b[31"),        # Text followed by incomplete escape
+        ("\x1b[;;", "\x1b[;;"),             # Unusual empty code parts
+        ("\x1b[;;31m", ""),                 # Empty parts but valid terminator
+
+        # Very large chunks
+        ("\x1b[31m" + "A" * 1000, ""),      # Valid escape with lots of text
+        ("\x1b[31;" + "1;" * 15 + "32mB", ""),  # Near-limit escape followed by text
+        ("aaaaaaaaaaaaa\x1b", "\x1b"),
+    ]
+
+    # Run test cases
+    for i, (chunk, expected_partial) in enumerate(test_cases):
+        # Reinitialize the parser for each test case
+        parser = AnsiParser()
+
+        print(f"Test Case {i + 1}: Input: {repr(chunk)}")
+        parser.parse_ansi_colors(chunk)  # Feed chunk to the parser
+        actual_partial = parser.partial_sequence
+
+        # Compare the actual partial sequence to the expected one
+        if actual_partial == expected_partial:
+            print(f"  PASSED: Retained partial match is {repr(actual_partial)}")
+        else:
+            print(f"  FAILED: Expected {repr(expected_partial)}, but got {repr(actual_partial)}")
+        print("-" * 50)
+
+
+if __name__ == "__main__":
+    print("Testing Partial Matches...")
+    test_partial_matches()
