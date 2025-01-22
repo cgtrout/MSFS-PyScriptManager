@@ -1616,7 +1616,6 @@ class CountdownTimerDialog(tk.Toplevel):
         else:
             # Handle unexpected types
             print_warning("Invalid type for selected_time_option")
-            return  # Optional: exit the function if the type is invalid
 
         # Create the OptionMenu regardless of input type
         self.time_dropdown = tk.OptionMenu(
