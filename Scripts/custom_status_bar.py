@@ -331,7 +331,7 @@ def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
     add_to_cache(variable_name, default_value)
     for _ in range(retries):
         value = check_cache(variable_name)
-        if value and value != default_value:
+        if value is not None and value != default_value:
             return value
         time.sleep(retry_interval)
 
