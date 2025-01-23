@@ -66,7 +66,7 @@ TEMPLATES = {
         "VAR(Sim:, get_sim_time, yellow) | "
         "VAR(Zulu:, get_real_world_time, white ) |"
         "VARIF(Sim Rate:, get_sim_rate, white, is_sim_rate_accelerated) VARIF(|, '', white, is_sim_rate_accelerated)  " # Use VARIF on | to show conditionally
-        "VAR(remain_label##, get_time_to_future, red) | "
+        "VAR(remain_label##, get_time_to_future_adjusted, red) | "
         "VAR(, get_temp, cyan)"
     ),
     "Altitude and Temp": (
@@ -331,7 +331,7 @@ def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
     add_to_cache(variable_name, default_value)
     for _ in range(retries):
         value = check_cache(variable_name)
-        if value and value != default_value:
+        if value is not None and value != default_value:
             return value
         time.sleep(retry_interval)
 
@@ -465,14 +465,26 @@ def background_thread_watchdog_function():
     root.after(10_000, background_thread_watchdog_function)
 
 # --- Timer Calcuation  ---
-def get_time_to_future() -> str:
+def get_time_to_future_adjusted():
+    """
+    Calculate and return the countdown timer string.
+    """
+    return get_time_to_future(adjusted_for_sim_rate=True)
+
+def get_time_to_future_unadjusted():
+    """
+    Calculate and return the countdown timer string without adjusting for sim rate.
+    """
+    return get_time_to_future(adjusted_for_sim_rate=False)
+
+def get_time_to_future(adjusted_for_sim_rate: bool) -> str:
     """
     Calculate and return the countdown timer string.
     """
     global countdown_state
 
     if countdown_state.countdown_target_time == UNIX_EPOCH:  # Default unset state
-        return "00:00:00"
+        return "N/A"
 
     try:
         current_sim_time = get_simulator_datetime()
@@ -481,9 +493,11 @@ def get_time_to_future() -> str:
             raise ValueError("Target time or simulator time is offset-naive. "
                              "Ensure all times are offset-aware.")
 
-        # Fetch sim rate
-        sim_rate_str = get_sim_rate()
-        sim_rate = float(sim_rate_str) if sim_rate_str.replace('.', '', 1).isdigit() else 1.0
+        # Fetch sim rate if we want to adjust for it, otherwise default to 1.0 (normal time progression)
+        sim_rate = 1.0
+        if adjusted_for_sim_rate:
+            sim_rate_str = get_sim_rate()
+            sim_rate = float(sim_rate_str) if sim_rate_str.replace('.', '', 1).isdigit() else 1.0
 
         # Compute the count-down time
         countdown_str, new_last_time, new_is_neg = compute_countdown_timer(
@@ -504,7 +518,7 @@ def get_time_to_future() -> str:
         # TODO: investigate if we can handle errors better here
         exception_type = type(e).__name__  # Get the exception type
         print(f"Exception occurred: {e} (Type: {exception_type})")
-        return "00:00:00"
+        return "N/A"
 
 def compute_countdown_timer(
     current_sim_time: datetime,
