@@ -523,6 +523,10 @@ def compute_countdown_timer(
     Returns:
     - countdown_str (str): Formatted countdown string "HH:MM:SS".
     """
+    # Early out if we have no current sim time
+    if current_sim_time == UNIX_EPOCH:
+        return "N/A"
+    
     # Calculate remaining time
     remaining_time = target_time - current_sim_time
 
