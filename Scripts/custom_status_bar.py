@@ -18,8 +18,9 @@ from dataclasses import dataclass, field
 
 import threading
 import sys
-
+import traceback
 from typing import Any, Optional
+
 
 try:
     # Import all color print functions
@@ -65,7 +66,7 @@ TEMPLATES = {
         "VAR(Sim:, get_sim_time, yellow) | "
         "VAR(Zulu:, get_real_world_time, white ) |"
         "VARIF(Sim Rate:, get_sim_rate, white, is_sim_rate_accelerated) VARIF(|, '', white, is_sim_rate_accelerated)  " # Use VARIF on | to show conditionally
-        "VAR(remain_label##, get_time_to_future, red) | "
+        "VAR(remain_label##, get_time_to_future_adjusted, red) | "
         "VAR(, get_temp, cyan)"
     ),
     "Altitude and Temp": (
@@ -80,6 +81,22 @@ TEMPLATES = {
 # Further SimConnect variables can be found at https://docs.flightsimulator.com/html/Programming_Tools/SimVars/Simulation_Variables.htm
 def get_altitude():
     return get_formatted_value("PLANE_ALTITUDE", "{:.0f} ft")
+
+## USER FUNCTIONS ##
+# The following functions are hooks for user-defined behaviors and will be called by the
+# custom_status_bar script.
+
+# Runs once per display update (approx. 30 times per second).
+def user_update():
+    pass
+
+# Runs approx every 500ms for less frequent, CPU-intensive tasks.
+def user_slow_update():
+    pass
+
+# Runs once during startup for initialization tasks.
+def user_init():
+    pass
 """
 # --- Configurable Variables  ---
 ALPHA_TRANSPARENCY_LEVEL = 0.95  # Set transparency (0.0 = fully transparent, 1.0 = fully opaque)
@@ -89,6 +106,8 @@ FONT = ("Helvetica", 16)
 UPDATE_INTERVAL = 33  # in milliseconds
 
 SIMBRIEF_AUTO_UPDATE_INTERVAL_MS = 5 * 60 * 1000  # 5 minutes in milliseconds
+USER_UPDATE_FUNCTION_DEFINED = False
+USER_SLOW_UPDATE_FUNCTION_DEFINED = False
 
 PADDING_X = 20  # Horizontal padding for each label
 PADDING_Y = 10  # Vertical padding for the window
@@ -113,19 +132,12 @@ class CountdownState:
     last_entered_time: Optional[str] = None  # Last entered time in HHMM format
     gate_out_time: Optional[datetime] = None  # Store last game out time
     countdown_target_time: datetime = field(default_factory=lambda: UNIX_EPOCH)
-    last_countdown_time: Optional[float] = None  # Track last countdown time in seconds
-    is_negative: bool = False  # Track if the countdown has gone negative
 
     def set_target_time(self, new_time: datetime):
         """Set a new countdown target time with type validation."""
         if not isinstance(new_time, datetime):
             raise TypeError("countdown_target_time must be a datetime object")
         self.countdown_target_time = new_time
-
-    def reset(self):
-        """Reset relevant countdown-related state variables."""
-        self.last_countdown_time = None
-        self.is_negative = False
 
 # --- SimBrief Data Structures  ---
 class SimBriefTimeOption(Enum):
@@ -136,7 +148,7 @@ class SimBriefTimeOption(Enum):
 class SimBriefSettings:
     username: str = ""
     use_adjusted_time: bool = False
-    selected_time_option: SimBriefTimeOption = SimBriefTimeOption.ESTIMATED_IN
+    selected_time_option: Any = SimBriefTimeOption.ESTIMATED_IN
     allow_negative_timer: bool = False
     auto_update_enabled: bool = False
 
@@ -144,7 +156,11 @@ class SimBriefSettings:
         return {
             "username": self.username,
             "use_adjusted_time": self.use_adjusted_time,
-            "selected_time_option": self.selected_time_option.value,
+            "selected_time_option": (
+                self.selected_time_option.value
+                if isinstance(self.selected_time_option, SimBriefTimeOption)
+                else SimBriefTimeOption.ESTIMATED_IN.value
+            ),
             "allow_negative_timer": self.allow_negative_timer,
             "auto_update_enabled": self.auto_update_enabled,
         }
@@ -295,7 +311,8 @@ def initialize_simconnect():
     except Exception:
         sim_connected = False
 
-def get_simconnect_value(variable_name: str, default_value: Any = "N/A", retries: int = 10, retry_interval: float = 0.2) -> Any:
+def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
+                         retries: int = 10, retry_interval: float = 0.2) -> Any:
     """Fetch a SimConnect variable with caching and retry logic."""
     if not sim_connected or sim_connect is None or not sim_connect.ok:
         return "Sim Not Running"
@@ -307,11 +324,14 @@ def get_simconnect_value(variable_name: str, default_value: Any = "N/A", retries
     add_to_cache(variable_name, default_value)
     for _ in range(retries):
         value = check_cache(variable_name)
-        if value and value != default_value:
+        if value is not None and value != default_value:
             return value
         time.sleep(retry_interval)
 
-    print_debug(f"All {retries} retries failed for '{variable_name}'. Returning default: {default_value}")
+    print_debug(
+        f"All {retries} retries failed for '{variable_name}'. "
+        f"Returning default: {default_value}"
+    )
     return default_value
 
 def check_cache(variable_name):
@@ -399,13 +419,13 @@ def simconnect_background_updater():
                                 with cache_lock:
                                     simconnect_cache[variable_name] = value
                             else:
-                                #print(f"DEBUG: Value for '{variable_name}' is None. Will retry in the next cycle.")
                                 lookup_failed = True
                         else:
                             print_warning("'aq' is None or does not have a 'get' method.")
                             lookup_failed = True
-                    except Exception as e:
-                        print_debug(f"Error fetching '{variable_name}': {e}. Will retry in the next cycle.")
+                    except OSError as e:
+                        print_debug(f"Error fetching '{variable_name}': {e}. "
+                                     "Will retry in the next cycle.")
                         lookup_failed = True
 
                     # Introduce a small sleep between variable updates
@@ -421,13 +441,13 @@ def simconnect_background_updater():
 
         except Exception as e:
             print_error(f"Unexpected error in background updater: {e}")
+            print(f"Exception type: {type(e).__name__}")
         finally:
             # Update the last successful update time - used for 'heartbeat' functionality
             last_successful_update_time = time.time()
 
 def background_thread_watchdog_function():
     """Check background thread function to see if it has locked up"""
-    global last_successful_update_time
     now = time.time()
     threshold = 30  # seconds before we consider the updater "stuck"
 
@@ -438,80 +458,77 @@ def background_thread_watchdog_function():
     root.after(10_000, background_thread_watchdog_function)
 
 # --- Timer Calcuation  ---
-def get_time_to_future() -> str:
+def get_time_to_future_adjusted():
+    """
+    Calculate and return the countdown timer string.
+    """
+    return get_time_to_future(adjusted_for_sim_rate=True)
+
+def get_time_to_future_unadjusted():
+    """
+    Calculate and return the countdown timer string without adjusting for sim rate.
+    """
+    return get_time_to_future(adjusted_for_sim_rate=False)
+
+def get_time_to_future(adjusted_for_sim_rate: bool) -> str:
     """
     Calculate and return the countdown timer string.
     """
     global countdown_state
 
     if countdown_state.countdown_target_time == UNIX_EPOCH:  # Default unset state
-        return "00:00:00"
+        return "N/A"
 
     try:
         current_sim_time = get_simulator_datetime()
 
         if countdown_state.countdown_target_time.tzinfo is None or current_sim_time.tzinfo is None:
-            raise ValueError("Target time or simulator time is offset-naive. Ensure all times are offset-aware.")
+            raise ValueError("Target time or simulator time is offset-naive. "
+                             "Ensure all times are offset-aware.")
 
-        # Fetch sim rate
-        sim_rate_str = get_sim_rate()
-        sim_rate = float(sim_rate_str) if sim_rate_str.replace('.', '', 1).isdigit() else 1.0
+        # Fetch sim rate if we want to adjust for it, otherwise default to 1.0 (normal time progression)
+        sim_rate = 1.0
+        if adjusted_for_sim_rate:
+            sim_rate_str = get_sim_rate()
+            sim_rate = float(sim_rate_str) if sim_rate_str.replace('.', '', 1).isdigit() else 1.0
 
         # Compute the count-down time
-        countdown_str, new_last_time, new_is_neg = compute_countdown_timer(
+        countdown_str = compute_countdown_timer(
             current_sim_time=current_sim_time,
             target_time=countdown_state.countdown_target_time,
-            last_countdown_time=countdown_state.last_countdown_time,
-            is_negative=countdown_state.is_negative,
             sim_rate=sim_rate,
         )
-
-        # Update state
-        countdown_state.last_countdown_time = new_last_time
-        countdown_state.is_negative = new_is_neg
 
         return countdown_str
 
     except Exception as e:
         # TODO: investigate if we can handle errors better here
-        return "00:00:00"
+        exception_type = type(e).__name__  # Get the exception type
+        print(f"Exception occurred: {e} (Type: {exception_type})")
+        return "N/A"
 
 def compute_countdown_timer(
     current_sim_time: datetime,
     target_time: datetime,
-    last_countdown_time: Optional[float],
-    is_negative: bool,
     sim_rate: float
-) -> tuple[str, float, bool]:
+) -> str:
     """
     Compute the countdown timer string and update its state.
 
     Parameters:
     - current_sim_time (datetime): Current simulator time.
     - target_time (datetime): Target countdown time.
-    - last_countdown_time (Optional[float]): Previously stored countdown time in seconds.
-    - is_negative (bool): Whether the last countdown was negative.
     - sim_rate (float): Simulation rate.
 
     Returns:
     - countdown_str (str): Formatted countdown string "HH:MM:SS".
-    - new_last_countdown_time (float): Updated absolute countdown time in seconds.
-    - new_is_negative (bool): Whether the countdown has gone negative.
     """
-    # Replace date for same-day calculation
-    target_time_today = target_time.replace(
-        year=current_sim_time.year, month=current_sim_time.month, day=current_sim_time.day
-    )
-
-    # Handle midnight rollover logic
-    if target_time_today < current_sim_time:
-        #print_debug("Target time is earlier than current simulator time.")
-        if not is_negative and (last_countdown_time is None or last_countdown_time > 5):
-            #print_debug("Midnight rollover detected. Adjusting target time to next day.")
-            target_time_today += timedelta(days=1)
-
+    # Early out if we have no current sim time
+    if current_sim_time == UNIX_EPOCH:
+        return "N/A"
+    
     # Calculate remaining time
-    remaining_time = target_time_today - current_sim_time
+    remaining_time = target_time - current_sim_time
 
     # Adjust for simulation rate
     if sim_rate and sim_rate > 0:
@@ -523,10 +540,6 @@ def compute_countdown_timer(
     if not simbrief_settings.allow_negative_timer and adjusted_seconds < 0:
         adjusted_seconds = 0
 
-    # Update internal tracking
-    new_last_countdown_time = abs(remaining_time.total_seconds())
-    new_is_negative = remaining_time.total_seconds() < 0
-
     # Format the adjusted remaining time as HH:MM:SS
     total_seconds = int(adjusted_seconds)
     sign = "-" if total_seconds < 0 else ""
@@ -535,7 +548,7 @@ def compute_countdown_timer(
     minutes, seconds = divmod(remainder, 60)
     countdown_str = f"{sign}{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
 
-    return countdown_str, new_last_countdown_time, new_is_negative
+    return countdown_str
 
 def get_simulator_time_offset():
     """
@@ -584,10 +597,8 @@ def set_future_time_internal(future_time_input, current_sim_time):
 
         if isinstance(future_time_input, datetime):
             # Validate that the future time is after the current simulator time
-            if future_time_input <= current_sim_time:
+            if future_time_input <= current_sim_time and not simbrief_settings.allow_negative_timer:
                 raise ValueError("Future time must be later than the current simulator time.")
-
-            countdown_state.reset()
 
             # Log successful setting of the timer
             print(f"Timer set to: {future_time_input}")
@@ -671,10 +682,8 @@ class TemplateHandler:
                 if not k.startswith("__") and not isinstance(v, type(importlib))  # Exclude built-ins and modules
             }
 
-            # Debug: Log the filtered globals being injected
-            print_debug("Filtered Globals to Inject:")
-            for name, obj in relevant_globals.items():
-                print_color(f"[green(]{name}:[)] {type(obj).__name__}")
+            # Debug: Log the filtered globals being injected, grouping functions properly
+            self._print_sorted_globals(relevant_globals)
 
             # Inject filtered globals into the template module
             templates_module.__dict__.update(relevant_globals)
@@ -686,8 +695,41 @@ class TemplateHandler:
 
             print_debug("load_template_functions: DONE\n")
 
-        except Exception as e:
-            print(f"Error loading template functions: {e}")
+        except Exception as e: # pylint: disable=broad-except
+            print_error(f"Error loading template functions: {e}")
+
+    def _print_sorted_globals(self, globals_dict):
+        """Sorts and prints the provided globals dictionary in two columns with colors."""
+        def sort_by_type_and_name(item):
+            obj_type = type(item[1]).__name__ if item[1] is not None else "NoneType"
+            priority = {"function": 0, "type": 1}.get(obj_type, 2)
+            return priority, item[0]
+
+        sorted_globals = sorted(globals_dict.items(), key=sort_by_type_and_name)
+
+        max_name_length = max(len(name) for name, _ in sorted_globals) + 1
+        max_type_length = min(8, max(len(type(obj).__name__) for _, obj in sorted_globals))
+
+        mid_index = (len(sorted_globals) + 1) // 2
+        left_column = sorted_globals[:mid_index]
+        right_column = sorted_globals[mid_index:]
+
+        print_debug("Filtered Globals to Inject:")
+
+        # Helper to format a single column
+        def format_column(name, obj):
+            obj_type = type(obj).__name__ if obj is not None else "NoneType"
+            return f"[green(]{name.ljust(max_name_length)}:[)] {obj_type.ljust(max_type_length)}"
+
+        # Loop and print each row
+        for i in range(max(len(left_column), len(right_column))):
+            left = left_column[i] if i < len(left_column) else ("", None)
+            right = right_column[i] if i < len(right_column) else ("", None)
+
+            left_col = format_column(*left)
+            right_col = format_column(*right)
+
+            print_color(f" {left_col} {right_col}")
 
     def get_current_template(self) -> str:
         """Return the content of the currently selected template."""
@@ -716,8 +758,8 @@ def get_dynamic_value(function_name):
                 return func()
         return ""  # Return an empty string if the function doesn't exist
     except Exception as e:
+        print_debug(f"get_dynamic_value exception [{type(e).__name__ }]: {e}")
         return "Err"
-
 class WidgetPool:
     """Manages widgets and their order"""
     def __init__(self):
@@ -749,10 +791,20 @@ class WidgetPool:
 
 widget_pool = WidgetPool()
 
+# Frame counters used for slow update frequency
+UPDATE_DISPLAY_FRAME_COUNT = 0
+SLOW_UPDATE_INTERVAL = 15 # Approx every 500ms
+
 def update_display(template_handler:TemplateHandler):
     """Render the parsed blocks onto the display frame"""
+    # Call user update function
+    call_user_functions()
+
+    # Update frame counters - used for determining 'slow' updates
+    update_frame_counter()
 
     try:
+        # Do not update if drag move is occuring
         if is_moving:
             root.after(UPDATE_INTERVAL, lambda: update_display(template_handler))
             return
@@ -860,6 +912,29 @@ def process_block(block, template_handler):
                 return True # Full refresh
         return False
 
+def call_user_functions():
+    """Invoke user-defined update functions with exception handling."""
+    if USER_UPDATE_FUNCTION_DEFINED:
+        try:
+            user_update()
+        except Exception as e:
+            print_error(f"Error in user_update [{type(e).__name__}]: {e}")
+
+    if USER_SLOW_UPDATE_FUNCTION_DEFINED:
+        try:
+            # Only call this every UPDATE_DISPLAY_FRAME_COUNT cycles
+            if UPDATE_DISPLAY_FRAME_COUNT == 0:
+                user_slow_update()
+        except Exception as e:
+            print_error(f"Error in user_slow_update [{type(e).__name__}]: {e}")
+
+def update_frame_counter():
+    """Increment and reset the frame counter based on the slow update interval."""
+    global UPDATE_DISPLAY_FRAME_COUNT
+    UPDATE_DISPLAY_FRAME_COUNT += 1
+    if UPDATE_DISPLAY_FRAME_COUNT == SLOW_UPDATE_INTERVAL:
+        UPDATE_DISPLAY_FRAME_COUNT = 0
+
 # --- Simbrief functionality ---
 class SimBriefFunctions:
     """Contains grouping of static Simbrief Functions mainly for organizational purposes"""
@@ -957,11 +1032,17 @@ class SimBriefFunctions:
 
             # Fetch selected SimBrief time
             selected_time = simbrief_settings.selected_time_option
-            if selected_time == SimBriefTimeOption.ESTIMATED_IN:
-                future_time = SimBriefFunctions.get_simbrief_ofp_arrival_datetime(simbrief_json)
-            elif selected_time == SimBriefTimeOption.ESTIMATED_TOD:
-                future_time = SimBriefFunctions.get_simbrief_ofp_tod_datetime(simbrief_json)
+
+            # Use mapping to fetch the corresponding function
+            function_to_call = SIMBRIEF_TIME_OPTION_FUNCTIONS.get(selected_time)
+
+            if function_to_call:
+                # Call the selected function
+                future_time = function_to_call(simbrief_json)
+                if not future_time:
+                    return False  # Handle the case where the function returns no time
             else:
+                print_error(f"No function mapped for selected_time_option: {selected_time}")
                 return False
 
             if not future_time:
@@ -1075,6 +1156,12 @@ class SimBriefFunctions:
         countdown_state.gate_out_time = None
         return timedelta(0)
 
+# MAP SimBriefTimeOption to corresponding functions
+SIMBRIEF_TIME_OPTION_FUNCTIONS = {
+    SimBriefTimeOption.ESTIMATED_IN: SimBriefFunctions.get_simbrief_ofp_arrival_datetime,
+    SimBriefTimeOption.ESTIMATED_TOD: SimBriefFunctions.get_simbrief_ofp_tod_datetime,
+}
+
 # --- Drag functionality ---
 is_moving = False
 
@@ -1165,6 +1252,41 @@ def save_settings(settings, simbrief_settings):
     except Exception as e:
         print_error(f"Error saving settings: {e}")
 
+def is_debugging():
+    """Check if the script is running in a debugging environment."""
+    try:
+        if sys.monitoring.get_tool(sys.monitoring.DEBUGGER_ID) is not None:
+            return True
+    except Exception:
+        return False
+
+def check_user_functions():
+    global USER_UPDATE_FUNCTION_DEFINED, USER_SLOW_UPDATE_FUNCTION_DEFINED
+
+    try:
+        user_init()
+    except NameError:
+        print_warning("No user_init function defined in template file")
+    except Exception as e:
+        print_error(f"Error calling user_init [{type(e).__name__}]: {e}")
+        traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
+
+    # Check for user update function
+    function_name = "user_update"
+    if function_name in globals() and callable(globals()[function_name]):
+        USER_UPDATE_FUNCTION_DEFINED = True
+    else:
+        USER_UPDATE_FUNCTION_DEFINED = False
+        print_warning("No user_update function defined in template file")
+
+    function_name = "user_slow_update"
+    if function_name in globals() and callable(globals()[function_name]):
+        USER_SLOW_UPDATE_FUNCTION_DEFINED = True
+    else:
+        USER_SLOW_UPDATE_FUNCTION_DEFINED = False
+        print_warning("No user_slow_update function defined in template file")
+
 def main():
     global root, display_frame, simbrief_settings
 
@@ -1220,6 +1342,9 @@ def main():
         # Initialize TemplateHandler
         template_handler = TemplateHandler()
 
+        # Check if user functions are defined
+        check_user_functions()
+
         # Render the initial display
         update_display(template_handler)
 
@@ -1231,8 +1356,11 @@ def main():
             """Reset the faulthandler timer to prevent a dump."""
             faulthandler.dump_traceback_later(30, file=traceback_log_file, exit=True)
             root.after(10000, reset_traceback_timer)
-
-        reset_traceback_timer()
+        if not is_debugging():
+            print_info("Traceback fault timer started")
+            reset_traceback_timer()
+        else:
+            print_info("Traceback fault timer NOT started (debugging detected)")
         #### FAULT DETECTION ########### - END
 
         # Uncomment to test out traceback timer
@@ -1460,7 +1588,17 @@ class CountdownTimerDialog(tk.Toplevel):
             time_selection_frame, text="Select SimBrief Time:", bg=self.bg_color, fg=self.fg_color, font=small_font
         ).grid(row=0, column=0, sticky="w", padx=5, pady=2)
 
-        self.selected_time_option = tk.StringVar(value=self.simbrief_settings.selected_time_option.value)
+        if isinstance(self.simbrief_settings.selected_time_option, str):
+            # If it's already a string, assign it directly
+            self.selected_time_option = tk.StringVar(value=self.simbrief_settings.selected_time_option)
+        elif isinstance(self.simbrief_settings.selected_time_option, Enum):
+            # If it's an Enum, use its value
+            self.selected_time_option = tk.StringVar(value=self.simbrief_settings.selected_time_option.value)
+        else:
+            # Handle unexpected types
+            print_warning("Invalid type for selected_time_option")
+
+        # Create the OptionMenu regardless of input type
         self.time_dropdown = tk.OptionMenu(
             time_selection_frame,
             self.selected_time_option,
@@ -1584,7 +1722,12 @@ class CountdownTimerDialog(tk.Toplevel):
         """Update SimBrief settings from dialog inputs."""
         simbrief_settings.username = self.simbrief_entry.get().strip()
         simbrief_settings.use_adjusted_time = self.simbrief_checkbox_var.get()
-        simbrief_settings.selected_time_option = SimBriefTimeOption(self.selected_time_option.get())
+
+        # Validate selected_time_option - ignore custom values
+        selected_time = self.selected_time_option.get()
+        if selected_time in [option.value for option in SimBriefTimeOption]:
+            simbrief_settings.selected_time_option = SimBriefTimeOption(selected_time)
+
         simbrief_settings.allow_negative_timer = self.negative_timer_checkbox_var.get()
         simbrief_settings.auto_update_enabled = self.auto_update_var.get()
 
