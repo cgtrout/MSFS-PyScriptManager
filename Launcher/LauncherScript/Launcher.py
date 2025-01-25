@@ -667,8 +667,14 @@ class CommandLineTab(Tab):
         """Create the interactive terminal interface."""
         # Output display area
         consolas_font = ("Consolas", 12)
-        self.output_widget = scrolledtext.ScrolledText(
-            self.frame,
+
+        # Create a frame to hold the text widget and scrollbar
+        content_frame = tk.Frame(self.frame, bg=FRAME_BG_COLOR)
+        content_frame.pack(expand=True, fill="both", padx=5, pady=5)
+
+        # Create the ScrolledText widget without a built-in scrollbar
+        self.output_widget = tk.Text(
+            content_frame,
             wrap="word",
             bg=TEXT_WIDGET_BG_COLOR,
             fg=TEXT_WIDGET_FG_COLOR,
@@ -676,8 +682,12 @@ class CommandLineTab(Tab):
             height=20,
             font=consolas_font
         )
-        self.output_widget.pack(expand=True, fill="both", padx=5, pady=5)
-        self.output_widget.config(state="disabled")  # Prevent direct editing
+        self.output_widget.pack(side="left", expand=True, fill="both", padx=5, pady=5)
+
+        # Use a ttk.Scrollbar for styling compatibility
+        scrollbar = ttk.Scrollbar(content_frame, orient="vertical", command=self.output_widget.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.output_widget.configure(yscrollcommand=scrollbar.set)
 
         # Input area
         input_frame = tk.Frame(self.frame, bg=FRAME_BG_COLOR)
