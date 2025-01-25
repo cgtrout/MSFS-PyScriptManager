@@ -127,6 +127,9 @@ class TabManager:
         # Bind the tab change event
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_change)
 
+        # Allows ctrl-tab to work
+        self.notebook.enable_traversal()
+
     def on_tab_change(self, event):
         """Update active tab state."""
 
