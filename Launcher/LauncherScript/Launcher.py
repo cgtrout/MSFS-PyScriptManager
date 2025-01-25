@@ -90,6 +90,9 @@ class Tab:
         except Exception as e:
             print(f"[ERROR] Issue inserting text into widget: {e}")
 
+    def on_tab_activated(self):
+        pass
+
     def close(self):
         """Clean up resources associated with the tab."""
         if self.frame:
@@ -128,7 +131,6 @@ class TabManager:
         """Update active tab state."""
 
         # Probably paranoid to call with scheduler as notebook event
-        # should call on main thread?
         def _update_tab_state():
             """Perform the actual tab state update on the main thread."""
             selected_frame = self.notebook.nametowidget(self.notebook.select())
@@ -140,6 +142,7 @@ class TabManager:
                     self.active_tab_id = tab_id
                 else:
                     tab.is_active = False
+                    tab.on_tab_activated()
 
         self.scheduler(0, _update_tab_state)
 
@@ -1114,6 +1117,9 @@ class CommandLineTab(Tab):
         self.output_widget.insert(tk.END, text)
         self.output_widget.see(tk.END)
         self.output_widget.config(state="disabled")
+
+    def on_tab_activated(self):
+        self.input_entry.focus_set()
 
     def close(self):
         """Terminate the pseudo-console process and clean up resources."""
