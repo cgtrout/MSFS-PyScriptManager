@@ -408,6 +408,15 @@ def ensure_port_available(port, host='127.0.0.1'):
             print("   - Open Task Manager and close any running 'python.exe' instances.")
             sys.exit(1)
 
+def print_instructions():
+    print()
+    print_color("=== Instructions ===", color="green")
+    print_color("- Use [yellow(]Ctrl+Alt+Shift+P[)] to change the print location of pop-ups.")
+    print_color("- In the Fenix A32x EFB, set the printer to [yellow(]'VirtualTextPrinter'[)] to enable printing.")
+    print("- Right-click on a note to close it.")
+    print("- For more information, visit the project Github page for MSFS-PyScriptManager.")
+
+
 # Initialize Tkinter
 root = tk.Tk()
 root.withdraw()
@@ -437,6 +446,8 @@ httpd = initialize_http_server(HTTP_SERVER_PORT)
 http_server_thread = threading.Thread(target=run_http_server, args=(httpd,))
 http_server_thread.daemon = True
 http_server_thread.start()
+
+print_instructions()
 
 # Start processing queue
 root.after(100, process_print_queue, default_font)
