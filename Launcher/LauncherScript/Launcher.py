@@ -440,7 +440,6 @@ class ScriptTab(Tab):
             self.is_flushing = True
             self.frame.after(50, self._flush_text_buffer)
 
-
     def _flush_text_buffer(self):
         """Flush the buffered text into the Text widget."""
         if not (self.text_widget and self.text_widget.winfo_exists()):
@@ -1120,7 +1119,7 @@ class CommandLineTab(Tab):
         """Terminate the pseudo-console process and clean up resources."""
         if self.process and self.process.isalive():
             # Send Ctrl+C to interrupt any running commands
-            self._send_ctrl_c_to_process()
+            self.handle_ctrl_c()
 
             # Allow some time for the process to terminate gracefully
             time.sleep(0.5)
