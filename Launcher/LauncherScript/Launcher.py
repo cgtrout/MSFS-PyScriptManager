@@ -14,6 +14,8 @@ import ctypes
 
 from threading import Lock
 
+
+import pstats
 from parse_ansi import AnsiParser
 
 import tkinter as tk
@@ -329,6 +331,10 @@ class ScriptTab(Tab):
 
         self._ansi_parser = AnsiParser()
 
+        # Text buffer
+        self.text_buffer = []
+        self.is_flushing = False
+
     def build_content(self):
         """Build the content of the ScriptTab."""
 
@@ -421,35 +427,51 @@ class ScriptTab(Tab):
         self._insert_text(text)
 
     def _insert_text(self, text):
-        """Parse and insert text with ANSI color handling."""
-        if self.text_widget and self.text_widget.winfo_exists():
-            parsed_segments = self._ansi_parser.parse_ansi_colors(text)
-            self.frame.after(0, lambda: self._safe_insert_segments(parsed_segments))
+        """Buffer text for periodic insertion with ANSI color handling."""
+        if not (self.text_widget and self.text_widget.winfo_exists()):
+            return
 
-    def ensure_tag(self, color=None, bold=False):
-        """
-        Ensure that a text tag for the given color and bold style is defined in the widget.
-        """
-        # Generate a unique tag name based on color and bold
-        tag = f"color-{color}-bold-{bold}" if color else f"bold-{bold}"
+        # Parse the ANSI colors and buffer the parsed segments
+        parsed_segments = self._ansi_parser.parse_ansi_colors(text)
+        self.text_buffer.extend(parsed_segments)
 
-        if tag not in self.text_widget.tag_names():
-            tag_config = {}
+        # Start a flush operation if one is not already scheduled
+        if not self.is_flushing:
+            self.is_flushing = True
+            self.frame.after(50, self._flush_text_buffer)
 
-            # Set the foreground color if specified
-            if color:
-                tag_config["foreground"] = color
 
-            # Set the font explicitly for bold or normal text
-            if bold:
-                tag_config["font"] = self.font_bold
-            else:
-                tag_config["font"] = self.font_normal
+    def _flush_text_buffer(self):
+        """Flush the buffered text into the Text widget."""
+        if not (self.text_widget and self.text_widget.winfo_exists()):
+            self.is_flushing = False
+            return
 
-            # Configure the tag in the widget
-            self.text_widget.tag_configure(tag, **tag_config)
+        # Process all buffered segments
+        segments_to_insert = self.text_buffer
+        self.text_buffer = []  # Clear the buffer
 
-        return tag
+        # Insert the segments into the Text widget
+        self._safe_insert_segments(segments_to_insert)
+
+        # Check if more data was added to the buffer while flushing
+        if self.text_buffer:
+            interval = self._calculate_flush_interval()
+            self.frame.after(interval, self._flush_text_buffer)  # Reschedule flushing
+        else:
+            self.is_flushing = False
+
+    def _calculate_flush_interval(self):
+        """Determine the flush interval dynamically based on workload."""
+        buffer_size = len(self.text_buffer)
+
+        # Dynamic intervals - refresh less often with higher workloads
+        if buffer_size > 100:  # High workload
+            return 10
+        elif buffer_size > 50:  # Medium workload
+            return 25
+        else:  # Low workload
+            return 50
 
     def _safe_insert_segments(self, segments):
         """Safely insert text segments with colors and bold styles into the text widget."""
@@ -482,6 +504,32 @@ class ScriptTab(Tab):
             print(f"[WARNING] _safe_insert: TclError encountered while writing to the widget: {e}")
         except Exception as e:
             print(f"[ERROR] _safe_insert: Unexpected exception while writing to the widget: {e}")
+
+    def ensure_tag(self, color=None, bold=False):
+        """
+        Ensure that a text tag for the given color and bold style is defined in the widget.
+        """
+        # Generate a unique tag name based on color and bold
+        tag = f"color-{color}-bold-{bold}" if color else f"bold-{bold}"
+
+        if tag not in self.text_widget.tag_names():
+            tag_config = {}
+
+            # Set the foreground color if specified
+            if color:
+                tag_config["foreground"] = color
+
+            # Set the font explicitly for bold or normal text
+            if bold:
+                tag_config["font"] = self.font_bold
+            else:
+                tag_config["font"] = self.font_normal
+
+            # Configure the tag in the widget
+            self.text_widget.tag_configure(tag, **tag_config)
+
+        return tag
+
 
     def edit_script(self):
         """Open the script in VSCode for editing."""
@@ -1483,8 +1531,8 @@ class ProcessTracker:
         try:
             while not stop_event.is_set():
                 try:
-                    # Attempt to read a chunk of data (64 bytes at a time)
-                    chunk = os.read(fd, 64).decode("utf-8")
+                    # Attempt to read a chunk of data
+                    chunk = os.read(fd, 4096).decode("utf-8")
                     if not chunk:  # EOF or no data available
                         time.sleep(0.01)
                         continue
