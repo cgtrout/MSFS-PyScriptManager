@@ -697,7 +697,7 @@ class CommandLineTab(Tab):
         self.input_entry.bind("<Tab>", self.autocomplete)
         self.input_entry.bind("<Up>", self.handle_up_arrow)
         self.input_entry.bind("<Down>", self.handle_down_arrow)
-        self.input_entry.bind("<Control-c>", self.handle_ctrl_c)
+        self.input_entry.bind("<Control-c>", lambda event: self.handle_ctrl_c())
 
         self.input_entry.focus_set()
 
@@ -705,43 +705,36 @@ class CommandLineTab(Tab):
         self.start_shell()
 
     def start_shell(self):
-        """Start a persistent shell process in the /Scripts directory."""
-        if self.process and self.process.poll() is None:
+        """Start a persistent shell process in a hidden pseudo-console."""
+        if self.process and self.process.isalive():
             self.insert_output("[INFO] Shell is already running.\n")
             return
 
         try:
-            # Use the global paths defined earlier
-            winpython_bin_path = str(python_path.parent)
-            winpython_scripts_path = str(python_path.parent / "Scripts")
-            scripts_dir = scripts_path
-
-            # Create a custom environment for the shell process
-            custom_env = os.environ.copy()
-            system_path = os.environ.get("PATH", "")
-            custom_env["PATH"] = f"{winpython_bin_path};{winpython_scripts_path};{system_path}"
-
-            # Create the shell process
-            self.process = subprocess.Popen(
-                "cmd",
-                shell=False,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                cwd=scripts_dir,  # Set the working directory to /Scripts
-                env=custom_env,    # Inject custom env
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+            # Lazy load the winpty library
+            import winpty
+        except ImportError:
+            self.insert_output(
+                "[ERROR] The 'winpty' library is required to start the console. "
+                "Please install it by running 'pip install pywinpty' in WinPython cmd prompt.\n"
             )
+            return
 
+        try:
+            # Use the global paths defined earlier
+            scripts_dir = str(scripts_path.resolve())
+
+            # Create a pseudo-console process
+            self.process = winpty.PtyProcess.spawn(
+                "cmd",
+                cwd=scripts_dir,
+                env=os.environ
+            )
             threading.Thread(target=self._read_output, daemon=True).start()
             self.insert_output(f"[INFO] Shell started in {scripts_dir}. Type commands below.\n")
 
             # List Python files in the /Scripts directory
-            list_command = "dir *.py\n"
-            self.process.stdin.write(list_command)
-            self.process.stdin.flush()
+            self.run_shell_command("dir *.py")
         except Exception as e:
             self.insert_output(f"[ERROR] Failed to start shell: {e}\n")
 
@@ -764,9 +757,6 @@ class CommandLineTab(Tab):
         # Add the command to history
         self.history.append(user_input)
         self.history_index = len(self.history)  # Reset to “one past the end”
-
-        # Display the command in the output widget
-        self.insert_output(f"> {user_input}\n")
 
         # Parse the base command and arguments
         command_parts = user_input.split()
@@ -820,10 +810,14 @@ class CommandLineTab(Tab):
             self.insert_output("[INFO] Directory change handled by the shell.\n")
 
     def run_shell_command(self, command):
-        """Send an unrecognized command to the shell for execution."""
+        """Send a command to the pseudo-console."""
+        if not self.process or not self.process.isalive():
+            self.insert_output("[ERROR] No active shell process to send commands to.\n")
+            return
+
         try:
-            self.process.stdin.write(command + "\n")
-            self.process.stdin.flush()
+            # Write the command followed by a newline to simulate Enter
+            self.process.write(command + "\r\n")
         except Exception as e:
             self.insert_output(f"[ERROR] Failed to send command to shell: {e}\n")
 
@@ -1009,28 +1003,50 @@ class CommandLineTab(Tab):
             print(f"[ERROR] Unexpected error during handle_ctrl_c: {e}")
 
     def _send_ctrl_c_to_process(self, pid, target="unknown"):
-        # This will kill subprocess, but not gracefully
-        # Good enough for now as to handle this better requires deep work with WIN32 API
-        #os.kill(pid, signal.SIGINT)
-        self.process.stdin.write("\x03")  # Ctrl+C ASCII (0x03)
-        self.process.stdin.flush()
+        """Send Ctrl+C to the process in the pseudo-console."""
+        if self.process and self.process.isalive():
+            try:
+                # Log the target for debugging
+                self.insert_output(f"[INFO] Sending Ctrl+C to target: {target} (PID={pid}).\n")
+                self.process.write("\x03")  # Send Ctrl+C (ASCII code)
+                self.insert_output("[INFO] Sent Ctrl+C to the process.\n")
+            except Exception as e:
+                self.insert_output(f"[ERROR] Failed to send Ctrl+C: {e}\n")
+        else:
+            self.insert_output(f"[ERROR] No active process to send Ctrl+C to for target: {target}.\n")
+
+    ANSI_ESCAPE_PATTERN = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    CMD_LINE_PATTERN = re.compile(r'^0;C:\\Windows\\system32\\cmd\.EXE.*')
 
     def _read_output(self):
-        """Read and display output from the shell process."""
-        while True:
-            # Exit loop if the stop_event is set
-            if self.stop_event.is_set():
-                break
+        """Read and display output from the pseudo-console process, using separate regex for ANSI codes and artifacts."""
+        try:
+            while True:
+                if self.stop_event.is_set():
+                    break
 
-            output = self.process.stdout.readline()
-            if not output and self.process.poll() is not None:
-                break
+                # Read up to 1024 bytes from the pseudo-console
+                output = self.process.read(1024)
+                if not output:
+                    break
 
-            # Safeguard against widget destruction
-            if not self.output_widget or not self.output_widget.winfo_exists():
-                break
+                # Safeguard against widget destruction
+                if not self.output_widget or not self.output_widget.winfo_exists():
+                    break
 
-            self.insert_output(output)
+                # Remove ANSI escape sequences
+                clean_output = self.ANSI_ESCAPE_PATTERN.sub('', output)
+
+                #  Remove unwanted artifacts
+                filtered_output = "\n".join(
+                    line for line in clean_output.splitlines()
+                    if not self.CMD_LINE_PATTERN.match(line)  # Filter out artifact lines
+                )
+
+                # Insert the cleaned and filtered output into the widget
+                self.insert_output(filtered_output)
+        except Exception as e:
+            self.insert_output(f"[ERROR] Failed to read console output: {e}\n")
 
     def insert_output(self, text):
         """Insert shell output into the output widget."""
@@ -1043,16 +1059,16 @@ class CommandLineTab(Tab):
         self.output_widget.config(state="disabled")
 
     def close(self):
-        """Terminate the shell process and clean up resources."""
-        if self.process and self.process.poll() is None:
+        """Terminate the pseudo-console process and clean up resources."""
+        if self.process and self.process.isalive():
             # Send Ctrl+C to interrupt any running commands
-            self.handle_ctrl_c()
+            self._send_ctrl_c_to_process()
 
             # Allow some time for the process to terminate gracefully
             time.sleep(0.5)
 
             # If the process is still running, terminate it forcefully
-            if self.process.poll() is None:
+            if self.process.isalive():
                 try:
                     self.process.terminate()
                 except Exception as e:
