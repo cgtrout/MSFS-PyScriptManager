@@ -453,7 +453,7 @@ print_instructions()
 root.after(100, process_print_queue, default_font)
 
 # Global keyboard shortcut for setting spawn position
-keyboard.add_hotkey('ctrl+shift+p', capture_mouse_position)
+keyboard.add_hotkey('ctrl+shift+alt+p', capture_mouse_position)
 
 # Start Tkinter main loop
 root.mainloop()
