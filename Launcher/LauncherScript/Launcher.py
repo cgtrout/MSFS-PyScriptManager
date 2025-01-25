@@ -1076,7 +1076,6 @@ class CommandLineTab(Tab):
             self.insert_output(f"[ERROR] No active process to send Ctrl+C to for target: {target}.\n")
 
     ANSI_ESCAPE_PATTERN = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-    CMD_LINE_PATTERN = re.compile(r'^0;C:\\Windows\\system32\\cmd\.EXE.*')
 
     def _read_output(self):
         """Read and display output from the pseudo-console process, using separate regex for ANSI codes and artifacts."""
@@ -1097,11 +1096,12 @@ class CommandLineTab(Tab):
                 # Remove ANSI escape sequences
                 clean_output = self.ANSI_ESCAPE_PATTERN.sub('', output)
 
-                #  Remove unwanted artifacts
-                filtered_output = "\n".join(
-                    line for line in clean_output.splitlines()
-                    if not self.CMD_LINE_PATTERN.match(line)  # Filter out artifact lines
-                )
+                 # Normalize carriage returns (\r) by removing them
+                clean_output = clean_output.replace('\r', '')
+
+                # Directly remove the specific artifact
+                artifact_to_remove = "0;C:\\Windows\\system32\\cmd.EXE\x07"
+                filtered_output = clean_output.replace(artifact_to_remove, "")
 
                 # Insert the cleaned and filtered output into the widget
                 self.insert_output(filtered_output)
