@@ -289,6 +289,19 @@ class TabManager:
             self.close_tab(tab_id)
         print("[INFO] All tabs closed.")
 
+    def close_active_tab(self):
+        """Close the currently active tab."""
+        current_tab = self.notebook.select()  # Get the currently selected tab
+
+        if current_tab:
+            # Find the tab ID corresponding to the current tab
+            for tab_id, tab in self.tabs.items():
+                if tab.frame and str(tab.frame) == current_tab:
+                    self.close_tab(tab_id)  # Use the existing close_tab method
+                    return
+        else:
+            print("[INFO] No active tab to close.")
+
     def on_tab_right_click(self, event):
         def _close_tab_on_click():
             try:
@@ -1175,6 +1188,8 @@ class ScriptLauncherApp:
 
         # Bind Control+` for toggling the console window
         self.root.bind_all("<Control-`>", self.handle_control_tilde)
+
+        self.root.bind_all("<Control-w>", lambda event: self.tab_manager.close_active_tab())
 
     def handle_control_tilde(self, event=None):
         """Bring up the CommandLineTab: Select if exists, create if not."""
