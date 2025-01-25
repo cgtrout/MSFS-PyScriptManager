@@ -1262,7 +1262,7 @@ class ScriptLauncherApp:
         """Generalized command handler with directory context."""
         if command in ["python", "py"]:
             return self.handle_python_command(args, current_dir)
-        elif command == "switch":
+        elif command in ["switch", "s"]:
             return self.switch_tab_by_name(args)
         elif command == "greet":
             return True, f"Hello, {' '.join(args) or 'world'}!"
