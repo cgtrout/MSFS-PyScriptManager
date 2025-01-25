@@ -405,7 +405,7 @@ def ensure_port_available(port, host='127.0.0.1'):
             print("\nTo resolve:")
             print("1. Close MSFS-PyScriptManager.")
             print("2. Check for running Python processes and terminate them:")
-            print("   - Open Task Manager -> 'Details' tab -> End 'python.exe'.")
+            print("   - Open Task Manager and close any running 'python.exe' instances.")
             sys.exit(1)
 
 # Initialize Tkinter
