@@ -392,6 +392,21 @@ def setup_printer():
 
     print_color("----------------------------------------------------------------", color="yellow", bold=False)
 
+# Ensures the specified port is available. Exits with an error message if the port is in use.
+def ensure_port_available(port, host='127.0.0.1'):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host, port))
+        except OSError:
+            print_error(f"\nERROR: Port {port} is already in use!")
+            print("\nPossible causes:")
+            print("- Another instance of this script is already running.")
+            print("- Improper shutdown of a previous instance has left the port occupied.")
+            print("\nTo resolve:")
+            print("1. Close MSFS-PyScriptManager.")
+            print("2. Check for running Python processes and terminate them:")
+            print("   - Open Task Manager -> 'Details' tab -> End 'python.exe'.")
+            sys.exit(1)
 
 # Initialize Tkinter
 root = tk.Tk()
@@ -402,6 +417,9 @@ default_font = font.Font(family="Consolas", size=12)
 
 # Create a queue for communication
 printer_message_queue = queue.Queue()
+
+# Ensure port is available
+ensure_port_available(PRINTER_SERVER_PORT)
 
 # Setup printer
 setup_printer()
