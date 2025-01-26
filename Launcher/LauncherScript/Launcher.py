@@ -1238,9 +1238,14 @@ class ScriptLauncherApp:
 
     def configure_root(self):
         """Configure the main root window."""
-        self.root.title("Python Script Launcher")
+        self.root.title("MSFS-PyScriptManager")
         self.root.geometry("1000x600")
         self.root.configure(bg=DARK_BG_COLOR)
+        try:
+            photo = tk.PhotoImage(file="Data/letter-m-svgrepo-com.png")
+            self.root.wm_iconphoto(False, photo)
+        except tk.TclError as e:
+            print(f"Error loading icon: {e}")
 
     def create_toolbar(self):
         """Create the top toolbar with action buttons."""

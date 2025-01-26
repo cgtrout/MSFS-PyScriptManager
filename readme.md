@@ -54,3 +54,7 @@
 - You can easily create your own scripts and run them as well.  Note that if you need to add any libraries use the "WinPython/WinPython Command Prompt.exe" and run the "pip" command from here to add a library to the WinPython directory.
 - I recommend using [Visual Studio Code](https://code.visualstudio.com/download) for editing the scripts.  The built in "Edit" button will open the selected script in VS Code if it is installed.
 - Uses WinPython to allow standalone installation - https://github.com/winpython
+
+## Additional Credits
+- Icon used for Launcher: [JoyPixels Emojione](https://github.com/joypixels/emojione) (MIT License)
+
