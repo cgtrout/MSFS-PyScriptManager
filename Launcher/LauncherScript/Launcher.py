@@ -416,6 +416,20 @@ class ScriptTab(Tab):
         )
         reload_button.pack(side="left", padx=5, pady=2)
 
+         # Add the "Reload Script" button
+        stop_button = tk.Button(
+            button_frame,
+            text="Stop Script",
+            command=self.stop_script,
+            bg=BUTTON_BG_COLOR,
+            fg=BUTTON_FG_COLOR,
+            activebackground=BUTTON_ACTIVE_BG_COLOR,
+            activeforeground=BUTTON_ACTIVE_FG_COLOR,
+            relief="flat",
+            highlightthickness=0
+        )
+        stop_button.pack(side="left", padx=5, pady=2)
+
         # Start the script execution
         self.run_script()
 
@@ -572,6 +586,10 @@ class ScriptTab(Tab):
             self.run_script()
 
         self.process_tracker.scheduler(0, _reload)  # Schedule the reload process
+
+    def stop_script(self):
+        """Stop the running of the script"""
+        self.process_tracker.terminate_process(self.tab_id)
 
     def handle_keypress(self, event):
         """Handle keypress events."""
