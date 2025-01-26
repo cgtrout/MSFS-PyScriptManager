@@ -864,6 +864,11 @@ class CommandLineTab(Tab):
         self.history.append(user_input)
         self.history_index = len(self.history)  # Reset to “one past the end”
 
+        # Handle cd.. (no space) as special case
+        # Add space so .. gets processed as an arg in handle_cd_command
+        if user_input.startswith("cd.."):
+            user_input = user_input.replace("cd..", "cd ..", 1)
+
         # Parse the base command and arguments
         command_parts = user_input.split()
         base_command = command_parts[0]
