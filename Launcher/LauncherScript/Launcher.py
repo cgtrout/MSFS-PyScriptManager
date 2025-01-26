@@ -143,9 +143,9 @@ class TabManager:
                 if tab.frame == selected_frame:
                     tab.is_active = True
                     self.active_tab_id = tab_id
+                    tab.on_tab_activated()
                 else:
                     tab.is_active = False
-                    tab.on_tab_activated()
 
         self.scheduler(0, _update_tab_state)
 
@@ -264,6 +264,8 @@ class TabManager:
             self.notebook.add(tab.frame, text=tab.title)
             self.tabs[tab_id] = tab
             self.notebook.select(tab.frame)
+            if hasattr(tab, "on_tab_activated"):
+                tab.on_tab_activated()
 
         self.scheduler(0, _add_tab)  # Schedule the entire operation on the main thread
 
@@ -548,7 +550,6 @@ class ScriptTab(Tab):
 
         return tag
 
-
     def edit_script(self):
         """Open the script in VSCode for editing."""
         try:
@@ -600,6 +601,12 @@ class ScriptTab(Tab):
             self.insert_output(f"[ERROR] Missing key in process info: {e}\n")
         except Exception as e:
             self.insert_output(f"[ERROR] Unexpected error: {e}\n")
+
+    def on_tab_activated(self):
+        if self.text_widget and self.text_widget.winfo_exists():
+            self.text_widget.focus_force()
+        else:
+            print("[ERROR] Text widget is not available for focus.")
 
 class PerfTab(Tab):
     """PerfTab - represents performance tab for monitoring performance of scripts"""
@@ -1135,7 +1142,11 @@ class CommandLineTab(Tab):
         self.output_widget.config(state="disabled")
 
     def on_tab_activated(self):
-        self.input_entry.focus_set()
+        if self.input_entry and self.input_entry.winfo_exists():
+            self.input_entry.focus_force()
+            print("[DEBUG] Focus set to input_entry.")
+        else:
+            print("[ERROR] Input textbox is not available for focus.")
 
     def close(self):
         """Terminate the pseudo-console process and clean up resources."""
@@ -1198,9 +1209,6 @@ class ScriptLauncherApp:
             if isinstance(tab, CommandLineTab):
                 # Select the existing CommandLineTab
                 self.tab_manager.notebook.select(tab.frame)
-                if tab.input_entry:  # Focus on the input field
-                    tab.input_entry.focus_set()
-                return
 
         # No CommandLineTab exists, create a new one
         self.add_command_line_tab()
