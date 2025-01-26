@@ -864,61 +864,22 @@ class CommandLineTab(Tab):
         self.history.append(user_input)
         self.history_index = len(self.history)  # Reset to “one past the end”
 
-        # Handle cd.. (no space) as special case
-        # Add space so .. gets processed as an arg in handle_cd_command
-        if user_input.startswith("cd.."):
-            user_input = user_input.replace("cd..", "cd ..", 1)
-
         # Parse the base command and arguments
         command_parts = user_input.split()
         base_command = command_parts[0]
         args = command_parts[1:]
 
-        # Handle `cd` command
-        if base_command == "cd":
-            self.handle_cd_command(args, user_input)
+        # Try to handle the command via `command_callback`
+        success, message = self.command_callback(base_command, args, self.cached_cwd)
+        if success:
+            if message:
+                self.insert_output(f"[INFO] {message}\n")
         else:
-            # Delegate to the generalized callback with the current directory
-            success, message = self.command_callback(base_command, args, self.cached_cwd)
-            if success:
-                # Handle success: Display optional informational message
-                if message:
-                    self.insert_output(f"[INFO] {message}\n")
-            elif message and message.startswith("Unknown command"):
-                # Fallback to shell for unrecognized commands
-                self.run_shell_command(user_input)
-            else:
-                # Display any other errors
-                self.insert_output(f"[ERROR] {message or 'An unexpected error occurred.'}\n")
+            # If not handled, send the command to the shell
+            self.run_shell_command(user_input)
 
         # Clear the input field
         self.input_entry.delete(0, tk.END)
-
-    def handle_cd_command(self, args, user_input):
-        """Handle `cd` command logic, both internally and in the shell."""
-        # Always send the `cd` command to the shell process
-        self.run_shell_command(user_input)
-
-        # Handle directory changes internally if arguments are provided
-        # This will manually calculate the directory since there is no
-        # direct way to pull this from the process.
-        if args:
-            # Calculate the new directory (absolute or relative)
-            target_dir = args[0]
-            if os.path.isabs(target_dir):
-                new_dir = target_dir
-            else:
-                new_dir = os.path.abspath(os.path.join(self.cached_cwd, target_dir))
-
-            # Validate the directory
-            if os.path.isdir(new_dir):
-                self.cached_cwd = new_dir
-                self.insert_output(f"[INFO] Changed directory to: {self.cached_cwd}\n")
-            else:
-                self.insert_output(f"[ERROR] No such directory: {target_dir}\n")
-        else:
-            # For `cd` with no arguments, rely on the shell to manage behavior
-            self.insert_output("[INFO] Directory change handled by the shell.\n")
 
     def run_shell_command(self, command):
         """Send a command to the pseudo-console."""
@@ -1129,7 +1090,7 @@ class CommandLineTab(Tab):
     ANSI_ESCAPE_PATTERN = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
     def _read_output(self):
-        """Read and display output from the pseudo-console process, using separate regex for ANSI codes and artifacts."""
+        """Read and display output from the pseudo-console process, using regex for ANSI codes and artifacts."""
         try:
             while True:
                 if self.stop_event.is_set():
@@ -1147,17 +1108,26 @@ class CommandLineTab(Tab):
                 # Remove ANSI escape sequences
                 clean_output = self.ANSI_ESCAPE_PATTERN.sub('', output)
 
-                 # Normalize carriage returns (\r) by removing them
+                # Normalize carriage returns (\r) by removing them
                 clean_output = clean_output.replace('\r', '')
 
                 # Directly remove the specific artifact
                 artifact_to_remove = "0;C:\\Windows\\system32\\cmd.EXE\x07"
                 filtered_output = clean_output.replace(artifact_to_remove, "")
 
-                # Insert the cleaned and filtered output into the widget
+                # Insert filtered output
                 self.insert_output(filtered_output)
+
+                # Detect paths directly in the clean output
+                for match in re.finditer(r"^[A-Za-z]:\\.*>", clean_output, re.MULTILINE):
+                    # Extract the path without the trailing '>'
+                    detected_path = match.group(0).rstrip(">")
+                    self.cached_cwd = detected_path
+                    print(f"[INFO] Current directory updated to: {self.cached_cwd}\n")
+
         except Exception as e:
             self.insert_output(f"[ERROR] Failed to read console output: {e}\n")
+
 
     def insert_output(self, text):
         """Insert shell output into the output widget."""
