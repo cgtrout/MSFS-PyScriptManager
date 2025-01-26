@@ -12,8 +12,11 @@ from pathlib import Path
 from typing import Dict
 import ctypes
 
-# Import parse_ansi_colors from local parse_ansi.py
-from parse_ansi import parse_ansi_colors
+from threading import Lock
+
+
+import pstats
+from parse_ansi import AnsiParser
 
 import tkinter as tk
 from tkinter import filedialog, scrolledtext, TclError
@@ -24,6 +27,11 @@ import re
 from ttkthemes import ThemedTk
 
 from ordered_logger import OrderedLogger
+
+import faulthandler
+import traceback
+
+import signal
 
 # Path to the WinPython Python executable and VS Code.exe
 current_dir = Path(__file__).resolve().parent
@@ -36,10 +44,10 @@ scripts_path = project_root / "Scripts"
 # Define color constants
 DARK_BG_COLOR = "#2E2E2E"
 BUTTON_BG_COLOR = "#444444"
-BUTTON_FG_COLOR = "#FFFFFF"
+BUTTON_FG_COLOR = "#EEEEEE"
 BUTTON_ACTIVE_BG_COLOR = "#666666"
 BUTTON_ACTIVE_FG_COLOR = "#FFFFFF"
-TEXT_WIDGET_BG_COLOR = "#1E1E1E"
+TEXT_WIDGET_BG_COLOR = "#171717"
 TEXT_WIDGET_FG_COLOR = "#FFFFFF"
 TEXT_WIDGET_INSERT_COLOR = "#FFFFFF"
 FRAME_BG_COLOR = "#2E2E2E"
@@ -55,8 +63,10 @@ class Tab:
     """Manages the content and behavior of an individual tab (its frame, widgets, etc.)."""
     def __init__(self, title):
         self.title = title
+        self.is_active = False
         self.text_widget = None
         self.frame = None
+        self.tabid = None
 
     def initialize_frame(self, notebook):
         """Create the frame for this tab within the given notebook."""
@@ -80,6 +90,9 @@ class Tab:
         except Exception as e:
             print(f"[ERROR] Issue inserting text into widget: {e}")
 
+    def on_tab_activated(self):
+        pass
+
     def close(self):
         """Clean up resources associated with the tab."""
         if self.frame:
@@ -93,7 +106,8 @@ class TabManager:
         self.configure_notebook()
         self.notebook.pack(expand=True, fill="both", padx=5, pady=5)
         self.tabs = {}
-        self.current_tab_id = 0  # Counter for unique tab IDs
+        self.next_tab_id = 0        # Counter for unique tab IDs
+        self.active_tab_id = 0      # Counter for selected tab id
 
         self.scheduler = scheduler
 
@@ -110,12 +124,38 @@ class TabManager:
         self.notebook.bind("<B1-Motion>", self.on_tab_drag_motion)
         self.notebook.bind("<ButtonRelease-1>", self.on_tab_drag_release)
 
+        # Bind the tab change event
+        self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_change)
+
+        # Allows ctrl-tab to work
+        self.notebook.enable_traversal()
+
+    def on_tab_change(self, event):
+        """Update active tab state."""
+
+        # Probably paranoid to call with scheduler as notebook event
+        def _update_tab_state():
+            """Perform the actual tab state update on the main thread."""
+            selected_frame = self.notebook.nametowidget(self.notebook.select())
+
+            # Safely update tabs
+            for tab_id, tab in self.tabs.items():
+                if tab.frame == selected_frame:
+                    tab.is_active = True
+                    self.active_tab_id = tab_id
+                    tab.on_tab_activated()
+                else:
+                    tab.is_active = False
+
+        self.scheduler(0, _update_tab_state)
+
     def configure_notebook(self):
         """Configure notebook style and behavior."""
         style = ttk.Style()
-        style.configure('TNotebook', padding=[0, 0])
+        style.configure('TNotebook', padding=[0, 0], background=DARK_BG_COLOR)
         style.configure('TNotebook.Tab', padding=[5, 2])
         style.configure('TFrame', background=DARK_BG_COLOR)
+        style.configure('TNotebook.Tab', foreground=BUTTON_FG_COLOR)
 
         # Bind right-click to close tabs
         self.notebook.bind("<Button-3>", self.on_tab_right_click)
@@ -179,28 +219,43 @@ class TabManager:
             print(f"[ERROR] Drag release failed: {e}")
 
     def swap_tabs(self, index1, index2):
-        """Swap two tabs in the notebook."""
+        """Swap two tabs in the notebook and update their internal state."""
         if index1 == index2:
             print("[DEBUG] Swap not needed: Dragged tab is already in the correct position.")
             return
 
-        tab1_frame = self.notebook.tabs()[index1]
-        tab2_frame = self.notebook.tabs()[index2]
+        # Get all tabs as a list of frames
+        tabs_list = self.notebook.tabs()
+        tab1_frame = tabs_list[index1]
+        tab2_frame = tabs_list[index2]
 
         print(f"[DEBUG] Swapping tab frames: {tab1_frame} <-> {tab2_frame}")
 
+        # Swap the positions in the notebook widget
         self.notebook.insert(index2, tab1_frame)
         self.notebook.insert(index1, tab2_frame)
 
-        print("[DEBUG] Tabs swapped successfully.")
+        print(f"[DEBUG] Tabs swapped successfully. Updated tabs: {self.tabs}")
 
     def generate_tab_id(self):
-        """Generate a unique tab ID."""
-        self.current_tab_id += 1
-        return self.current_tab_id
+        """Generate a unique tab ID and log the caller and its caller."""
+        self.next_tab_id += 1
+
+        print(f"Generated new tab id: {self.next_tab_id} ")
+        return self.next_tab_id
 
     def add_tab(self, tab):
         """Add a new tab to the notebook."""
+
+        # Extract the caller function from the call stack
+        stack = traceback.extract_stack()
+        if len(stack) > 2:  # Ensure there's at least one caller before `add_tab`
+            caller_info = stack[-3]  # Get the caller before `_add_tab` scheduling
+            caller_name = f"{caller_info.name} (at {caller_info.filename})"
+        else:
+            caller_name = "Unknown"
+
+        print(f"[DEBUG] add_tab called by: {caller_name}")
 
         def _add_tab():
             tab_id = self.generate_tab_id()  # Generate tab ID on the main thread
@@ -210,6 +265,8 @@ class TabManager:
             self.notebook.add(tab.frame, text=tab.title)
             self.tabs[tab_id] = tab
             self.notebook.select(tab.frame)
+            if hasattr(tab, "on_tab_activated"):
+                tab.on_tab_activated()
 
         self.scheduler(0, _add_tab)  # Schedule the entire operation on the main thread
 
@@ -217,6 +274,7 @@ class TabManager:
         """Close a tab and clean up resources."""
         def _close_tab():
             logging.debug("close_tab inner")
+            print(f"[DEBUG] Type of self.tabs: {type(self.tabs)}")
             tab = self.tabs.pop(tab_id, None)
             if not tab:
                 print(f"[WARNING] Tab with ID {tab_id} not found.")
@@ -234,16 +292,39 @@ class TabManager:
             self.close_tab(tab_id)
         print("[INFO] All tabs closed.")
 
+    def close_active_tab(self):
+        """Close the currently active tab."""
+        current_tab = self.notebook.select()  # Get the currently selected tab
+
+        if current_tab:
+            # Find the tab ID corresponding to the current tab
+            for tab_id, tab in self.tabs.items():
+                if tab.frame and str(tab.frame) == current_tab:
+                    self.close_tab(tab_id)  # Use the existing close_tab method
+                    return
+        else:
+            print("[INFO] No active tab to close.")
+
     def on_tab_right_click(self, event):
-        """Handle right-click to close a tab."""
         def _close_tab_on_click():
             try:
                 clicked_tab_index = self.notebook.index(f"@{event.x},{event.y}")
-                self.close_tab_by_index(clicked_tab_index)
+
+                # Get the actual frame name from the Notebook’s tab list
+                frame_name = self.notebook.tabs()[clicked_tab_index]
+
+                # Convert that string name to the actual frame widget
+                frame = self.notebook.nametowidget(frame_name)
+
+                # Now find which tab in self.tabs owns that frame
+                for tab_id, tab in list(self.tabs.items()):
+                    if tab.frame == frame:
+                        self.close_tab(tab_id)
+                        return
             except TclError:
                 print("[ERROR] Right-click did not occur on a valid tab. Ignoring.")
 
-        self.scheduler(0, _close_tab_on_click)  # Schedule operation on the main thread
+        self.scheduler(0, _close_tab_on_click)
 
     def close_tab_by_index(self, index):
         """Close a tab by its notebook index."""
@@ -264,12 +345,17 @@ class ScriptTab(Tab):
     def __init__(self, title, script_path, process_tracker):
         super().__init__(title)
         self.script_path = script_path
-        self.process_tracker = process_tracker
-        self.tab_id = None
+        self.process_tracker:ProcessTracker = process_tracker
 
         # Define font settings
         self.font_normal = ("Consolas", 12)
         self.font_bold = ("Consolas", 12, "bold")
+
+        self._ansi_parser = AnsiParser()
+
+        # Text buffer
+        self.text_buffer = []
+        self.is_flushing = False
 
     def build_content(self):
         """Build the content of the ScriptTab."""
@@ -320,7 +406,7 @@ class ScriptTab(Tab):
         # Add the "Reload Script" button
         reload_button = tk.Button(
             button_frame,
-            text="Reload Script",
+            text="Reload Script (F5)",
             command=self.reload_script,
             bg=BUTTON_BG_COLOR,
             fg=BUTTON_FG_COLOR,
@@ -331,11 +417,30 @@ class ScriptTab(Tab):
         )
         reload_button.pack(side="left", padx=5, pady=2)
 
+         # Add the "Reload Script" button
+        stop_button = tk.Button(
+            button_frame,
+            text="Stop Script",
+            command=self.stop_script,
+            bg=BUTTON_BG_COLOR,
+            fg=BUTTON_FG_COLOR,
+            activebackground=BUTTON_ACTIVE_BG_COLOR,
+            activeforeground=BUTTON_ACTIVE_FG_COLOR,
+            relief="flat",
+            highlightthickness=0
+        )
+        stop_button.pack(side="left", padx=5, pady=2)
+
+        # Bind F5 to reload
+        #self.frame.bind("<F5>", lambda event: self.reload_script())
+        self.text_widget.bind("<F5>", lambda event: self.reload_script())
+
         # Start the script execution
         self.run_script()
 
     def close(self):
         """Clean up resources associated with the tab."""
+        print(f"ScriptTab: close tabid={self.tabid}")
         self.process_tracker.terminate_process(self.tab_id)
         super().close()
 
@@ -362,35 +467,50 @@ class ScriptTab(Tab):
         self._insert_text(text)
 
     def _insert_text(self, text):
-        """Parse and insert text with ANSI color handling."""
-        if self.text_widget and self.text_widget.winfo_exists():
-            parsed_segments = parse_ansi_colors(text)
-            self.frame.after(0, lambda: self._safe_insert_segments(parsed_segments))
+        """Buffer text for periodic insertion with ANSI color handling."""
+        if not (self.text_widget and self.text_widget.winfo_exists()):
+            return
 
-    def ensure_tag(self, color=None, bold=False):
-        """
-        Ensure that a text tag for the given color and bold style is defined in the widget.
-        """
-        # Generate a unique tag name based on color and bold
-        tag = f"color-{color}-bold-{bold}" if color else f"bold-{bold}"
+        # Parse the ANSI colors and buffer the parsed segments
+        parsed_segments = self._ansi_parser.parse_ansi_colors(text)
+        self.text_buffer.extend(parsed_segments)
 
-        if tag not in self.text_widget.tag_names():
-            tag_config = {}
+        # Start a flush operation if one is not already scheduled
+        if not self.is_flushing:
+            self.is_flushing = True
+            self.frame.after(50, self._flush_text_buffer)
 
-            # Set the foreground color if specified
-            if color:
-                tag_config["foreground"] = color
+    def _flush_text_buffer(self):
+        """Flush the buffered text into the Text widget."""
+        if not (self.text_widget and self.text_widget.winfo_exists()):
+            self.is_flushing = False
+            return
 
-            # Set the font explicitly for bold or normal text
-            if bold:
-                tag_config["font"] = self.font_bold
-            else:
-                tag_config["font"] = self.font_normal
+        # Process all buffered segments
+        segments_to_insert = self.text_buffer
+        self.text_buffer = []  # Clear the buffer
 
-            # Configure the tag in the widget
-            self.text_widget.tag_configure(tag, **tag_config)
+        # Insert the segments into the Text widget
+        self._safe_insert_segments(segments_to_insert)
 
-        return tag
+        # Check if more data was added to the buffer while flushing
+        if self.text_buffer:
+            interval = self._calculate_flush_interval()
+            self.frame.after(interval, self._flush_text_buffer)  # Reschedule flushing
+        else:
+            self.is_flushing = False
+
+    def _calculate_flush_interval(self):
+        """Determine the flush interval dynamically based on workload."""
+        buffer_size = len(self.text_buffer)
+
+        # Dynamic intervals - refresh less often with higher workloads
+        if buffer_size > 100:  # High workload
+            return 10
+        elif buffer_size > 50:  # Medium workload
+            return 25
+        else:  # Low workload
+            return 50
 
     def _safe_insert_segments(self, segments):
         """Safely insert text segments with colors and bold styles into the text widget."""
@@ -424,6 +544,31 @@ class ScriptTab(Tab):
         except Exception as e:
             print(f"[ERROR] _safe_insert: Unexpected exception while writing to the widget: {e}")
 
+    def ensure_tag(self, color=None, bold=False):
+        """
+        Ensure that a text tag for the given color and bold style is defined in the widget.
+        """
+        # Generate a unique tag name based on color and bold
+        tag = f"color-{color}-bold-{bold}" if color else f"bold-{bold}"
+
+        if tag not in self.text_widget.tag_names():
+            tag_config = {}
+
+            # Set the foreground color if specified
+            if color:
+                tag_config["foreground"] = color
+
+            # Set the font explicitly for bold or normal text
+            if bold:
+                tag_config["font"] = self.font_bold
+            else:
+                tag_config["font"] = self.font_normal
+
+            # Configure the tag in the widget
+            self.text_widget.tag_configure(tag, **tag_config)
+
+        return tag
+
     def edit_script(self):
         """Open the script in VSCode for editing."""
         try:
@@ -446,6 +591,45 @@ class ScriptTab(Tab):
             self.run_script()
 
         self.process_tracker.scheduler(0, _reload)  # Schedule the reload process
+
+    def stop_script(self):
+        """Stop the running of the script"""
+        self.process_tracker.terminate_process(self.tab_id)
+
+    def handle_keypress(self, event):
+        """Handle keypress events."""
+        if not self.is_active:
+            return
+
+        key = event.char or ""  # Get the character, default to empty for non-character keys
+        if key == "\r":
+            key = "\n"  # Handle Enter key
+
+        # Add input to the queue
+        try:
+            # Retrieve the correct process info
+            process_info = self.process_tracker.processes.get(self.tab_id)
+            if not process_info:
+                return
+
+            # Access the stdin_queue
+            stdin_queue = process_info["stdin_queue"]
+
+            # Add the key to the queue
+            stdin_queue.put_nowait(key)  # Non-blocking enqueue
+
+        except queue.Full:
+            self.insert_output("[WARNING] Input queue is full. Input dropped.\n")
+        except KeyError as e:
+            self.insert_output(f"[ERROR] Missing key in process info: {e}\n")
+        except Exception as e:
+            self.insert_output(f"[ERROR] Unexpected error: {e}\n")
+
+    def on_tab_activated(self):
+        if self.text_widget and self.text_widget.winfo_exists():
+            self.text_widget.focus_force()
+        else:
+            print("[ERROR] Text widget is not available for focus.")
 
 class PerfTab(Tab):
     """PerfTab - represents performance tab for monitoring performance of scripts"""
@@ -551,6 +735,464 @@ class PerfTab(Tab):
         text_widget.pack(expand=True, fill="both")
         return text_widget
 
+class CommandLineTab(Tab):
+    """A tab that provides a terminal-like command-line interface."""
+    def __init__(self, title, command_callback):
+        super().__init__(title)
+        self.output_widget = None
+        self.input_entry = None
+        self.process = None
+        self.stop_event = threading.Event()
+        self.command_callback = command_callback
+
+        # Initialize the cached current working directory
+        self.cached_cwd = scripts_path
+
+        # Autocomplete state
+        self.is_autocompleting = False
+        self.cached_input = ""  # Tracks input at the start of the autocomplete cycle
+        self.original_partial_path = ""  # Tracks the prefix for the current autocomplete cycle
+        self.autocomplete_matches = []
+        self.autocomplete_index = -1
+
+        # Simple command history
+        self.history = []
+        self.history_index = -1
+
+    def build_content(self):
+        """Create the interactive terminal interface."""
+        # Output display area
+        consolas_font = ("Consolas", 12)
+
+        # Create a frame to hold the text widget and scrollbar
+        content_frame = tk.Frame(self.frame, bg=FRAME_BG_COLOR)
+        content_frame.pack(expand=True, fill="both", padx=5, pady=5)
+
+        # Create the ScrolledText widget without a built-in scrollbar
+        self.output_widget = tk.Text(
+            content_frame,
+            wrap="word",
+            bg=TEXT_WIDGET_BG_COLOR,
+            fg=TEXT_WIDGET_FG_COLOR,
+            state="normal",
+            height=20,
+            font=consolas_font
+        )
+        self.output_widget.pack(side="left", expand=True, fill="both", padx=5, pady=5)
+
+        # Use a ttk.Scrollbar for styling compatibility
+        scrollbar = ttk.Scrollbar(content_frame, orient="vertical", command=self.output_widget.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.output_widget.configure(yscrollcommand=scrollbar.set)
+
+        # Input area
+        input_frame = tk.Frame(self.frame, bg=FRAME_BG_COLOR)
+        input_frame.pack(fill="x", padx=5, pady=5)
+
+        self.input_entry = tk.Entry(
+            input_frame,
+            bg=TEXT_WIDGET_BG_COLOR,
+            fg=TEXT_WIDGET_FG_COLOR,
+            insertbackground=TEXT_WIDGET_INSERT_COLOR,
+            font=consolas_font
+        )
+        self.input_entry.pack(fill="x", padx=5, pady=5)
+
+        self.input_entry.bind("<Return>", self.send_input)
+        self.input_entry.bind("<KeyRelease>", self.on_user_input)
+        self.input_entry.bind("<Tab>", self.autocomplete)
+        self.input_entry.bind("<Up>", self.handle_up_arrow)
+        self.input_entry.bind("<Down>", self.handle_down_arrow)
+        self.input_entry.bind("<Control-c>", lambda event: self.handle_ctrl_c())
+
+        self.input_entry.focus_set()
+
+        # Start the shell process
+        self.start_shell()
+
+    def start_shell(self):
+        """Start a persistent shell process in a hidden pseudo-console."""
+        if self.process and self.process.isalive():
+            self.insert_output("[INFO] Shell is already running.\n")
+            return
+
+        try:
+            # Lazy load the winpty library
+            import winpty
+        except ImportError:
+            self.insert_output(
+                "[ERROR] The 'winpty' library is required to start the console. "
+                "Please install it by running 'pip install pywinpty' in WinPython cmd prompt.\n"
+            )
+            return
+
+        try:
+            # Use the global paths defined earlier
+            scripts_dir = str(scripts_path.resolve())
+
+            # Create a pseudo-console process
+            self.process = winpty.PtyProcess.spawn(
+                "cmd",
+                cwd=scripts_dir,
+                env=os.environ
+            )
+            threading.Thread(target=self._read_output, daemon=True).start()
+            self.insert_output(f"[INFO] Shell started in {scripts_dir}. Type commands below.\n")
+
+            # List Python files in the /Scripts directory
+            self.run_shell_command("dir *.py")
+        except Exception as e:
+            self.insert_output(f"[ERROR] Failed to start shell: {e}\n")
+
+    def on_user_input(self, event):
+        """Reset autocomplete state for non-autocomplete keys."""
+        # Ignore Tab (used for autocomplete)
+        if event.keysym == "Tab":
+            return
+
+        # Reset autocomplete for all other keypresses
+        self.is_autocompleting = False
+
+    def send_input(self, event=None):
+        """Capture and send user input to the shell process."""
+        user_input = self.input_entry.get().strip()
+
+        if not user_input:
+            return  # Ignore empty input
+
+        # Add the command to history
+        self.history.append(user_input)
+        self.history_index = len(self.history)  # Reset to “one past the end”
+
+        # Parse the base command and arguments
+        command_parts = user_input.split()
+        base_command = command_parts[0]
+        args = command_parts[1:]
+
+        # Handle `cd` command
+        if base_command == "cd":
+            self.handle_cd_command(args, user_input)
+        else:
+            # Delegate to the generalized callback with the current directory
+            success, message = self.command_callback(base_command, args, self.cached_cwd)
+            if success:
+                # Handle success: Display optional informational message
+                if message:
+                    self.insert_output(f"[INFO] {message}\n")
+            elif message and message.startswith("Unknown command"):
+                # Fallback to shell for unrecognized commands
+                self.run_shell_command(user_input)
+            else:
+                # Display any other errors
+                self.insert_output(f"[ERROR] {message or 'An unexpected error occurred.'}\n")
+
+        # Clear the input field
+        self.input_entry.delete(0, tk.END)
+
+    def handle_cd_command(self, args, user_input):
+        """Handle `cd` command logic, both internally and in the shell."""
+        # Always send the `cd` command to the shell process
+        self.run_shell_command(user_input)
+
+        # Handle directory changes internally if arguments are provided
+        # This will manually calculate the directory since there is no
+        # direct way to pull this from the process.
+        if args:
+            # Calculate the new directory (absolute or relative)
+            target_dir = args[0]
+            if os.path.isabs(target_dir):
+                new_dir = target_dir
+            else:
+                new_dir = os.path.abspath(os.path.join(self.cached_cwd, target_dir))
+
+            # Validate the directory
+            if os.path.isdir(new_dir):
+                self.cached_cwd = new_dir
+                self.insert_output(f"[INFO] Changed directory to: {self.cached_cwd}\n")
+            else:
+                self.insert_output(f"[ERROR] No such directory: {target_dir}\n")
+        else:
+            # For `cd` with no arguments, rely on the shell to manage behavior
+            self.insert_output("[INFO] Directory change handled by the shell.\n")
+
+    def run_shell_command(self, command):
+        """Send a command to the pseudo-console."""
+        if not self.process or not self.process.isalive():
+            self.insert_output("[ERROR] No active shell process to send commands to.\n")
+            return
+
+        try:
+            # Write the command followed by a newline to simulate Enter
+            self.process.write(command + "\r\n")
+        except Exception as e:
+            self.insert_output(f"[ERROR] Failed to send command to shell: {e}\n")
+
+    def autocomplete(self, event):
+        """Handle tab-completion logic."""
+        # Get the current input and cursor position
+        current_input = self.input_entry.get()
+        cursor_position = self.input_entry.index(tk.INSERT)
+        base_command, partial_path = self.parse_command(current_input[:cursor_position])
+
+        # Start a new autocomplete cycle if not already active
+        if not self.is_autocompleting:
+            # New cycle: fetch matches and reset state
+            self.original_partial_path = partial_path
+            self.autocomplete_matches = self.get_autocomplete_matches(partial_path)
+            self.autocomplete_index = -1
+            self.is_autocompleting = True
+
+            if not self.autocomplete_matches:
+                self.insert_output("[INFO] No matches found.\n")
+                self.is_autocompleting = False
+                return "break"
+
+        # Cycle through matches
+        self.autocomplete_index = (self.autocomplete_index + 1) % len(self.autocomplete_matches)
+        selected_match = self.autocomplete_matches[self.autocomplete_index]
+        full_command = f"{base_command} {selected_match}" if base_command else selected_match
+
+        # Programmatically update the input field with the selected match
+        self.input_entry.delete(0, tk.END)
+        self.input_entry.insert(0, full_command)
+        self.input_entry.icursor(len(full_command))  # Place the cursor at the end
+
+        return "break"
+
+    def parse_command(self, command):
+        """
+        Parse the command to split the base command from the partial path.
+        For example:
+        - Input: "python te"
+        - Output: ("python", "te")
+        """
+        print(f"[DEBUG] Parsing command: '{command}'")
+        # Split the command into parts by spaces
+        parts = command.rsplit(" ", 1)
+        if len(parts) == 1:
+            # No space in the command, treat the whole thing as the path
+            base, path = "", parts[0]
+        else:
+            base, path = parts[0], parts[1]
+
+        print(f"[DEBUG] Parsed result - Base: '{base}', Path: '{path}'")
+        return base, path
+
+    def get_autocomplete_matches(self, prefix):
+        """Dynamically fetch files and directories matching the prefix, prioritizing files."""
+        try:
+            cwd = Path(self.cached_cwd)  # Use the cached working directory
+            files_and_dirs = cwd.iterdir()  # List all files and directories
+
+            # Perform case-insensitive matching
+            matches = [
+                f.name + ("/" if f.is_dir() else "")
+                for f in files_and_dirs
+                if f.name.lower().startswith(prefix.lower())
+            ]
+
+            # Sort matches: prioritize files, then directories
+            matches.sort(key=lambda x: (x.endswith("/"), x.lower()))
+            return matches
+        except Exception as e:
+            self.insert_output(f"[ERROR] Failed to list directory contents: {e}\n")
+            return []
+
+    def handle_up_arrow(self, event):
+        """Cycle backward through command history."""
+        if not self.history:
+            return "break"  # No history to cycle
+
+        if self.history_index > 0:
+            self.history_index -= 1
+        else:
+            self.history_index = 0  # Ensure index doesn't go below 0
+
+        # Fetch the command and update the input field
+        cmd = self.history[self.history_index]
+        self.input_entry.delete(0, tk.END)
+        self.input_entry.insert(0, cmd)
+        self.input_entry.icursor(len(cmd))  # Move cursor to the end
+
+        return "break"
+
+    def handle_down_arrow(self, event):
+        """Cycle forward through command history."""
+        if not self.history:
+            return "break"  # No history to cycle
+
+        if self.history_index < len(self.history) - 1:
+            self.history_index += 1
+            cmd = self.history[self.history_index]
+        else:
+            # If at the end of history, clear the input field
+            self.history_index = len(self.history)
+            cmd = ""
+
+        # Update the input field
+        self.input_entry.delete(0, tk.END)
+        self.input_entry.insert(0, cmd)
+        self.input_entry.icursor(len(cmd))  # Move cursor to the end
+
+        return "break"
+
+    def debug_associated_processes(self):
+        """Find and print all processes associated with the current process."""
+        if not self.process or not self.process.pid:
+            print("[ERROR] No process is currently running or the process PID is not set.")
+            return
+
+        try:
+            pid = self.process.pid
+            print(f"[DEBUG] Inspecting processes associated with PID: {pid}")
+
+            # Get the parent process
+            parent_process = psutil.Process(pid)
+            print(f"[DEBUG] Parent Process: PID={parent_process.pid}, Name={parent_process.name()}, Status={parent_process.status()}")
+
+            # Get all child processes
+            children = parent_process.children(recursive=True)
+            if not children:
+                print(f"[DEBUG] No child processes found for PID={pid}.")
+            else:
+                print(f"[DEBUG] Found {len(children)} child processes:")
+                for child in children:
+                    print(f"  - Child PID={child.pid}, Name={child.name()}, Status={child.status()}")
+
+        except psutil.NoSuchProcess:
+            print(f"[ERROR] No process found with PID: {self.process.pid}. It may have exited.")
+        except Exception as e:
+            print(f"[ERROR] Unexpected error while inspecting processes: {e}")
+
+    def handle_ctrl_c(self, target="child"):
+        """
+        Handle the Ctrl+C event to send SIGINT to the specified target.
+        """
+        if not self.process or not self.process.pid:
+            print("[ERROR] No process is currently running or the process PID is not set.")
+            return
+
+        try:
+            parent_pid = self.process.pid
+            print(f"[DEBUG] Inspecting processes associated with PID: {parent_pid}")
+
+            # Get the parent process and its children
+            parent = psutil.Process(parent_pid)
+            children = parent.children(recursive=True)
+
+            if target == "parent":
+                print("[INFO] Sending CTRL+C to the parent process...")
+                self._send_ctrl_c_to_process(parent_pid, target="parent")
+
+            elif target == "conhost":
+                conhost_process = next((p for p in children if p.name().lower() == "conhost.exe"), None)
+                if conhost_process:
+                    print("[INFO] Sending CTRL+C to the conhost process...")
+                    self._send_ctrl_c_to_process(conhost_process.pid, target="conhost")
+                else:
+                    print("[INFO] No conhost process found among children.")
+
+            elif target == "child":
+                other_children = [p for p in children if p.name().lower() != "conhost.exe"]
+                if not other_children:
+                    print("[INFO] No child processes found (excluding conhost).")
+                for child in other_children:
+                    print(f"[INFO] Sending CTRL+C to child process PID={child.pid}, Name={child.name()}...")
+                    self._send_ctrl_c_to_process(child.pid, target=f"child PID={child.pid}")
+
+            else:
+                print(f"[ERROR] Invalid target specified: {target}")
+
+        except psutil.NoSuchProcess:
+            print(f"[ERROR] Parent process PID {parent_pid} no longer exists.")
+        except Exception as e:
+            print(f"[ERROR] Unexpected error during handle_ctrl_c: {e}")
+
+    def _send_ctrl_c_to_process(self, pid, target="unknown"):
+        """Send Ctrl+C to the process in the pseudo-console."""
+        if self.process and self.process.isalive():
+            try:
+                # Log the target for debugging
+                self.insert_output(f"[INFO] Sending Ctrl+C to target: {target} (PID={pid}).\n")
+                self.process.write("\x03")  # Send Ctrl+C (ASCII code)
+                self.insert_output("[INFO] Sent Ctrl+C to the process.\n")
+            except Exception as e:
+                self.insert_output(f"[ERROR] Failed to send Ctrl+C: {e}\n")
+        else:
+            self.insert_output(f"[ERROR] No active process to send Ctrl+C to for target: {target}.\n")
+
+    ANSI_ESCAPE_PATTERN = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+    def _read_output(self):
+        """Read and display output from the pseudo-console process, using separate regex for ANSI codes and artifacts."""
+        try:
+            while True:
+                if self.stop_event.is_set():
+                    break
+
+                # Read up to 1024 bytes from the pseudo-console
+                output = self.process.read(1024)
+                if not output:
+                    break
+
+                # Safeguard against widget destruction
+                if not self.output_widget or not self.output_widget.winfo_exists():
+                    break
+
+                # Remove ANSI escape sequences
+                clean_output = self.ANSI_ESCAPE_PATTERN.sub('', output)
+
+                 # Normalize carriage returns (\r) by removing them
+                clean_output = clean_output.replace('\r', '')
+
+                # Directly remove the specific artifact
+                artifact_to_remove = "0;C:\\Windows\\system32\\cmd.EXE\x07"
+                filtered_output = clean_output.replace(artifact_to_remove, "")
+
+                # Insert the cleaned and filtered output into the widget
+                self.insert_output(filtered_output)
+        except Exception as e:
+            self.insert_output(f"[ERROR] Failed to read console output: {e}\n")
+
+    def insert_output(self, text):
+        """Insert shell output into the output widget."""
+        if not self.output_widget or not self.output_widget.winfo_exists():
+            return  # Widget has been destroyed, skip
+
+        self.output_widget.config(state="normal")
+        self.output_widget.insert(tk.END, text)
+        self.output_widget.see(tk.END)
+        self.output_widget.config(state="disabled")
+
+    def on_tab_activated(self):
+        if self.input_entry and self.input_entry.winfo_exists():
+            self.input_entry.focus_force()
+            print("[DEBUG] Focus set to input_entry.")
+        else:
+            print("[ERROR] Input textbox is not available for focus.")
+
+    def close(self):
+        """Terminate the pseudo-console process and clean up resources."""
+        if self.process and self.process.isalive():
+            # Send Ctrl+C to interrupt any running commands
+            self.handle_ctrl_c()
+
+            # Allow some time for the process to terminate gracefully
+            time.sleep(0.5)
+
+            # If the process is still running, terminate it forcefully
+            if self.process.isalive():
+                try:
+                    self.process.terminate()
+                except Exception as e:
+                    self.insert_output(f"[ERROR] Failed to terminate shell process: {e}\n")
+
+        # Signal the _read_output thread to stop
+        self.stop_event.set()
+
+        # Call the parent close method to clean up tab resources
+        super().close()
+
 class ScriptLauncherApp:
     """Represents the main application for launching and managing scripts."""
     def __init__(self, root):
@@ -575,11 +1217,35 @@ class ScriptLauncherApp:
         # Autoplay Scripts
         self.autoplay_script_group()
 
+        # Bind key press globally - for script keyboard input support
+        self.root.bind("<Key>", self.on_key_press)
+
+        # Bind Control+` for toggling the console window
+        self.root.bind_all("<Control-`>", self.handle_control_tilde)
+
+        self.root.bind_all("<Control-w>", lambda event: self.tab_manager.close_active_tab())
+
+    def handle_control_tilde(self, event=None):
+        """Bring up the CommandLineTab: Select if exists, create if not."""
+        # Check if a CommandLineTab exists
+        for tab_id, tab in self.tab_manager.tabs.items():
+            if isinstance(tab, CommandLineTab):
+                # Select the existing CommandLineTab
+                self.tab_manager.notebook.select(tab.frame)
+
+        # No CommandLineTab exists, create a new one
+        self.add_command_line_tab()
+
     def configure_root(self):
         """Configure the main root window."""
-        self.root.title("Python Script Launcher")
+        self.root.title("MSFS-PyScriptManager")
         self.root.geometry("1000x600")
         self.root.configure(bg=DARK_BG_COLOR)
+        try:
+            photo = tk.PhotoImage(file="Data/letter-m-svgrepo-com.png")
+            self.root.wm_iconphoto(False, photo)
+        except tk.TclError as e:
+            print(f"Error loading icon: {e}")
 
     def create_toolbar(self):
         """Create the top toolbar with action buttons."""
@@ -592,6 +1258,7 @@ class ScriptLauncherApp:
             ("Load Script Group", self.load_script_group, "right"),
             ("Save Script Group", self.save_script_group, "right"),
             ("Performance Metrics", self.open_performance_metrics_tab, "right"),
+            ("Command Line", self.add_command_line_tab, "right")
         ]
 
         for text, command, side in buttons:
@@ -602,7 +1269,7 @@ class ScriptLauncherApp:
                 activeforeground=BUTTON_ACTIVE_FG_COLOR,
                 relief="flat", highlightthickness=0
             )
-            button.pack(side=side, padx=5, pady=2)
+            button.pack(side=side, padx=(0,5), pady=2)
 
     def select_and_run_script(self):
         """Opens file dialog for script selection and then runs it"""
@@ -633,6 +1300,61 @@ class ScriptLauncherApp:
             process_tracker=self.process_tracker
         )
         self.tab_manager.add_tab(perf_tab)
+
+    def add_command_line_tab(self):
+        """Create and add a CommandLineTab."""
+        command_line_tab = CommandLineTab(
+            title="Command Line",
+            command_callback=self.handle_command  # Pass the generalized callback
+        )
+        self.tab_manager.add_tab(command_line_tab)
+
+    def handle_command(self, command, args, current_dir):
+        """Generalized command handler with directory context."""
+        if command in ["python", "py"]:
+            return self.handle_python_command(args, current_dir)
+        elif command in ["switch", "s"]:
+            return self.switch_tab_by_name(args)
+        elif command == "greet":
+            return True, f"Hello, {' '.join(args) or 'world'}!"
+        else:
+            return False, f"Unknown command: {command}"
+
+    def handle_python_command(self, args, current_dir):
+        """Handle intercepted Python commands with directory context."""
+        if not args:
+            return False, "No script specified for 'python'."
+
+        script_name = args[0]
+        extra_args = args[1:]  # Additional arguments for the script
+
+        # Resolve the script path relative to the current directory
+        script_path = Path(current_dir) / script_name
+        if not script_path.exists():
+            return False, f"Script '{script_path}' not found."
+
+        # Launch the script in a new ScriptTab
+        script_tab = ScriptTab(
+            title=script_path.name,
+            script_path=script_path,
+            process_tracker=self.process_tracker
+        )
+        self.tab_manager.add_tab(script_tab)
+
+        return True, None  # Success
+
+    def switch_tab_by_name(self, args):
+        """Switch to the tab with the specified script name."""
+        if not args:
+            return False, "No script name provided. Usage: switch <script_name>"
+
+        script_name = args[0]
+        for tab_id, tab in self.tab_manager.tabs.items():
+            if isinstance(tab, ScriptTab) and tab.script_path.name.lower() == script_name.lower():
+                self.tab_manager.notebook.select(tab.frame)
+                return True, None  # Success
+
+        return False, f"No tab found for script: {script_name}"
 
     def autoplay_script_group(self):
         """
@@ -745,15 +1467,31 @@ class ScriptLauncherApp:
         logging.debug("Schedule: finalize shutdown")
         self.root.after(0, lambda: (self.root.destroy(), finalize_shutdown()))
 
+    def on_key_press(self, event):
+        """Route keypress events to the active tab if it supports keypress handling."""
+        active_tab_id = self.tab_manager.active_tab_id
+        if not active_tab_id:
+            print("[INFO] No active tab to handle keypress.")
+            return  # No active tab to route input to
+
+        # Get the active tab
+        active_tab = self.tab_manager.tabs.get(active_tab_id)
+        if not active_tab:
+            print(f"[ERROR] No tab found for active_tab_id: {active_tab_id}")
+            return
+
+        # Check if the active tab has a 'handle_keypress' method
+        if callable(getattr(active_tab, "handle_keypress", None)):
+            active_tab.handle_keypress(event)
+
 class ProcessTracker:
     """Manages runtime of collection of processes"""
     def __init__(self, scheduler, shutdown_event):
         self.processes = {}  # Maps tab_id to process metadata
-        self.queues = {}  # Maps tab_id to queues for stdout and stderr
         self.scheduler = scheduler  # Store the scheduler
         self.script_name = None
         self.queuefull_warning_issued = False
-
+        self.lock = Lock()
         self.shutdown_event = shutdown_event  # Store the shutdown event
 
     def start_process(self, tab_id, command, stdout_callback, stderr_callback, script_tab, script_name=None):
@@ -769,6 +1507,7 @@ class ProcessTracker:
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                stdin=subprocess.PIPE,
                 text=True,
                 bufsize=1,
                 env=custom_env,
@@ -776,44 +1515,58 @@ class ProcessTracker:
             print(f"[INFO] Started process: {script_name}, PID: {process.pid}, Tab ID: {tab_id}")
 
             self.script_name = script_name
-            self.processes[tab_id] = {
-                "process": process,
-                "script_name": script_name or "Unknown",
-                "script_tab": script_tab}
 
-            # Create queues for communication
-            self.queues[tab_id] = {
-                "stdout": queue.Queue(maxsize=1000),
-                "stderr": queue.Queue(maxsize=1000),
-                "stop_event": threading.Event()
-            }
+            # Create individual queues and stop event
+            stdout_queue = queue.Queue(maxsize=1000)
+            stderr_queue = queue.Queue(maxsize=1000)
+            stdin_queue = queue.Queue(maxsize=1000)
+            stop_event = threading.Event()
+
+            with self.lock:
+                self.processes[tab_id] = {
+                    "process": process,
+                    "script_name": script_name or "Unknown",
+                    "script_tab": script_tab,
+                    "stdout_queue": stdout_queue,
+                    "stderr_queue": stderr_queue,
+                    "stdin_queue": stdin_queue,
+                    "stop_event": stop_event,
+                }
 
             # Start threads for stdout and stderr reading
             threading.Thread(
                 target=self._read_output,
-                args=(process.stdout, self.queues[tab_id]["stdout"], tab_id, "stdout"),
+                args=(process.stdout, stdout_queue, stop_event, tab_id, "stdout"),
                 daemon=True,
                 name=f"StdoutThread-{tab_id}"
             ).start()
 
             threading.Thread(
                 target=self._read_output,
-                args=(process.stderr, self.queues[tab_id]["stderr"], tab_id, "stderr"),
+                args=(process.stderr, stderr_queue, stop_event, tab_id, "stderr"),
                 daemon=True,
                 name=f"StderrThread-{tab_id}"
+            ).start()
+
+            # Start a thread for writing to stdin
+            threading.Thread(
+                target=self._write_input,
+                args=(process.stdin, stdin_queue, stop_event, tab_id),
+                daemon=True,
+                name=f"StdinWriter-{tab_id}"
             ).start()
 
             # Start dispatcher threads to process queues and invoke callbacks
             threading.Thread(
                 target=self._dispatch_queue,
-                args=(self.queues[tab_id]["stdout"], stdout_callback),
+                args=(stdout_queue, stdout_callback, stop_event),
                 daemon=True,
                 name=f"DispatcherStdout-{tab_id}"
             ).start()
 
             threading.Thread(
                 target=self._dispatch_queue,
-                args=(self.queues[tab_id]["stderr"], stderr_callback),
+                args=(stderr_queue, stderr_callback, stop_event),
                 daemon=True,
                 name=f"DispatcherStderr-{tab_id}"
             ).start()
@@ -824,47 +1577,104 @@ class ProcessTracker:
         except Exception as e:
             print(f"[ERROR] Failed to start process for Tab ID {tab_id}: {e}")
 
-    def _read_output(self, stream, q, tab_id, stream_name):
-        """Read subprocess output line-by-line for real-time updates."""
+    def _read_output(self, stream, output_queue, stop_event, tab_id, stream_name):
+        """
+        Read subprocess output with proper handling of lines and partial data.
+        """
         print(f"[INFO] Starting output reader for {stream_name}, Tab ID: {tab_id}")
+
+        fd = stream.fileno()  # Get the file descriptor for low-level reads
+        buffer = ""  # Accumulate partial lines
+        last_flushed_partial = None  # Track the last flushed partial line
+
         try:
-            while not self.queues[tab_id]["stop_event"].is_set():
-                line = stream.readline()  # Read one line at a time
-                if not line:  # End of stream
-                    logging.info("End of stream for %s, Tab ID: %d", stream_name, tab_id)
+            while not stop_event.is_set():
+                try:
+                    # Attempt to read a chunk of data
+                    chunk = os.read(fd, 4096).decode("utf-8")
+                    if not chunk:  # EOF or no data available
+                        time.sleep(0.01)
+                        continue
+
+                    buffer += chunk
+
+                    # Debug: Log received chunk and updated buffer
+                    #print(f"[DEBUG] Chunk received ({len(chunk)} chars): {repr(chunk)}")
+                    #print(f"[DEBUG] Current buffer ({len(buffer)} chars): {repr(buffer)}")
+
+                    # Process complete lines in the buffer
+                    while "\n" in buffer:
+                        line, buffer = buffer.split("\n", 1)
+                        output_queue.put_nowait(line + "\n")
+                        #print(f"[DEBUG] Line enqueued: {repr(line)}")
+                        last_flushed_partial = None  # Reset partial tracking
+
+                    # Handle partial line (e.g., prompts or incomplete output)
+                    if buffer and buffer != last_flushed_partial:
+                        output_queue.put_nowait(buffer)
+                        #print(f"[DEBUG] Partial buffer enqueued: {repr(buffer)}")
+                        last_flushed_partial = buffer
+
+                        # Clear the buffer after enqueueing partial data
+                        buffer = ""
+
+                except BlockingIOError:
+                    # No data available yet; pause briefly to avoid busy-waiting
+                    time.sleep(0.01)
+                except Exception as read_error:
+                    # Catch unexpected read errors and log them
+                    print(f"[ERROR] Exception while reading {stream_name}: {read_error}")
                     break
 
-                # print(f"[DEBUG] Line read for {stream_name}, Tab ID {tab_id}: {line.strip()}")
-                q.put_nowait(line)
+        except Exception as loop_error:
+            # Log any unexpected errors that terminate the loop
+            print(f"[ERROR] Unexpected error in output reader for {stream_name}: {loop_error}")
 
-        except queue.Full:
-            # Handle scenario where queue is full
-            if not self.queuefull_warning_issued:
-                print(f"\n[WARNING] Queue line buffer limit reached for {self.script_name} - logging skipped.\n")
-                self.queuefull_warning_issued = True
-        except Exception as e:
-            print(f"[ERROR] Error reading {stream_name} for Tab ID {tab_id}: {e}")
         finally:
-            q.put(None)  # Sentinel to indicate EOF
+            # Handle cleanup: flush remaining buffer and signal end of stream
+            if buffer and buffer != last_flushed_partial:
+                output_queue.put_nowait(buffer)
+                print(f"[DEBUG] Final buffer flushed: {repr(buffer)}")
+            output_queue.put(None)  # Signal end of stream to the queue
+
             try:
-                stream.close()  # Safely close the stream
-                print(f"[INFO] {stream_name} stream closed successfully, Tab ID: {tab_id}")
-            except Exception as e:
-                print(f"[WARNING] Error closing {stream_name}: {e}")
+                stream.close()  # Close the stream gracefully
+            except Exception as close_error:
+                print(f"[WARNING] Error closing {stream_name}: {close_error}")
+
             print(f"[INFO] Output reader for {stream_name} finished, Tab ID: {tab_id}")
 
-    def _dispatch_queue(self, q, callback):
+    def _write_input(self, stdin, input_queue, stop_event, tab_id):
+        """Write input from the queue to the subprocess's stdin."""
+        try:
+            while not stop_event.is_set():
+                try:
+                    input_data = input_queue.get(timeout=1)  # Block until input is available
+                    if input_data is None:  # Sentinel for EOF
+                        break
+                    stdin.write(input_data)
+                    stdin.flush()  # Ensure immediate delivery to the subprocess
+                except queue.Empty:
+                    continue  # Check for stop_event periodically
+        except Exception as e:
+            print(f"[ERROR] Failed to write to stdin for Tab ID {tab_id}: {e}")
+        finally:
+            try:
+                stdin.close()
+            except Exception as e:
+                print(f"[WARNING] Failed to close stdin for Tab ID {tab_id}: {e}")
+
+    def _dispatch_queue(self, q, callback, stop_event):
         """Consume items from the queue and invoke the callback."""
         print("[INFO] Starting dispatcher thread.")
         while True:
             try:
                 line = q.get(timeout=1)  # Avoid indefinite blocking
-                #print("[DEBUG] Dispatcher received line from queue.")
             except queue.Empty:
-                # Check for shutdown periodically
-                if any(queue_data["stop_event"].is_set() for queue_data in self.queues.values()):
-                    print("[INFO] Dispatcher stopping due to stop event.")
-                    logging.debug("Dispatcher stopping due to stop event.")
+                # Check if this process’s stop_event is set
+                if stop_event.is_set():
+                    print("[INFO] Dispatcher stopping due to its own stop_event.")
+                    logging.debug("Dispatcher stopping due to its own stop_event.")
                     break
                 continue
 
@@ -881,9 +1691,10 @@ class ProcessTracker:
 
     def check_termination(self, tab_id):
         """Check if the process has terminated and notify the associated ScriptTab."""
-        metadata = self.processes.get(tab_id)
-        if not metadata:
-            return  # Process already cleaned up or not found
+        with self.lock:
+            metadata = self.processes.get(tab_id)
+            if not metadata:
+                return  # Process already cleaned up or not found
 
         process = metadata["process"]
         script_tab = metadata.get("script_tab")
@@ -901,7 +1712,8 @@ class ProcessTracker:
                         script_tab.insert_output(f"[ERROR] Script '{script_name}' terminated unexpectedly with code {exit_code}.\n")
 
                 # Clean up process metadata
-                self.processes.pop(tab_id, None)
+                with self.lock:
+                    self.processes.pop(tab_id, None)
             except Exception as e:
                 print(f"[ERROR] Error notifying ScriptTab for Tab ID {tab_id}: {e}")
             return
@@ -910,33 +1722,27 @@ class ProcessTracker:
         self.schedule_process_check(tab_id)
 
     def terminate_process(self, tab_id):
-        """Terminate the process."""
-        metadata = self.processes.pop(tab_id, None)
-        if not metadata:
-            return
-
-        process = metadata["process"]
-        if process.poll() is None:  # Still running
-            process.terminate()
-        if tab_id in self.queues:
-            self.queues[tab_id]["stdout"].put("[INFO] Process terminated by user.\n")
-            self.queues[tab_id]["stdout"].put(None)  # Final EOF sentinel
-            del self.queues[tab_id]
-
-    def terminate_process(self, tab_id):
         """Terminate the process for a given tab ID."""
         print(f"[INFO] Attempting to terminate process for Tab ID: {tab_id}")
         logging.info("[INFO] Attempting to terminate process for Tab ID: %s", tab_id)
 
-        metadata = self.processes.pop(tab_id, None)
-        if not metadata:
-            print(f"[INFO] No process found for Tab ID {tab_id}.")
-            return
+        # Remove metadata for this tab
+        with self.lock:
+            metadata = self.processes.pop(tab_id, None)
+            if not metadata:
+                print(f"[INFO] No process found for Tab ID {tab_id}.")
+                return
+            process = metadata["process"]
 
-        process = metadata["process"]
+        # Terminate the process if it is still running
         if process.poll() is None:  # Still running
             print(f"[INFO] Terminating process for Tab ID {tab_id} (PID {process.pid}).")
-            self._terminate_process_tree(process.pid)
+            self.terminate_process_tree(process.pid)
+
+        # Signal threads to stop
+        metadata["stop_event"].set()
+        metadata["stdout_queue"].put("[INFO] Process terminated by user.\n")
+        metadata["stdout_queue"].put(None)  # Final EOF sentinel
 
         # Close the process's I/O streams
         if process.stdout:
@@ -944,14 +1750,11 @@ class ProcessTracker:
         if process.stderr:
             process.stderr.close()
 
-        # Signal threads to stop
-        if tab_id in self.queues:
-            self.queues[tab_id]["stop_event"].set()
-            del self.queues[tab_id]
-
         print(f"[INFO] Process for Tab ID {tab_id} terminated.")
+        logging.info("[INFO] Process for Tab ID %s terminated.", tab_id)
 
-    def _terminate_process_tree(self, pid, timeout=5, force=True):
+    @staticmethod
+    def terminate_process_tree(pid, timeout=5, force=True):
         """Terminate a process tree."""
         print(f"[INFO] Terminating process tree for PID: {pid}")
         logging.info("[INFO] Terminating process tree for PID: %s", pid)
@@ -961,7 +1764,7 @@ class ProcessTracker:
             logging.info(f"Process with PID {pid} already terminated. "
                   "Checking for orphaned children.")
             # Attempt to clean up orphaned child processes
-            self._terminate_orphaned_children(pid)
+            self.terminate_orphaned_children(pid)
             return
         except Exception as e:
             print(f"[ERROR] Failed to initialize process PID {pid}: {e}")
@@ -1020,7 +1823,8 @@ class ProcessTracker:
         except Exception as e:
             print(f"[ERROR] Unexpected error terminating process tree for PID {pid}: {e}")
 
-    def _terminate_orphaned_children(self, parent_pid):
+    @staticmethod
+    def terminate_orphaned_children(parent_pid):
         """Terminate orphaned children of a non-existent parent process."""
         try:
             for proc in psutil.process_iter(attrs=["pid", "ppid"]):
@@ -1122,6 +1926,16 @@ def main():
     # Start app
     root = ThemedTk(theme="black")
     app = ScriptLauncherApp(root)
+
+    # Add fault handler
+    faulthandler.enable()
+    traceback_log_file = open("Launcher.log", "w")
+    def reset_traceback_timer():
+        """Reset the faulthandler timer to prevent a dump."""
+        faulthandler.dump_traceback_later(15, file=traceback_log_file, exit=True)
+        root.after(5000, reset_traceback_timer)
+
+    #reset_traceback_timer()
 
     # Start the shutdown monitoring subprocess if a pipe is provided
     monitor_process = None

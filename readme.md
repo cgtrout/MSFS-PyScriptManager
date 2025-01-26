@@ -22,6 +22,7 @@
 - Click the "Run Script" button to open a script. Running scripts are each shown in their own individual tabs.
 - Right click the tab header for a given script to close it.
 - Further details on the provided scripts are included further down.
+- For more information on how to use the Launcher see: [Launcher Guide](Docs/Launcher.guide.md)
 ![image](https://github.com/user-attachments/assets/b8e12084-afad-4cd8-9b4c-2ea9cbb59ff1)
 
 # Included Scripts
@@ -54,3 +55,7 @@
 - You can easily create your own scripts and run them as well.  Note that if you need to add any libraries use the "WinPython/WinPython Command Prompt.exe" and run the "pip" command from here to add a library to the WinPython directory.
 - I recommend using [Visual Studio Code](https://code.visualstudio.com/download) for editing the scripts.  The built in "Edit" button will open the selected script in VS Code if it is installed.
 - Uses WinPython to allow standalone installation - https://github.com/winpython
+
+## Additional Credits
+- Icon used for Launcher: [JoyPixels Emojione](https://github.com/joypixels/emojione) (MIT License)
+

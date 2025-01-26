@@ -92,7 +92,6 @@ void processPipeDataLoop(HANDLE hInboundPipe, HANDLE hCommandPipe, PROCESS_INFOR
             if (!WriteFile(g_hCommandPipe, heartbeatMessage, strlen(heartbeatMessage), &bytesWritten, NULL))
             {
                 printf("[ERROR] Failed to send heartbeat. Error: %lu\n", GetLastError());
-                continue;
             }
             lastHeartbeatTime = currentTime;
         }
