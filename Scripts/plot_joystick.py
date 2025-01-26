@@ -86,7 +86,7 @@ class JoystickApp:
 
     def _retry_simconnect(self, retry_interval=1000 * 60):
         """Schedule a retry of SimConnect initialization."""
-        print_info(f"[INFO] Scheduling SimConnect reconnection in {retry_interval // 1000} seconds.")
+        print_info(f"Scheduling SimConnect reconnection in {retry_interval // 1000} seconds.")
         self.root.after(retry_interval, self._initialize_simconnect)
 
     def _initialize_simconnect(self):
