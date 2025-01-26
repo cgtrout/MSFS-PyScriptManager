@@ -22,7 +22,7 @@
 - Click the "Run Script" button to open a script. Running scripts are each shown in their own individual tabs.
 - Right click the tab header for a given script to close it.
 - Further details on the provided scripts are included further down.
-- For more information on how to use the Launcher see: [Launcher Guide](Docs/Launcher.guide.md)
+- For more information on how to use the Launcher see: [Launcher Guide](Docs/Launcher_guide.md)
 ![image](https://github.com/user-attachments/assets/b8e12084-afad-4cd8-9b4c-2ea9cbb59ff1)
 
 # Included Scripts
