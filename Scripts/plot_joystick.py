@@ -1,13 +1,8 @@
-# plot_joystick: Show small plot window showing joystick axis position.
-#  When ran will show a list of joysticks it detects.  Change "desired_joystick_name" below to the value you want to use.
+# plot_joystick - shows a plot of joystick state - right click to bring up menu
 
-# Desired joystick name
-desired_joystick_name = "T.A320 Pilot"
-
-# Set the desired graph size in pixels
-graph_size_pixels = 100  # Change this to adjust the overall window size
-alpha_transparency_level = 0.8 # Window transparency
-
+import os
+import json
+import sys
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -17,209 +12,284 @@ import tkinter as tk
 import pygame
 import time
 
-# Initialize pygame for joystick input
-pygame.init()
-pygame.joystick.init()
+try:
+    # Import all color print functions
+    from Lib.color_print import *
+except ImportError:
+    print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
+    sys.exit(1)
 
-# Retrieve all connected joysticks
-joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
-joystick_names = [joystick.get_name() for joystick in joysticks]
-joystick_count = pygame.joystick.get_count()
+class JoystickApp:
+    def __init__(self, graph_size_pixels, alpha_transparency_level, settings_file):
+        # Initialize constants and state
+        self.graph_size_pixels = graph_size_pixels
+        self.graph_size_inches = graph_size_pixels / 100
+        self.alpha_transparency_level = alpha_transparency_level
+        self.settings_file = settings_file
 
-print("Showing list of detected joysticks:")
+        self.TRIM_COLOR = '#444444'
 
-# Iterate over all detected joysticks and print their names
-for i in range(joystick_count):
-    joystick = pygame.joystick.Joystick(i)
-    joystick.init()
-    print(f"Joystick {i + 1}: {joystick.get_name()}")
+        self.sm = None
+        self.aq = None
+        self.selected_joystick = None
+        self.joystick_names = []
+        self.joysticks = []
+        self.trim_update_interval = 0.5
+        self.cached_trim_values = {
+            "elevator_trim": 0,
+            "aileron_trim": 0,
+            "rotor_lateral_trim": 0,
+            "rotor_longitudinal_trim": 0,
+        }
+        self.cache_lock = threading.Lock()
+        self.scat = None
+        self.elevator_trim_marker = None
+        self.aileron_trim_marker = None
+        self.coord_text = None
 
-# Check for desired joystick and select it if available
-selected_joystick = None
-if desired_joystick_name in joystick_names:
-    selected_joystick = joysticks[joystick_names.index(desired_joystick_name)]
-    selected_joystick.init()
-    print(f"Joystick '{desired_joystick_name}' selected for visualization.")
-else:
-    print(f"No joystick found with the name '{desired_joystick_name}'. Exiting.")
-    pygame.quit()
-    exit()
+        self.root = None
+        self.menu = None
+        self.fig, self.ax = None, None
 
-# Function to initialize SimConnect and AircraftRequests
-def initialize_simconnect():
-    try:
-        sm = SimConnect()
-        aq = AircraftRequests(sm)
-        print("Connected to SimConnect.")
-        return sm, aq
-    except Exception as e:
-        print(f"SimConnect initialization failed: {e}")
-        return None, None
+        # Load settings
+        self.desired_joystick_name, self.window_position = self._load_settings()
 
-sm, aq = initialize_simconnect()
+        # Initialize pygame for joystick handling
+        pygame.init()
+        pygame.joystick.init()
 
-# Calculate the size in inches for matplotlib (assuming 100 DPI)
-graph_size_inches = graph_size_pixels / 100
+        # Load and configure joysticks
+        self._load_joysticks()
 
-# Create the main tkinter window with the specified size
-root = tk.Tk()
-root.geometry(f"{graph_size_pixels}x{graph_size_pixels}+{0}+{40}")  # Use the size variable for both dimensions
-root.overrideredirect(1)  # Frameless window
-root.attributes("-topmost", True)  # Keep it on top
-root.attributes("-alpha", alpha_transparency_level)  # Set window transparency
+    def _load_joysticks(self):
+        """Load joystick information and initialize the desired joystick."""
+        # Get joystick info
+        self.joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
+        self.joystick_names = [joystick.get_name() for joystick in self.joysticks]
 
-# Add functionality to make the window draggable
-def start_move(event):
-    root.x = event.x
-    root.y = event.y
+        # Use the desired joystick name already loaded
+        if self.desired_joystick_name in self.joystick_names:
+            self.selected_joystick = self.joysticks[self.joystick_names.index(self.desired_joystick_name)]
+            self.selected_joystick.init()
+            print_info(f"Joystick '{self.desired_joystick_name}' loaded from settings and initialized.")
+        else:
+            print_warning(f"Saved joystick '{self.desired_joystick_name}' not found. No joystick selected.")
 
-def stop_move(event):
-    root.x = None
-    root.y = None
+    def _save_settings(self, joystick_name=None, position=None):
+        """Save settings like joystick name and window position."""
+        settings = {}
+        try:
+            with open(self.settings_file, "r") as f:
+                settings = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass  # If settings file doesn't exist or is invalid, start fresh
 
-def on_motion(event):
-    deltax = event.x - root.x
-    deltay = event.y - root.y
-    x = root.winfo_x() + deltax
-    y = root.winfo_y() + deltay
-    root.geometry(f"+{x}+{y}")
+        if joystick_name:
+            settings["desired_joystick_name"] = joystick_name
+        if position:
+            settings["window_position"] = position
 
-# Bind mouse events for dragging
-root.bind("<Button-1>", start_move)
-root.bind("<ButtonRelease-1>", stop_move)
-root.bind("<B1-Motion>", on_motion)
+        with open(self.settings_file, "w") as f:
+            json.dump(settings, f)
 
-# Create a matplotlib figure and axis using the calculated size
-fig, ax = plt.subplots(figsize=(graph_size_inches, graph_size_inches))
-fig.patch.set_facecolor('#111111')  # Dark background for the figure
-ax.set_facecolor('#000000')  # Dark background for the plot
-scat = ax.scatter([], [], s=20, color="yellow")  # Marker for the joystick dot
+    def _load_settings(self):
+        """Load settings like joystick name and window position."""
+        try:
+            with open(self.settings_file, "r") as f:
+                data = json.load(f)
+                return data.get("desired_joystick_name", ""), data.get("window_position", "+0+40")
+        except (FileNotFoundError, json.JSONDecodeError):
+            return "", "+0+40"
 
-# Tighten layout and remove any excess border space
-fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
-ax.set_xlim(-1.01, 1.01)
-ax.set_ylim(-1.01, 1.01)
-ax.axis('off')  # Remove all ticks, labels, and spines
+    def _retry_simconnect(self, retry_interval=1000 * 60):
+        """Schedule a retry of SimConnect initialization."""
+        print_info(f"Scheduling SimConnect reconnection in {retry_interval // 1000} seconds.")
+        self.root.after(retry_interval, self._initialize_simconnect)
 
-# Draw crosshairs at the center of the plot
-ax.axhline(0, color='darkgray', lw=0.7)
-ax.axvline(0, color='darkgray', lw=0.7)
+    def _initialize_simconnect(self):
+        """Attempt to initialize SimConnect."""
+        try:
+            self.sm = SimConnect()
+            self.aq = AircraftRequests(self.sm)
+            print_info("Connected to SimConnect.")
+        except Exception as e:
+            print_error(f"SimConnect initialization failed: {e}")
+            self.sm = None
+            self.aq = None
+            self._retry_simconnect()
 
-# Add trim markers with custom colors and transparency
-elevator_trim_marker = ax.axhline(0, color=(0.1, 0.5, 0.9, 0.6), lw=0.8, linestyle='--', label="Pitch Trim (Elevator)")
-aileron_trim_marker = ax.axvline(0, color=(0.5, 0.1, 0.3, 0.8), lw=0.8, linestyle='--', label="Roll Trim (Aileron)")
+    def _fetch_trim_data(self):
+        """Fetch trim data in a background thread."""
+        while True:
+            if self.sm and self.aq:
+                try:
+                    # Fetch data
+                    elevator_trim = self.aq.find("ELEVATOR_TRIM_PCT").value or 0
+                    aileron_trim = self.aq.find("AILERON_TRIM_PCT").value or 0
+                    rotor_lateral_trim = self.aq.find("ROTOR_LATERAL_TRIM_PCT").value or 0
+                    rotor_longitudinal_trim = self.aq.find("ROTOR_LONGITUDINAL_TRIM_PCT").value or 0
 
-# Global variable for cached trim values and lock
-cached_trim_values = {
-    "elevator_trim": 0,
-    "aileron_trim": 0,
-    "rotor_lateral_trim": 0,
-    "rotor_longitudinal_trim": 0,
-}
-cache_lock = threading.Lock()
+                    # Safely update the cache
+                    with self.cache_lock:
+                        self.cached_trim_values["elevator_trim"] = elevator_trim
+                        self.cached_trim_values["aileron_trim"] = aileron_trim
+                        self.cached_trim_values["rotor_lateral_trim"] = rotor_lateral_trim
+                        self.cached_trim_values["rotor_longitudinal_trim"] = rotor_longitudinal_trim
 
-# Update interval for trim data in seconds
-trim_update_interval = 0.5  # Fetch trim data every 0.5 seconds
+                except Exception as e:
+                    print_error(f"SimConnect query failed: {e}")
+                    self.sm = None
+                    self.aq = None
+                    # Trigger reconnection
+                    wait_interval = 60
+                    self.root.after(0, lambda: self._retry_simconnect(retry_interval=wait_interval * 1000))
+                    time.sleep(wait_interval+0.1)  # Sleep for the retry interval
+            time.sleep(self.trim_update_interval)
 
-# Function to fetch trim data in a loop
-def fetch_trim_data_continuously():
-    global sm, aq, cached_trim_values
+    def _update_plot(self, frame):
+        try:
+            if self.selected_joystick:
+                pygame.event.pump()
+                x = self.selected_joystick.get_axis(0)
+                y = self.selected_joystick.get_axis(1)
+            else:
+                x, y = 0, 0
+                self.coord_text.set_text("No Joy!\nRight-click to \nselect")
+                return self.scat, self.coord_text
 
-    while True:
-        if sm and aq:
-            try:
-                # Fetch data
-                elevator_trim = aq.find("ELEVATOR_TRIM_PCT").value or 0
-                aileron_trim = aq.find("AILERON_TRIM_PCT").value or 0
-                rotor_lateral_trim = aq.find("ROTOR_LATERAL_TRIM_PCT").value or 0
-                rotor_longitudinal_trim = aq.find("ROTOR_LONGITUDINAL_TRIM_PCT").value or 0
+            self.scat.set_offsets([[x, y]])
 
-                # Safely update the cache
-                with cache_lock:
-                    cached_trim_values["elevator_trim"] = elevator_trim
-                    cached_trim_values["aileron_trim"] = aileron_trim
-                    cached_trim_values["rotor_lateral_trim"] = rotor_lateral_trim
-                    cached_trim_values["rotor_longitudinal_trim"] = rotor_longitudinal_trim
+            # Get current trim values
+            with self.cache_lock:
+                elevator_trim = self.cached_trim_values.get("elevator_trim", 0)
+                aileron_trim = self.cached_trim_values.get("aileron_trim", 0)
+                rotor_lateral_trim = self.cached_trim_values.get("rotor_lateral_trim", 0)
+                rotor_longitudinal_trim = self.cached_trim_values.get("rotor_longitudinal_trim", 0)
 
-            except Exception as e:
-                print(f"[ERROR] SimConnect query failed: {e}")
-                sm, aq = None, None  # Reset connection on failure
+            # Determine mode (helicopter or airplane) based on trim values
+            threshold = 0.01
+            is_helicopter = (
+                abs(rotor_lateral_trim) > threshold or abs(rotor_longitudinal_trim) > threshold
+            )
 
-        time.sleep(trim_update_interval)  # Wait before the next update
+            # Update visualization based on mode
+            if is_helicopter:
+                # Helicopter mode: Show rotor trim
+                self.elevator_trim_marker.set_ydata([rotor_longitudinal_trim] * 2)
+                self.elevator_trim_marker.set_xdata([-1.01, 1.01])
+                self.elevator_trim_marker.set_visible(abs(rotor_longitudinal_trim) > threshold)
 
-# Start the trim data thread
-trim_thread = threading.Thread(target=fetch_trim_data_continuously, daemon=True)
-trim_thread.start()
+                self.aileron_trim_marker.set_xdata([rotor_lateral_trim] * 2)
+                self.aileron_trim_marker.set_ydata([-1.01, 1.01])
+                self.aileron_trim_marker.set_visible(abs(rotor_lateral_trim) > threshold)
+            else:
+                # Airplane mode: Show elevator and aileron trim
+                self.elevator_trim_marker.set_ydata([elevator_trim] * 2)
+                self.elevator_trim_marker.set_xdata([-1.01, 1.01])
+                self.elevator_trim_marker.set_visible(abs(elevator_trim) > threshold)
 
-def update(frame):
-    global sm, aq, cached_trim_values
+                self.aileron_trim_marker.set_xdata([aileron_trim] * 2)
+                self.aileron_trim_marker.set_ydata([-1.01, 1.01])
+                self.aileron_trim_marker.set_visible(abs(aileron_trim) > threshold)
 
-    # Ensure joystick input is processed
-    pygame.event.pump()
+            # Update coordinates display
+            self.coord_text.set_text(f"X: {x:>5.2f} Y: {y:>5.2f}")
+            return self.scat, self.coord_text, self.elevator_trim_marker, self.aileron_trim_marker
 
-    # Initialize joystick variables
-    try:
-        x = selected_joystick.get_axis(0)
-        y = selected_joystick.get_axis(1)
-    except Exception as e:
-        print(f"[ERROR] Failed to read joystick axes: {e}")
-        x, y = 0, 0  # Default to zero if joystick input fails
+        except Exception as e:
+            print_error(f"Joystick read failed: {e}")
+            return self.scat, self.coord_text
 
-    scat.set_offsets([[x, y]])  # Update the scatter plot position
+    def _create_gui(self):
+        self.root = tk.Tk()
+        self.root.geometry(f"{self.graph_size_pixels}x{self.graph_size_pixels}{self.window_position}")
+        self.root.overrideredirect(1)
+        self.root.attributes("-topmost", True)
+        self.root.attributes("-alpha", self.alpha_transparency_level)
 
-    # Use cached values for graph and text display
-    with cache_lock:
-        elevator_trim = cached_trim_values.get("elevator_trim", 0)
-        aileron_trim = cached_trim_values.get("aileron_trim", 0)
-        rotor_lateral_trim = cached_trim_values.get("rotor_lateral_trim", 0)
-        rotor_longitudinal_trim = cached_trim_values.get("rotor_longitudinal_trim", 0)
+        self.root.bind("<Button-1>", self._start_drag)
+        self.root.bind("<ButtonRelease-1>", self._stop_drag)
+        self.root.bind("<B1-Motion>", self._on_drag)
 
-    # Determine mode (helicopter or airplane) based on trim values
-    threshold = 0.01  # Small value to avoid unnecessary updates
-    is_helicopter = (
-        abs(rotor_lateral_trim) > threshold or abs(rotor_longitudinal_trim) > threshold
-    )
+        self.menu = tk.Menu(self.root, tearoff=0)
+        self.root.bind("<Button-3>", self._show_context_menu)
 
-    # Update visualization based on detected mode
-    if is_helicopter:
-        # Helicopter mode: Show rotor trim
-        elevator_trim_marker.set_ydata([rotor_longitudinal_trim] * 2)
-        elevator_trim_marker.set_xdata([-1.01, 1.01])  # Full graph width
-        elevator_trim_marker.set_visible(abs(rotor_longitudinal_trim) > threshold)
+        self.fig, self.ax = plt.subplots(figsize=(self.graph_size_inches, self.graph_size_inches))
+        self._apply_plot_layout_adjustments()
 
-        aileron_trim_marker.set_xdata([rotor_lateral_trim] * 2)
-        aileron_trim_marker.set_ydata([-1.01, 1.01])  # Full graph height
-        aileron_trim_marker.set_visible(abs(rotor_lateral_trim) > threshold)
+        self.scat = self.ax.scatter([], [], s=20, color="yellow")
+        self.ax.set_xlim(-1.01, 1.01)
+        self.ax.set_ylim(-1.01, 1.01)
 
-    else:
-        # Airplane mode: Show elevator and aileron trim
-        elevator_trim_marker.set_ydata([elevator_trim] * 2)
-        elevator_trim_marker.set_xdata([-1.01, 1.01])  # Full graph width
-        elevator_trim_marker.set_visible(abs(elevator_trim) > threshold)
+        self.ax.axhline(0, color='darkgray', lw=0.7)
+        self.ax.axvline(0, color='darkgray', lw=0.7)
 
-        aileron_trim_marker.set_xdata([aileron_trim] * 2)
-        aileron_trim_marker.set_ydata([-1.01, 1.01])  # Full graph height
-        aileron_trim_marker.set_visible(abs(aileron_trim) > threshold)
+        self.elevator_trim_marker = self.ax.axhline(0, color=self.TRIM_COLOR, lw=0.8, linestyle='--', visible=False)
+        self.aileron_trim_marker = self.ax.axvline(0, color=self.TRIM_COLOR, lw=0.8, linestyle='--', visible=False)
+        self.coord_text = self.ax.text(0.9, -0.9, '', ha='right', va='bottom', fontsize=8, color='darkgray', transform=self.ax.transData)
 
-    # Update text display for joystick position
-    coord_text.set_text(f"X: {x:>5.2f} Y: {y:>5.2f}")
+        canvas = FigureCanvasTkAgg(self.fig, master=self.root)
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-    return scat, coord_text, elevator_trim_marker, aileron_trim_marker
+    def _apply_plot_layout_adjustments(self):
+        """Ensure consistent layout settings for the plot."""
+        self.fig.subplots_adjust(left=0, right=1, top=1, bottom=0)  # Remove extra padding
+        self.fig.patch.set_facecolor('#111111')  # Background for the figure
+        self.ax.set_facecolor('#000000')  # Background for the plot
+        self.ax.axis('off')  # Hide axes
 
+    def run(self):
+        self._create_gui()
+        self._initialize_simconnect()
+        trim_thread = threading.Thread(target=self._fetch_trim_data, daemon=True)
+        trim_thread.start()
+        ani = animation.FuncAnimation(self.fig, self._update_plot,
+                                      interval=50, blit=True, cache_frame_data=False)
+        self.root.mainloop()
+        pygame.quit()
 
-# Embed the plot in the tkinter window and ensure it draws correctly
-canvas = FigureCanvasTkAgg(fig, master=root)
-canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+    def _start_drag(self, event):
+        self.root.x = event.x
+        self.root.y = event.y
 
-# Add text for coordinates in the bottom right corner
-coord_text = ax.text(0.9, -0.9, '', ha='right', va='bottom',
-                     fontsize=8, color='darkgray', transform=ax.transData)
+    def _stop_drag(self, event):
+        """Stop dragging the window and save its position."""
+        self.root.x = None
+        self.root.y = None
 
-# Run the animation with the update function
-ani = animation.FuncAnimation(fig, update, interval=50, blit=True, cache_frame_data=False)
+        # Save the current window position
+        position = f"+{self.root.winfo_x()}+{self.root.winfo_y()}"
+        self._save_settings(position=position)
+        print_info(f"Window position saved: {position}")
 
-# Run the tkinter main loop to show the window
-root.mainloop()
+    def _on_drag(self, event):
+        deltax = event.x - self.root.x
+        deltay = event.y - self.root.y
+        x = self.root.winfo_x() + deltax
+        y = self.root.winfo_y() + deltay
+        self.root.geometry(f"+{x}+{y}")
 
-# Quit pygame once the tkinter loop ends
-pygame.quit()
+    def _show_context_menu(self, event):
+        """Show a context menu for joystick selection."""
+        self.menu.delete(0, tk.END)  # Clear previous menu items
+        for idx, name in enumerate(self.joystick_names):
+            self.menu.add_command(label=name, command=lambda n=name: self._handle_joystick_selection(n))
+        self.menu.tk_popup(event.x_root, event.y_root)
+
+    def _handle_joystick_selection(self, name):
+        """Handle joystick selection from the context menu."""
+        self._save_settings(name)
+        self._load_joysticks()  # Refresh joysticks and reinitialize selected joystick
+        self._apply_plot_layout_adjustments()  # Ensure consistent plot layout
+        print_info(f"Joystick '{name}' saved and reloaded.")
+
+if __name__ == "__main__":
+    # Get the directory one level up from the current script's directory
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # Define the Settings directory and settings file path
+    SETTINGS_DIR = os.path.join(BASE_DIR, "Settings")
+    SETTINGS_FILE = os.path.join(SETTINGS_DIR, "plot_joystick.json")
+
+    app = JoystickApp(graph_size_pixels=100, alpha_transparency_level=0.8, settings_file=SETTINGS_FILE)
+    app.run()
