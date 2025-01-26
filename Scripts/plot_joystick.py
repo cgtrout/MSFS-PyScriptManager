@@ -51,6 +51,9 @@ class JoystickApp:
         self.menu = None
         self.fig, self.ax = None, None
 
+        # Load settings
+        self.desired_joystick_name, self.window_position = self._load_settings()
+
         # Initialize pygame for joystick handling
         pygame.init()
         pygame.joystick.init()
@@ -59,30 +62,44 @@ class JoystickApp:
         self._load_joysticks()
 
     def _load_joysticks(self):
+        """Load joystick information and initialize the desired joystick."""
         # Get joystick info
         self.joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
         self.joystick_names = [joystick.get_name() for joystick in self.joysticks]
 
-        # Load saved joystick preference
-        desired_joystick_name = self._load_settings()
-        if desired_joystick_name in self.joystick_names:
-            self.selected_joystick = self.joysticks[self.joystick_names.index(desired_joystick_name)]
+        # Use the desired joystick name already loaded
+        if self.desired_joystick_name in self.joystick_names:
+            self.selected_joystick = self.joysticks[self.joystick_names.index(self.desired_joystick_name)]
             self.selected_joystick.init()
-            print_info(f"Joystick '{desired_joystick_name}' loaded from settings and initialized.")
+            print_info(f"Joystick '{self.desired_joystick_name}' loaded from settings and initialized.")
         else:
-            print_warning(f"Saved joystick '{desired_joystick_name}' not found. No joystick selected.")
+            print_warning(f"Saved joystick '{self.desired_joystick_name}' not found. No joystick selected.")
 
-    def _save_settings(self, joystick_name):
+    def _save_settings(self, joystick_name=None, position=None):
+        """Save settings like joystick name and window position."""
+        settings = {}
+        try:
+            with open(self.settings_file, "r") as f:
+                settings = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass  # If settings file doesn't exist or is invalid, start fresh
+
+        if joystick_name:
+            settings["desired_joystick_name"] = joystick_name
+        if position:
+            settings["window_position"] = position
+
         with open(self.settings_file, "w") as f:
-            json.dump({"desired_joystick_name": joystick_name}, f)
+            json.dump(settings, f)
 
     def _load_settings(self):
+        """Load settings like joystick name and window position."""
         try:
             with open(self.settings_file, "r") as f:
                 data = json.load(f)
-                return data.get("desired_joystick_name", "")
+                return data.get("desired_joystick_name", ""), data.get("window_position", "+0+40")
         except (FileNotFoundError, json.JSONDecodeError):
-            return ""
+            return "", "+0+40"
 
     def _retry_simconnect(self, retry_interval=1000 * 60):
         """Schedule a retry of SimConnect initialization."""
@@ -177,7 +194,7 @@ class JoystickApp:
 
     def _create_gui(self):
         self.root = tk.Tk()
-        self.root.geometry(f"{self.graph_size_pixels}x{self.graph_size_pixels}+0+40")
+        self.root.geometry(f"{self.graph_size_pixels}x{self.graph_size_pixels}{self.window_position}")
         self.root.overrideredirect(1)
         self.root.attributes("-topmost", True)
         self.root.attributes("-alpha", self.alpha_transparency_level)
@@ -228,8 +245,14 @@ class JoystickApp:
         self.root.y = event.y
 
     def _stop_drag(self, event):
+        """Stop dragging the window and save its position."""
         self.root.x = None
         self.root.y = None
+
+        # Save the current window position
+        position = f"+{self.root.winfo_x()}+{self.root.winfo_y()}"
+        self._save_settings(position=position)
+        print_info(f"Window position saved: {position}")
 
     def _on_drag(self, event):
         deltax = event.x - self.root.x
