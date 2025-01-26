@@ -405,7 +405,7 @@ class ScriptTab(Tab):
         # Add the "Reload Script" button
         reload_button = tk.Button(
             button_frame,
-            text="Reload Script",
+            text="Reload Script (F5)",
             command=self.reload_script,
             bg=BUTTON_BG_COLOR,
             fg=BUTTON_FG_COLOR,
@@ -429,6 +429,10 @@ class ScriptTab(Tab):
             highlightthickness=0
         )
         stop_button.pack(side="left", padx=5, pady=2)
+
+        # Bind F5 to reload
+        #self.frame.bind("<F5>", lambda event: self.reload_script())
+        self.text_widget.bind("<F5>", lambda event: self.reload_script())
 
         # Start the script execution
         self.run_script()
