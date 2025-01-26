@@ -44,7 +44,7 @@ scripts_path = project_root / "Scripts"
 # Define color constants
 DARK_BG_COLOR = "#2E2E2E"
 BUTTON_BG_COLOR = "#444444"
-BUTTON_FG_COLOR = "#FFFFFF"
+BUTTON_FG_COLOR = "#EEEEEE"
 BUTTON_ACTIVE_BG_COLOR = "#666666"
 BUTTON_ACTIVE_FG_COLOR = "#FFFFFF"
 TEXT_WIDGET_BG_COLOR = "#171717"
@@ -152,9 +152,10 @@ class TabManager:
     def configure_notebook(self):
         """Configure notebook style and behavior."""
         style = ttk.Style()
-        style.configure('TNotebook', padding=[0, 0])
+        style.configure('TNotebook', padding=[0, 0], background=DARK_BG_COLOR)
         style.configure('TNotebook.Tab', padding=[5, 2])
         style.configure('TFrame', background=DARK_BG_COLOR)
+        style.configure('TNotebook.Tab', foreground=BUTTON_FG_COLOR)
 
         # Bind right-click to close tabs
         self.notebook.bind("<Button-3>", self.on_tab_right_click)
