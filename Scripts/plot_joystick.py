@@ -123,13 +123,19 @@ class JoystickApp:
         while True:
             if self.sm and self.aq:
                 try:
+                    # Fetch data
+                    elevator_trim = self.aq.find("ELEVATOR_TRIM_PCT").value or 0
+                    aileron_trim = self.aq.find("AILERON_TRIM_PCT").value or 0
+                    rotor_lateral_trim = self.aq.find("ROTOR_LATERAL_TRIM_PCT").value or 0
+                    rotor_longitudinal_trim = self.aq.find("ROTOR_LONGITUDINAL_TRIM_PCT").value or 0
+
+                    # Safely update the cache
                     with self.cache_lock:
-                        self.cached_trim_values.update({
-                            "elevator_trim": self.aq.find("ELEVATOR_TRIM_PCT").value or 0,
-                            "aileron_trim": self.aq.find("AILERON_TRIM_PCT").value or 0,
-                            "rotor_lateral_trim": self.aq.find("ROTOR_LATERAL_TRIM_PCT").value or 0,
-                            "rotor_longitudinal_trim": self.aq.find("ROTOR_LONGITUDINAL_TRIM_PCT").value or 0,
-                        })
+                        self.cached_trim_values["elevator_trim"] = elevator_trim
+                        self.cached_trim_values["aileron_trim"] = aileron_trim
+                        self.cached_trim_values["rotor_lateral_trim"] = rotor_lateral_trim
+                        self.cached_trim_values["rotor_longitudinal_trim"] = rotor_longitudinal_trim
+
                 except Exception as e:
                     print_error(f"SimConnect query failed: {e}")
                     self.sm = None
