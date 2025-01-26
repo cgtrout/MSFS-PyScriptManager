@@ -1269,7 +1269,7 @@ class ScriptLauncherApp:
                 activeforeground=BUTTON_ACTIVE_FG_COLOR,
                 relief="flat", highlightthickness=0
             )
-            button.pack(side=side, padx=5, pady=2)
+            button.pack(side=side, padx=(0,5), pady=2)
 
     def select_and_run_script(self):
         """Opens file dialog for script selection and then runs it"""
