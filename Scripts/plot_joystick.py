@@ -134,8 +134,10 @@ class JoystickApp:
                     print_error(f"SimConnect query failed: {e}")
                     self.sm = None
                     self.aq = None
-                    # Trigger reconnection immediately
-                    self.root.after(0, lambda: self._retry_simconnect())
+                    # Trigger reconnection
+                    wait_interval = 60
+                    self.root.after(0, lambda: self._retry_simconnect(retry_interval=wait_interval * 1000))
+                    time.sleep(wait_interval+0.1)  # Sleep for the retry interval
             time.sleep(self.trim_update_interval)
 
     def _update_plot(self, frame):
