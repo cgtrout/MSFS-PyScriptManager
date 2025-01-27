@@ -22,6 +22,7 @@ import traceback
 from typing import Any, Optional
 
 
+
 try:
     # Import all color print functions
     from Lib.color_print import *
@@ -1264,6 +1265,80 @@ def is_debugging():
     except Exception:
         return False
 
+def log_global_state(event=None, log_path="detailed_state_log.txt", max_depth=2):
+    """
+    Log the global state and nested attributes to a file, prioritizing user-defined globals.
+
+    Args:
+        event: Tkinter event (passed automatically when bound to a shortcut).
+        log_path (str): Path to save the log file.
+        max_depth (int): Maximum recursion depth for nested attributes.
+    """
+    import inspect
+
+    def is_user_defined(var_name, var_value):
+        """
+        Determine if a global variable is user-defined.
+        A variable is considered user-defined if:
+        - It is not a module.
+        - It is not a built-in function or object.
+        - It is not imported (i.e., it was declared in the current script).
+        """
+        if var_name.startswith("__"):  # Skip dunder (magic) variables
+            return False
+        # Check if the variable is a module or built-in
+        if inspect.ismodule(var_value):
+            return False
+        if inspect.isbuiltin(var_value):
+            return False
+        # Check if the variable's module is the current script
+        if hasattr(var_value, "__module__") and var_value.__module__ == "__main__":
+            return True
+        # Fallback for non-callable objects
+        return not callable(var_value)
+
+    def log_variable(var_name, var_value, depth=0):
+        """Recursively log a variable and its attributes up to max_depth."""
+        indent = "  " * depth
+        if depth > max_depth:
+            return  # Stop recursion if max depth is exceeded
+
+        try:
+            log_file.write(f"{indent}{var_name}: {repr(var_value)}\n")
+
+            # Recurse into attributes if the variable is a custom object or dict
+            if hasattr(var_value, "__dict__"):
+                for attr_name, attr_value in vars(var_value).items():
+                    log_variable(f"{var_name}.{attr_name}", attr_value, depth + 1)
+            elif isinstance(var_value, dict):
+                for key, value in var_value.items():
+                    log_variable(f"{var_name}[{repr(key)}]", value, depth + 1)
+            elif isinstance(var_value, (list, set, tuple)):
+                for idx, value in enumerate(var_value):
+                    log_variable(f"{var_name}[{idx}]", value, depth + 1)
+        except Exception as e:
+            log_file.write(f"{indent}{var_name}: [ERROR: {str(e)}]\n")
+
+    # Separate user-defined and external globals
+    user_globals = {k: v for k, v in globals().items() if is_user_defined(k, v)}
+    external_globals = {k: v for k, v in globals().items() if k not in user_globals}
+
+    # Start logging
+    with open(log_path, "w") as log_file:
+        log_file.write(f"--- Global State Log: {datetime.now()} ---\n\n")
+
+        # Log user-defined globals first
+        log_file.write("### User-Defined Globals ###\n")
+        for name, value in user_globals.items():
+            log_variable(name, value)
+
+        # Log external globals next
+        log_file.write("\n### External Globals ###\n")
+        for name, value in external_globals.items():
+            log_variable(name, value)
+
+    print(f"Global state logged to {log_path}")
+
 def check_user_functions():
     global USER_UPDATE_FUNCTION_DEFINED, USER_SLOW_UPDATE_FUNCTION_DEFINED
 
@@ -1366,6 +1441,14 @@ def main():
         else:
             print_info("Traceback fault timer NOT started (debugging detected)")
         #### FAULT DETECTION ########### - END
+
+        # Bind log that can be executed during runtime
+        try:
+            import keyboard
+            keyboard.add_hotkey("ctrl+alt+shift+l", log_global_state)
+            print_info("Global hotkey 'Ctrl+Alt+Shift+L' registered for logging state.")
+        except ImportError:
+            print_warning("Please 'pip install keyboard' for dynamic logging")
 
         # Uncomment to test out traceback timer
         #while True:
