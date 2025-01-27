@@ -804,9 +804,10 @@ def update_display(template_handler:TemplateHandler):
     # Update frame counters - used for determining 'slow' updates
     update_frame_counter()
 
-    # Force -topmost to prevent losing z order
-    root.attributes("-topmost", False)
-    root.attributes("-topmost", True)
+    # Toggle -topmost only during slow updates
+    if UPDATE_DISPLAY_FRAME_COUNT == 0:
+        root.attributes("-topmost", False)
+        root.attributes("-topmost", True)
 
     try:
         # Do not update if drag move is occuring
