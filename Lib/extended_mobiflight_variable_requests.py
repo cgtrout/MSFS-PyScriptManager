@@ -131,7 +131,7 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         self.send_data(client, self.DATA_STRING_SIZE, my_bytes)
 
     def send_data(self, client, size, dataBytes):
-        print("send_data: client: %s, size=%s, dataBytes=%s", client, size, dataBytes)
+        #print("send_data: client: %s, size=%s, dataBytes=%s", client, size, dataBytes)
         self.sm.dll.SetClientData(
             self.sm.hSimConnect,
             client.CLIENT_DATA_AREA_CMD,
@@ -185,7 +185,7 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         self.sm.dll.AddToClientDataDefinition(self.sm.hSimConnect, definition_id, offset, size, 0, SIMCONNECT_UNUSED)
 
     def subscribe_to_data_change(self, data_area_id, request_id, definition_id):
-        print(f"RequestClientData: data_area_id={data_area_id}, request_id={request_id}, definition_id={definition_id}")
+        #print(f"RequestClientData: data_area_id={data_area_id}, request_id={request_id}, definition_id={definition_id}")
         result = self.sm.dll.RequestClientData(
             self.sm.hSimConnect,
             data_area_id,
