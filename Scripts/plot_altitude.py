@@ -18,8 +18,17 @@ y_axis_label = "Altitude (ft)"
 y_min = 0
 y_max = 40000  # Update y-axis max to 40,000 feet
 update_interval = 1000
+recording_duration = 2 * 3600  # Desired recording duration in seconds (e.g., 2 hours)
+
+# Automatically calculate max_data_points based on recording duration
+max_data_points = (recording_duration * 1000) // update_interval
+
+# Log approximate memory usage
+memory_usage_mb = (max_data_points * 8) / (1024**2)  # 64-bit floats (8 bytes each)
+print(f"Recording for {recording_duration} seconds at {update_interval}ms interval "
+      f"requires {max_data_points} data points (~{memory_usage_mb:.2f} MB RAM)")
+
 visible_data_points = 100  # Number of data points visible in the plot
-max_data_points = 7200     # Limit for the data array to hold more historical data 
 
 # Configuration: Enable or disable sine wave data
 enable_sine_wave_data = False
@@ -122,10 +131,15 @@ def refresh_plot():
     visible_values = values[x_offset:end_offset]
 
     # Update both X and Y data explicitly
-    x_data = np.arange(x_offset, x_offset + len(visible_values))  # Reflects the real indices in the full dataset
+    time_step = update_interval / 1000  # Convert interval to seconds
+    x_data = np.arange(x_offset, x_offset + len(visible_values)) * time_step  # Time values in seconds
     line.set_data(x_data, visible_values)  # Set both x and y data at once
 
-    ax.set_xlim(x_offset, x_offset + visible_data_points - 1)  # Set x-axis to reflect the current visible range
+    # Calculate start and end time for the visible range
+    start_time = x_offset * time_step
+    end_time = (x_offset + visible_data_points) * time_step
+
+    ax.set_xlim(start_time, end_time)  # Set x-axis to reflect the current visible time range
     ax.set_ylim(y_min, y_max)
 
     # Set x-axis tick labels to MM:SS format
@@ -217,8 +231,8 @@ ax.tick_params(axis='y', colors='#FFFFFF')
 ax.margins(x=0.01, y=0.05)  # Reduces the margins around the plot area
 
 # Real-time data value text (always displays the latest data point)
-real_time_text = ax.text(0.95, 0.9, '', ha='right', va='center', 
-                         color='white', transform=ax.transAxes, 
+real_time_text = ax.text(0.95, 0.9, '', ha='right', va='center',
+                         color='white', transform=ax.transAxes,
                          fontsize=10)
 
 # Embed the plot in Tkinter window using FigureCanvasTkAgg
