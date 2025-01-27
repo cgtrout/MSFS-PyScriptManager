@@ -526,7 +526,7 @@ def compute_countdown_timer(
     # Early out if we have no current sim time
     if current_sim_time == UNIX_EPOCH:
         return "N/A"
-    
+
     # Calculate remaining time
     remaining_time = target_time - current_sim_time
 
@@ -802,6 +802,10 @@ def update_display(template_handler:TemplateHandler):
 
     # Update frame counters - used for determining 'slow' updates
     update_frame_counter()
+
+    # Force -topmost to prevent losing z order
+    root.attributes("-topmost", False)
+    root.attributes("-topmost", True)
 
     try:
         # Do not update if drag move is occuring
