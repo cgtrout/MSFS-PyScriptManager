@@ -229,48 +229,6 @@ def get_simulator_datetime() -> datetime:
     # Return the Unix epoch if simulator time is unavailable
     return UNIX_EPOCH
 
-def get_simulator_datetime_old() -> datetime:
-    """
-    Fetch the current simulator date and time as a datetime object.
-    Ensure it is simulator time and timezone-aware (UTC).
-    If unavailable, return the Unix epoch as a default.
-    """
-    try:
-        # Prefetch variables - may speed up access in some cases
-        prefetch_variables("ZULU_YEAR", "ZULU_MONTH_OF_YEAR", "ZULU_DAY_OF_MONTH", "ZULU_TIME")
-
-        # Fetch simulator date and time from SimConnect (ZULU time assumed as UTC)
-        zulu_year = get_simconnect_value("ZULU_YEAR")
-        zulu_month = get_simconnect_value("ZULU_MONTH_OF_YEAR")
-        zulu_day = get_simconnect_value("ZULU_DAY_OF_MONTH")
-        zulu_time_seconds = get_simconnect_value("ZULU_TIME")
-
-        # Ensure all fetched values are valid
-        if any(value is None or str(value) == "N/A" for value in [zulu_year, zulu_month, zulu_day, zulu_time_seconds]):
-            raise ValueError("SimConnect values are not available yet.")
-
-        # Convert values to integers and calculate datetime
-        zulu_year = int(zulu_year)
-        zulu_month = int(zulu_month)
-        zulu_day = int(zulu_day)
-        zulu_time_seconds = float(zulu_time_seconds)
-
-        # Convert ZULU_TIME (seconds since midnight) into hours, minutes, seconds
-        hours, remainder = divmod(int(zulu_time_seconds), 3600)
-        minutes, seconds = divmod(remainder, 60)
-
-        # Construct and return the current datetime object with UTC timezone
-        return datetime(zulu_year, zulu_month, zulu_day, hours, minutes, seconds, tzinfo=timezone.utc)
-
-    except ValueError as ve:
-        #print(ve)
-        pass
-    except Exception as e:
-        print(f"get_simulator_datetime: Failed to retrieve simulator datetime: {e}")
-
-    # Return the Unix epoch if simulator time is unavailable
-    return UNIX_EPOCH
-
 def get_real_world_time():
     """Fetch the real-world Zulu time."""
     return datetime.now(timezone.utc).strftime("%H:%M:%S")
