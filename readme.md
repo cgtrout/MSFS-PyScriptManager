@@ -3,7 +3,7 @@
 **Comes with several useful scripts, such as:**
 - [virtual_pos_printer.py](#virtual-pos-printer-for-fenix-a32x---virtual_pos_printerpy)- that can print popup notes on the screen from the Fenix A32x printer.
 - [custom_status_bar.py](#custom-status-bar---custom_status_barpy)- that shows a status bar that can dynamically pull information from the sim and Simbrief.
-- [fenix_lighting.py](#other-scripts) - preset all lighting in A32x and optionally bind joystick axis to screen brightness.
+- [fenix_lights.py](#other-scripts) - preset all lighting in A32x and optionally bind joystick axis to screen brightness.
 
 # MSFS 2024 Update
  - All scripts should still work with MSFS 2024, but if you notice any issues with any of the scripts let me know.
