@@ -305,6 +305,25 @@ class TabManager:
         else:
             print("[INFO] No active tab to close.")
 
+    def reload_all_scripts(self):
+        # Get all ScriptTabs
+        script_tabs = [tab for tab in self.tabs.values() if isinstance(tab, ScriptTab) ]
+
+        def reload_script_with_delay(index):
+            """Reload a script tab with a slight delay."""
+            tab = script_tabs[index]
+            try:
+                print(f"[INFO] Reloading script for tab '{tab.title}' (Index: {index}).")
+                tab.reload_script()
+            except Exception as e:
+                print(f"[ERROR] Failed to reload script in tab '{tab.title}' (Index: {index}): {e}")
+
+        # Schedule reloads with increasing delay
+        for i, tab in enumerate(script_tabs):
+            delay = i * 50
+            print(f"delay")
+            self.scheduler(delay, reload_script_with_delay, i)
+
     def on_tab_right_click(self, event):
         def _close_tab_on_click():
             try:
@@ -1230,6 +1249,7 @@ class ScriptLauncherApp:
         # Add buttons to the toolbar with their placement side
         buttons = [
             ("Run Script", self.select_and_run_script, "left"),
+            ("Reload ALL", self.reload_all_scripts, "right"),
             ("Load Script Group", self.load_script_group, "right"),
             ("Save Script Group", self.save_script_group, "right"),
             ("Performance Metrics", self.open_performance_metrics_tab, "right"),
@@ -1264,6 +1284,9 @@ class ScriptLauncherApp:
         )
         self.tab_manager.add_tab(script_tab)
 
+    def reload_all_scripts(self):
+        self.tab_manager.reload_all_scripts()
+
     def bind_events(self):
         # Override close window behavior
         self.root.protocol("WM_DELETE_WINDOW", self.on_shutdown)
@@ -1290,8 +1313,8 @@ class ScriptLauncherApp:
             return self.handle_python_command(args, current_dir)
         elif command in ["switch", "s"]:
             return self.switch_tab_by_name(args)
-        elif command == "greet":
-            return True, f"Hello, {' '.join(args) or 'world'}!"
+        elif command == "reload":
+            return self.handle_reload_command()
         else:
             return False, f"Unknown command: {command}"
 
@@ -1330,6 +1353,11 @@ class ScriptLauncherApp:
                 return True, None  # Success
 
         return False, f"No tab found for script: {script_name}"
+
+    def handle_reload_command(self):
+        """Switch to the tab with the specified script name."""
+        self.tab_manager.reload_all_scripts()
+        return True, None  # Success
 
     def autoplay_script_group(self):
         """
