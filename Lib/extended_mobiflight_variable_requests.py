@@ -35,7 +35,6 @@ class SimVariable:
 
 class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
     def __init__(self, simConnect, client_name=None):
-        print("ExtendedMobiFlightVariableRequests __init__")
         self.init_ready = False
         self.sm = simConnect
         self.sim_vars = {}
@@ -124,11 +123,12 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         self.subscribe_to_data_change(client.CLIENT_DATA_AREA_RESPONSE, client.DATA_STRING_DEFINITION_ID, client.DATA_STRING_DEFINITION_ID)
 
     def send_command(self, command, client):
-        print("send_command: command=%s", command)
+        #print("send_command: command=%s", command)
         data_byte_array = bytearray(command, "ascii")
         data_byte_array.extend(bytearray(self.DATA_STRING_SIZE - len(data_byte_array)))  # extend to fix DATA_STRING_SIZE
         my_bytes = bytes(data_byte_array)
         self.send_data(client, self.DATA_STRING_SIZE, my_bytes)
+        #print("DATA SENT!")
 
     def send_data(self, client, size, dataBytes):
         #print("send_data: client: %s, size=%s, dataBytes=%s", client, size, dataBytes)
@@ -147,12 +147,12 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
             data_bytes = struct.pack("I", callback_data.dwData[0])
             float_data = struct.unpack('<f', data_bytes)[0]   # unpack delivers a tuple -> [0]
             self.sim_vars[callback_data.dwDefineID].float_value = round(float_data, 5)
-            print("client_data_callback_handler: %s", self.sim_vars[callback_data.dwDefineID])
+            #print("client_data_callback_handler: %s", self.sim_vars[callback_data.dwDefineID])
 
         # Response string of init_client
         elif callback_data.dwDefineID == self.init_client.DATA_STRING_DEFINITION_ID:
             response =  self._c_string_bytes_to_string(bytes(callback_data.dwData))
-            print("client_data_callback_handler: init_client response string: %s", response)
+            #print("client_data_callback_handler: init_client response string: %s", response)
             # Check for response of registering new client
             if (self.my_client.CLIENT_NAME in response):
                 self.initialize_client_data_areas(self.my_client)
@@ -161,7 +161,7 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         # Response string of my_client
         elif callback_data.dwDefineID == self.my_client.DATA_STRING_DEFINITION_ID:
             response =  self._c_string_bytes_to_string(bytes(callback_data.dwData))
-            print("client_data_callback_handler: get my_client response string: %s", response)
+            #print("client_data_callback_handler: get my_client response string: %s", response)
         else:
             print("client_data_callback_handler: DefinitionID %s not found!", callback_data.dwDefineID)
 
@@ -181,7 +181,7 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
             raise RuntimeError(f"Failed to create ClientData area for ID {client_data_id}. HRESULT: {result}")
 
     def add_to_client_data_definition(self, definition_id, offset, size):
-        print(f"AddToClientDataDefinition: {definition_id}")
+        #print(f"AddToClientDataDefinition: {definition_id}")
         self.sm.dll.AddToClientDataDefinition(self.sm.hSimConnect, definition_id, offset, size, 0, SIMCONNECT_UNUSED)
 
     def subscribe_to_data_change(self, data_area_id, request_id, definition_id):
