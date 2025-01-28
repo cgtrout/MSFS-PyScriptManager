@@ -277,9 +277,13 @@ def show_metar_data(source_name, metar_dict):
             return None
         return "\n".join(metar_listbox.get(i) for i in selected_indices)
 
+    def results_close():
+        result_window.destroy()
+        root.quit()
+
     def print_and_close(event=None):
         print_metar_data(get_selected_content(), printer_name) if get_selected_content() else None,
-        result_window.destroy()
+        results_close()
 
     # Print Button at the bottom
     print_button = tk.Button(
@@ -294,59 +298,24 @@ def show_metar_data(source_name, metar_dict):
     )
     print_button.grid(row=3, column=0, padx=10, pady=5)
 
-    # Bind enter to print
     result_window.bind("<Return>", print_and_close)
-    result_window.bind("<Escape>", lambda event: root.after_idle(result_window.destroy))
-    result_window.focus_force()
+    result_window.bind("<Escape>", lambda event: results_close())
+    result_window.protocol("WM_DELETE_WINDOW", results_close)
 
     # Center the window
-    result_window.update_idletasks()  # Force geometry update
-    window_width = result_window.winfo_width()
-    window_height = result_window.winfo_height()
-    center_window(result_window, window_width, window_height)
+    center_window(result_window)
 
-def gui_fetch_metar():
+def gui_fetch_metar(root, airport_code):
     """Fetch METAR data with a non-blocking popup loading window."""
-    airport_code = entry.get().strip().upper()
     if not airport_code:
-        messagebox.showerror("Error", "Please enter a valid airport ICAO code.")
+        print_warning("Error", "Please enter a valid airport ICAO code.")
         return
 
-    # Create a popup loading window
-    loading_popup = tk.Toplevel(root)
-    loading_popup.title("Loading")
+    print_info("Looking up metar. Please wait...")
 
-    # Set size and center the popup window
-    popup_width, popup_height = 300, 100
-    center_window(loading_popup, popup_width, popup_height)
-
-    loading_popup.configure(bg="#2E2E2E")
-
-    # Add a loading label
-    loading_label = tk.Label(
-        loading_popup,
-        text="Fetching METAR data, please wait...",
-        font=("Helvetica", 12, "italic"),
-        bg="#2E2E2E",
-        fg="#FFFFFF"
-    )
-    loading_label.pack(expand=True, fill="both", pady=20)
-
-    def fetch_data():
-        try:
-            fetcher = MetarFetcher()
-            source_name, metar_dict = fetcher.fetch_metar(airport_code)
-
-            root.after(0, lambda: show_metar_data(source_name, metar_dict))
-        except Exception as e:
-            root.after(0, lambda: messagebox.showerror("Error", str(e)))
-        finally:
-             # Safely destroy the popup and join the thread
-            root.after(0, lambda: (loading_popup.destroy()))
-
-    # Run the fetch_data function in a background thread
-    thread = threading.Thread(target=fetch_data, daemon=True)
-    thread.start()
+    fetcher = MetarFetcher()
+    source_name, metar_dict = fetcher.fetch_metar(airport_code)
+    show_metar_data(source_name, metar_dict)
 
 def find_best_metar(metar_dict):
     """
@@ -415,78 +384,37 @@ def main():
     """Main function to initialize the GUI with reference-accurate styling."""
     global root, entry
 
-    # Dark mode colors
-    bg_color = "#2E2E2E"           # Dark background
-    fg_color = "#FFFFFF"           # Light text
-    entry_bg_color = "#3A3A3A"     # Slightly lighter background for entries
-    entry_fg_color = "#FFFFFF"     # Text color for entries
-    button_bg_color = "#5A5A5A"    # Dark button background
-    button_fg_color = "#FFFFFF"    # Light button text
-
     initialize_simconnect()
-
-    # Create the main Tkinter window
     root = tk.Tk()
-    root.title("METAR Data Lookup")
-    root.geometry("300x150")
-    root.configure(bg=bg_color)  # Dark background color
+    root.withdraw()
 
-    main_width, main_height = 300, 150
-    center_window(root, main_width, main_height)
-    root.configure(bg="#2E2E2E")
+    while True:
+        # Prompt the user for ICAO code input
+        print_color("\nWelcome to the METAR Lookup Tool!", color="green")
+        print("Enter an Airport ICAO Code (or type 'quit' to exit):")
+        airport_code = input("> ").strip().lower()
 
-    # Fonts
-    small_font = ("Helvetica", 10)
-    large_font = ("Helvetica", 14)
+        if airport_code == "quit":
+            print("Exiting the program. Goodbye!")
+            break
 
-    # Label for ICAO input
-    tk.Label(
-        root,
-        text="Enter Airport ICAO Code:",
-        bg=bg_color,
-        fg=fg_color,
-        font=large_font
-    ).pack(pady=(20, 10))
+        if not airport_code:
+            print("Error: No ICAO code entered. Please try again.")
+            continue
 
-    # ICAO Code Entry
-    entry = tk.Entry(
-        root,
-        bg=entry_bg_color,
-        fg=entry_fg_color,
-        font=large_font,
-        insertbackground=entry_fg_color,  # Cursor color
-        justify="center",
-        width=20
-    )
-    entry.pack(pady=0)
+        # Create a new Tkinter root for this iteration
+        root = tk.Tk()
+        root.withdraw()  # Hide the root window (we only use dialogs)
 
-    # Auto-select the entry box
-    entry.focus_set()
-
-    # Button Frame
-    button_frame = tk.Frame(root, bg=bg_color)
-    button_frame.pack(pady=(20, 10))
-
-    # Fetch Button
-    tk.Button(
-        button_frame,
-        text="Fetch METAR Data",
-        command=gui_fetch_metar,
-        bg=button_bg_color,
-        fg=button_fg_color,
-        activebackground=entry_bg_color,  # Slightly lighter background when pressed
-        activeforeground=fg_color,       # Retain white text when pressed
-        font=small_font,
-        width=20
-    ).pack(side="left", padx=5)
-
-    # Bind Enter key to Fetch METAR Data
-    root.bind("<Return>", lambda event: gui_fetch_metar())
-
-    root.protocol("WM_DELETE_WINDOW", on_close)
-
-    # Start the Tkinter main loop
-    root.mainloop()
+        try:
+            # Fetch and display METAR data
+            gui_fetch_metar(root, airport_code)
+            root.mainloop()  # Start the event loop
+        except Exception as e:
+            print(f"An error occurred: {e}")
+        finally:
+            # Clean up and destroy the root after the GUI closes
+            root.destroy()
 
 def on_close():
 
@@ -535,7 +463,7 @@ def initialize_simconnect():
         sim_connected = False
         print(f"Failed to initialize SimConnect: {e}")
 
-def center_window(window, width, height):
+def center_window(window):
     """
     Center a Tkinter window on the screen.
 
@@ -544,6 +472,12 @@ def center_window(window, width, height):
         width: The width of the window.
         height: The height of the window.
     """
+    # Ensure the window's dimensions are realized
+    window.update_idletasks()
+
+    width = window.winfo_width()
+    height = window.winfo_height()
+
     # Get the screen dimensions
     screen_width = window.winfo_screenwidth()
     screen_height = window.winfo_screenheight()
@@ -555,6 +489,13 @@ def center_window(window, width, height):
     # Set the geometry of the window
     window.geometry(f"{width}x{height}+{x}+{y}")
 
+    # Bring the window to the foreground
+    window.deiconify()  # Make the window visible if it was hidden
+    window.lift()       # Raise the window above others
+    window.attributes("-topmost", True)  # Temporarily make it always on top
+    window.attributes("-topmost", False)  # Disable "always on top"
+    window.focus_force()  # Focus on the window
+    window.focus_set()
 
 if __name__ == "__main__":
     main()
