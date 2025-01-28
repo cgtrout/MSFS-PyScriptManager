@@ -159,6 +159,7 @@ def create_window(data, default_font):
     active_windows.append((new_x, new_y))
 
     def on_close():
+        window.focus_force()
         active_windows.remove((new_x, new_y))
         window.destroy()
 
