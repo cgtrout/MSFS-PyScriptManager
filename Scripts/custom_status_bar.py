@@ -560,6 +560,11 @@ def get_simulator_time_offset():
         # Use a threshold for considering the offset as zero
         threshold = timedelta(seconds=5)
         simulator_time = get_simulator_datetime()
+
+        if simulator_time == UNIX_EPOCH:
+            print_debug("get_simulator_time_offset: skipping since time is == UNIX_EPOCH")
+            return timedelta()
+
         real_world_time = datetime.now(timezone.utc)
         offset = simulator_time - real_world_time
 
