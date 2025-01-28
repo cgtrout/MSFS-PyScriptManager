@@ -3,7 +3,7 @@
 **Comes with several useful scripts, such as:**
 - [virtual_pos_printer.py](#virtual-pos-printer-for-fenix-a32x---virtual_pos_printerpy)- that can print popup notes on the screen from the Fenix A32x printer.
 - [custom_status_bar.py](#custom-status-bar---custom_status_barpy)- that shows a status bar that can dynamically pull information from the sim and Simbrief.
-- [fenix_lights.py](#other-scripts) - preset all lighting in A32x and optionally bind joystick axis to screen brightness.
+- [fenix_lights.py](#other-scripts) - pre-set flight deck lighting in A32x and optionally bind joystick axis to screen brightness.
 
 # MSFS 2024 Update
  - All scripts should still work with MSFS 2024, but if you notice any issues with any of the scripts let me know.
@@ -43,7 +43,7 @@
 - **fbw_a380_checklist.py** Allows keyboard control of built in A380 checklist.  This script requires a [Mobiflight "WASM" module installation](https://github.com/MobiFlight/MobiFlight-Connector/wiki/Verifying-the-WASM-module-installation-and-locating-the-MSFS2020-community-folder).
 - **fenix_disable_efb.py:** Hides the EFBs on the Fenix A32x when run. (Requires Mobiflight "WASM" module installation).
 - **fenix_radio.py:** Shows a draggable radio panel that shows A32x RMP1 active/standby channels. (Requires Mobiflight "WASM" module installation).
-- **fenix_lights.py:** Preassign cockpit lighting knobs.  Also allows one knob to control all screen brightness or to optionally bind a joystick axis to control screen lighting.
+- **fenix_lights.py:** Preassign cockpit lighting knobs.  Also allows one knob to control all screen brightness or to optionally bind a joystick axis to control screen lighting. (Requires Mobiflight "WASM" module installation).
 - **metar_load.py:** Load a historical metar based on Simulator time - can print to virtual_pos_printer.
 - **plot_altitude.py:** Shows a draggable graph panel of altitude - can easily be changed to other SimConnect variables.
 - **plot_joystick.py:** Show visualization of joystick and trim values state. Will either show heli or plane trims dynamically.
