@@ -808,6 +808,9 @@ def update_display(template_handler:TemplateHandler):
     if UPDATE_DISPLAY_FRAME_COUNT == 0:
         root.attributes("-topmost", False)
         root.attributes("-topmost", True)
+        if root.state() != "normal":
+            print_warning("Restoring minimized window!")
+            root.deiconify()
 
     try:
         # Do not update if drag move is occuring
