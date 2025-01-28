@@ -277,14 +277,15 @@ def show_metar_data(source_name, metar_dict):
             return None
         return "\n".join(metar_listbox.get(i) for i in selected_indices)
 
+    def print_and_close(event=None):
+        print_metar_data(get_selected_content(), printer_name) if get_selected_content() else None,
+        result_window.destroy()
+
     # Print Button at the bottom
     print_button = tk.Button(
         result_window,
         text="Print METAR Data",
-        command=lambda: (
-                print_metar_data(get_selected_content(), printer_name) if get_selected_content() else None,
-                result_window.destroy()
-            ),
+        command=print_and_close,
         bg="#5A5A5A",
         fg="#FFFFFF",
         activebackground="#3A3A3A",
@@ -292,6 +293,11 @@ def show_metar_data(source_name, metar_dict):
         font=("Helvetica", 10),
     )
     print_button.grid(row=3, column=0, padx=10, pady=5)
+
+    # Bind enter to print
+    result_window.bind("<Return>", print_and_close)
+    result_window.bind("<Escape>", lambda event: root.after_idle(result_window.destroy))
+    result_window.focus_force()
 
     # Center the window
     result_window.update_idletasks()  # Force geometry update
