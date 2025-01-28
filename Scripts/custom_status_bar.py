@@ -1331,6 +1331,9 @@ def log_global_state(event=None, log_path="detailed_state_log.txt", max_depth=2)
     with open(log_path, "w") as log_file:
         log_file.write(f"--- Global State Log: {datetime.now()} ---\n\n")
 
+        # Tkinter state
+        log_file.write(f"winfo_geometry={root.winfo_geometry()}, state={root.state()}\n")
+
         # Log user-defined globals first
         log_file.write("### User-Defined Globals ###\n")
         for name, value in user_globals.items():
