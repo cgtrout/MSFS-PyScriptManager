@@ -100,7 +100,6 @@ def user_init():
     pass
 """
 # --- Configurable Variables  ---
-
 @dataclass(frozen=True)
 class Config:
     """Immutable configuration settings for the application."""
@@ -113,8 +112,6 @@ class Config:
     PADDING_X: int = 20
     PADDING_Y: int = 10
     UNIX_EPOCH: datetime = datetime(1970, 1, 1, tzinfo=timezone.utc)
-
-CONFIG = Config()
 
 class StateManager:
     """Centralized storage for all mutable global state variables."""
@@ -129,9 +126,6 @@ class StateManager:
         self.log_file_path = "traceback.log"
         self.traceback_log_file = open(self.log_file_path, "w")
         faulthandler.enable(file=self.traceback_log_file)
-
-# Create a single instance of the state
-state = StateManager()
 
 # --- Timer Variables  ---
 @dataclass
@@ -186,6 +180,8 @@ class SimBriefSettings:
         )
 
 # --- Globals  ---
+state = StateManager()  # Global script state
+CONFIG = Config()       # Global configuration
 countdown_state = CountdownState()
 simbrief_settings = SimBriefSettings()
 
