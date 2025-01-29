@@ -131,6 +131,8 @@ class StateManager:
         self.display_updater = None
         self.drag_handler = None
 
+        self.settings = None
+
 # --- Timer Variables  ---
 @dataclass
 class CountdownState:
@@ -655,15 +657,15 @@ class TemplateHandler:
 
     def load_templates(self) -> dict[str, str]:
         """Load templates from the template file, creating the file if necessary."""
-        os.makedirs(SETTINGS_DIR, exist_ok=True)
+        os.makedirs(state.settings.SETTINGS_DIR, exist_ok=True)
 
-        if not os.path.exists(TEMPLATE_FILE):
-            with open(TEMPLATE_FILE, "w") as f:
+        if not os.path.exists(state.settings.TEMPLATE_FILE):
+            with open(state.settings.TEMPLATE_FILE, "w") as f:
                 f.write(DEFAULT_TEMPLATES.strip())
-            print(f"Created default template file at {TEMPLATE_FILE}")
+            print(f"Created default template file at {state.settings.TEMPLATE_FILE}")
 
         try:
-            spec = importlib.util.spec_from_file_location("status_bar_templates", TEMPLATE_FILE)
+            spec = importlib.util.spec_from_file_location("status_bar_templates", state.settings.TEMPLATE_FILE)
             templates_module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(templates_module)
             return templates_module.TEMPLATES if hasattr(templates_module, "TEMPLATES") else {}
@@ -676,7 +678,8 @@ class TemplateHandler:
         Dynamically import functions from the template file and inject only relevant globals.
         """
         try:
-            spec = importlib.util.spec_from_file_location("status_bar_templates", TEMPLATE_FILE)
+            spec = importlib.util.spec_from_file_location("status_bar_templates",
+                                                          state.settings.TEMPLATE_FILE)
             templates_module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(templates_module)
 
@@ -1236,39 +1239,56 @@ def switch_template(new_template_name, template_handler):
     except Exception as e:
         print_error(f"Error switching template: {e}")
 
-# --- Settings  ---
-SCRIPT_DIR = os.path.dirname(__file__)
-SETTINGS_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "Settings")
-SETTINGS_FILE = os.path.join(SETTINGS_DIR, "custom_status_bar.json")
-TEMPLATE_FILE = os.path.join(SETTINGS_DIR, "status_bar_templates.py")
+#import os
+import json
 
-# Ensure the Settings directory exists
-os.makedirs(SETTINGS_DIR, exist_ok=True)
+class SettingsManager:
+    """Handles loading, saving, and managing application settings."""
 
-def load_settings():
-    """Load settings from the JSON file."""
-    if os.path.exists(SETTINGS_FILE):
+    # Define settings paths
+    SCRIPT_DIR = os.path.dirname(__file__)
+    SETTINGS_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "Settings")
+    SETTINGS_FILE = os.path.join(SETTINGS_DIR, "custom_status_bar.json")
+    TEMPLATE_FILE = os.path.join(SETTINGS_DIR, "status_bar_templates.py")
+
+    def __init__(self):
+        # Ensure settings directory exists
+        os.makedirs(self.SETTINGS_DIR, exist_ok=True)
+
+        # Load settings into memory
+        self.data, self.simbrief_settings = self.load_settings()
+
+    def load_settings(self):
+        """Load settings from the JSON file."""
+        if os.path.exists(self.SETTINGS_FILE):
+            try:
+                with open(self.SETTINGS_FILE, "r") as f:
+                    data = json.load(f)
+                    simbrief_settings = SimBriefSettings.from_dict(data.get("simbrief_settings", {}))
+                    return data, simbrief_settings
+            except json.JSONDecodeError:
+                print_error("Settings file is corrupted. Using defaults.")
+
+        return {"x": 0, "y": 0}, SimBriefSettings()  # Default settings
+
+    def save_settings(self):
+        """Save settings to the JSON file."""
         try:
-            with open(SETTINGS_FILE, "r") as f:
-                data = json.load(f)
-                # Load SimBrief settings
-                if "simbrief_settings" in data:
-                    simbrief_settings = SimBriefSettings.from_dict(data["simbrief_settings"])
-                else:
-                    simbrief_settings = SimBriefSettings()
-                return data, simbrief_settings
-        except json.JSONDecodeError:
-            print_error("Settings file is corrupted. Using defaults.")
-    return {"x": 0, "y": 0}, SimBriefSettings()  # Default position and settings
+            self.data["simbrief_settings"] = self.simbrief_settings.to_dict()
+            with open(self.SETTINGS_FILE, "w") as f:
+                json.dump(self.data, f, indent=4)
+        except Exception as e:
+            print_error(f"Error saving settings: {e}")
 
-def save_settings(settings, simbrief_settings):
-    """Save settings to the JSON file."""
-    try:
-        settings["simbrief_settings"] = simbrief_settings.to_dict()
-        with open(SETTINGS_FILE, "w") as f:
-            json.dump(settings, f, indent=4)
-    except Exception as e:
-        print_error(f"Error saving settings: {e}")
+    def update_position(self, x, y):
+        """Update and save the window position."""
+        self.data["x"] = x
+        self.data["y"] = y
+        self.save_settings()
+
+    def get_window_position(self):
+        """Return saved window position (defaults to 0,0 if not set)."""
+        return self.data.get("x", 0), self.data.get("y", 0)
 
 def is_debugging():
     """Check if the script is running in a debugging environment."""
@@ -1388,7 +1408,8 @@ def main():
     print_info("Starting custom status bar...")
 
     # --- Load initial settings ---
-    settings, simbrief_settings_loaded = load_settings()
+    state.settings = SettingsManager()
+    settings, simbrief_settings_loaded = state.settings.load_settings()
     simbrief_settings = simbrief_settings_loaded
     initial_x = settings.get("x", 0)
     initial_y = settings.get("y", 0)
@@ -1733,7 +1754,7 @@ class CountdownTimerDialog(tk.Toplevel):
             self.update_simbrief_settings()
 
             # Save SimBrief settings regardless of whether a username is provided
-            save_settings(load_settings()[0], simbrief_settings)
+            state.settings.save_settings(state.settings.load_settings()[0], simbrief_settings)
 
             # Handle the time input
             time_text = self.time_entry.get().strip()
@@ -1765,7 +1786,7 @@ class CountdownTimerDialog(tk.Toplevel):
             self.update_simbrief_settings()
 
             # Persist the updated SimBrief settings
-            save_settings(load_settings()[0], simbrief_settings)
+            state.settings.save_settings(state.settings.load_settings()[0], simbrief_settings)
 
             # Validate the SimBrief username
             if not self.validate_simbrief_username():
