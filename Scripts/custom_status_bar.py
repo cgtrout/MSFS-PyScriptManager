@@ -1237,9 +1237,6 @@ def switch_template(new_template_name, template_handler):
     except Exception as e:
         print_error(f"Error switching template: {e}")
 
-#import os
-import json
-
 class SettingsManager:
     """Handles loading, saving, and managing application settings."""
 
