@@ -352,78 +352,109 @@ def get_formatted_value(variable_names, format_string=None):
     return result
 
 # --- Background Updater ---
-VARIABLE_SLEEP = 0.01  # Sleep for 10ms between each variable looku
-MIN_UPDATE_INTERVAL = CONFIG.UPDATE_INTERVAL / 2  # Reduced interval for retry cycles (in milliseconds
-STANDARD_UPDATE_INTERVAL = CONFIG.UPDATE_INTERVAL  # Normal interval for successful cycles
+class BackgroundUpdater:
+    """Handles background updates for SimConnect data."""
 
-last_successful_update_time = time.time()
-def simconnect_background_updater():
-    """Background thread to update SimConnect variables with small sleep between updates."""
-    global state, last_successful_update_time
+    MIN_UPDATE_INTERVAL = CONFIG.UPDATE_INTERVAL / 2  # Retry interval
+    STANDARD_UPDATE_INTERVAL = CONFIG.UPDATE_INTERVAL  # Normal interval
 
-    while True:
-        lookup_failed = False  # Track if any variable lookup failed
+    def __init__(self, state):
+        self.state = state  # Store reference to global state
+        self.variable_sleep = 0.01  # Sleep time between variable lookups
 
-        try:
-            if not state.sim_connected:
-                initialize_simconnect()
-                continue
+        self.last_successful_update_time = time.time()
+        self.running = False
+        self.thread = None
 
-            if state.sim_connected:
-                if state.sim_connect is None or not state.sim_connect.ok or state.sim_connect.quit == 1:
-                    print_warning("SimConnect state invalid. Disconnecting.")
-                    sim_connected = False
+    def start(self):
+        """Start the background update thread."""
+        if self.running:
+            print_warning("BackgroundUpdater Already running.")
+            return
+
+        self.running = True
+        self.thread = threading.Thread(target=self.run, daemon=True)
+        self.thread.start()
+        print_info("BackgroundUpdater Started.")
+
+        self.background_thread_watchdog_function()
+
+    def stop(self):
+        """Stop the background update thread cleanly."""
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=1)
+            print_info("BackgroundUpdater Stopped.")
+
+    def run(self):
+        """Main background update loop."""
+        while self.running:
+            lookup_failed = False  # Track if any variable lookup failed
+
+            try:
+                if not state.sim_connected:
+                    initialize_simconnect()
                     continue
 
-                # Make a copy of the variables to avoid holding the lock during network calls
-                with cache_lock:
-                    vars_to_update = list(variables_to_track)
+                if state.sim_connected:
+                    if state.sim_connect is None or not state.sim_connect.ok or state.sim_connect.quit == 1:
+                        print_warning("SimConnect state invalid. Disconnecting.")
+                        state.sim_connected = False
+                        continue
 
-                for variable_name in vars_to_update:
-                    try:
-                        if state.aircraft_requests is not None and hasattr(state.aircraft_requests, 'get'):
-                            value = state.aircraft_requests.get(variable_name)
-                            if value is not None:
-                                with cache_lock:
-                                    simconnect_cache[variable_name] = value
+                    # Make a copy of the variables to avoid holding the lock during network calls
+                    with cache_lock:
+                        vars_to_update = list(variables_to_track)
+
+                    for variable_name in vars_to_update:
+                        try:
+                            if state.aircraft_requests is not None and hasattr(state.aircraft_requests, 'get'):
+                                value = state.aircraft_requests.get(variable_name)
+                                if value is not None:
+                                    with cache_lock:
+                                        simconnect_cache[variable_name] = value
+                                else:
+                                    lookup_failed = True
                             else:
+                                print_warning("'aq' is None or does not have a 'get' method.")
                                 lookup_failed = True
-                        else:
-                            print_warning("'aq' is None or does not have a 'get' method.")
+                        except OSError as e:
+                            print_debug(f"Error fetching '{variable_name}': {e}. "
+                                            "Will retry in the next cycle.")
                             lookup_failed = True
-                    except OSError as e:
-                        print_debug(f"Error fetching '{variable_name}': {e}. "
-                                     "Will retry in the next cycle.")
-                        lookup_failed = True
 
-                    # Introduce a small sleep between variable updates
-                    time.sleep(VARIABLE_SLEEP)
+                        # Introduce a small sleep between variable updates
+                        time.sleep(self.variable_sleep)
 
-            else:
-                print_warning("SimConnect not connected. Retrying in 1 second.")
-                time.sleep(1)
+                else:
+                    print_warning("SimConnect not connected. Retrying in 1 second.")
+                    time.sleep(1)
 
-            # Adjust sleep interval dynamically
-            sleep_interval = MIN_UPDATE_INTERVAL if lookup_failed else STANDARD_UPDATE_INTERVAL
-            time.sleep(sleep_interval / 1000.0)
+                # Adjust sleep interval dynamically
+                sleep_interval = self.MIN_UPDATE_INTERVAL if lookup_failed else self.STANDARD_UPDATE_INTERVAL
+                time.sleep(sleep_interval / 1000.0)
 
-        except Exception as e:
-            print_error(f"Unexpected error in background updater: {e}")
-            print(f"Exception type: {type(e).__name__}")
-        finally:
-            # Update the last successful update time - used for 'heartbeat' functionality
-            last_successful_update_time = time.time()
+            except Exception as e:
+                print_error(f"Unexpected error in background updater: {e}")
+                print(f"Exception type: {type(e).__name__}")
+            finally:
+                # Update the last successful update time - used for 'heartbeat' functionality
+                self.last_successful_update_time = time.time()
 
-def background_thread_watchdog_function():
-    """Check background thread function to see if it has locked up"""
-    now = time.time()
-    threshold = 30  # seconds before we consider the updater "stuck"
+    def is_stale(self, threshold=30):
+        """Check if the updater has stalled (i.e., no successful updates)."""
+        return (time.time() - self.last_successful_update_time) > threshold
 
-    if now - last_successful_update_time > threshold:
-        print_error(f"Watchdog: Background updater has not completed a cycle in {int(now - last_successful_update_time)} seconds. Possible stall detected.")
+    def background_thread_watchdog_function(self):
+        """Check background thread function to see if it has locked up"""
+        now = time.time()
+        threshold = 30  # seconds before we consider the updater "stuck"
 
-    # Reschedule the watchdog to run again after 10 seconds
-    root.after(10_000, background_thread_watchdog_function)
+        if now - self.last_successful_update_time > threshold:
+            print_error(f"Watchdog: Background updater has not completed a cycle in {int(now - last_successful_update_time)} seconds. Possible stall detected.")
+
+        # Reschedule the watchdog to run again after 10 seconds
+        root.after(10_000, self.background_thread_watchdog_function)
 
 # --- Timer Calcuation  ---
 def get_time_to_future_adjusted():
@@ -1389,19 +1420,16 @@ def main():
     # --- Double click functionality for setting timer ---
     root.bind("<Double-1>", lambda event: open_timer_dialog())
 
-    # Start the background thread
-    background_thread = threading.Thread(target=simconnect_background_updater, daemon=True)
-    background_thread.start()
-
-    # Start the watchdog function to monitor the background thread
-    root.after(10_000, background_thread_watchdog_function)
-
     try:
         # Initialize TemplateHandler
         template_handler = TemplateHandler()
 
         # Check if user functions are defined
         check_user_functions()
+
+        # Start the background thread
+        background_updater = BackgroundUpdater(state)
+        background_updater.start()
 
         # Render the initial display
         update_display(template_handler)
