@@ -113,25 +113,134 @@ class Config:
     PADDING_Y: int = 10
     UNIX_EPOCH: datetime = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
-class StateManager:
-    """Centralized storage for all mutable global state variables."""
+    SCRIPT_DIR: str = os.path.dirname(__file__)
+    SETTINGS_DIR: str = os.path.join(os.path.dirname(SCRIPT_DIR), "Settings")
+    SETTINGS_FILE: str = os.path.join(SETTINGS_DIR, "custom_status_bar.json")
+    TEMPLATE_FILE: str = os.path.join(SETTINGS_DIR, "status_bar_templates.py")
+
+class AppState:
+    """Manages core application state like SimConnect, logging, and settings."""
     def __init__(self):
         self.sim_connect = None
         self.aircraft_requests = None
         self.sim_connected = False
-        self.user_update_function_defined = False
-        self.user_slow_update_function_defined = False
+
+        # Load Settings
+        self.settings_manager = SettingsManager()
+        self.settings = self.settings_manager.load_settings()
 
         # Log File
         self.log_file_path = "traceback.log"
         self.traceback_log_file = open(self.log_file_path, "w")
         faulthandler.enable(file=self.traceback_log_file)
 
-        self.template_handler = None
-        self.display_updater = None
-        self.drag_handler = None
+        self.user_update_function_defined = False
+        self.user_slow_update_function_defined = False
 
-        self.settings = None
+    # TODO not 100% certain i like this here...
+    def save_settings(self):
+        """Save the current application settings."""
+        self.settings_manager.save_settings(self.settings)
+
+class UIManager:
+    """Manages UI-specific state, such as dragging and widget updates."""
+    def __init__(self, settings: "ApplicationSettings"):
+        self.root = tk.Tk()
+        self.settings = settings
+        self.drag_handler = DragHandler(self.root)
+        self.template_handler = TemplateHandler()
+        self.display_updater = DisplayUpdater(self.root, self, self.template_handler)
+
+        # These define if user functions are defined or not
+        self.user_update_function_defined = False
+        self.user_slow_update_function_defined = False
+
+        # Last known UI position (loaded from settings)
+        self.window_x, self.window_y = 0, 0
+
+        self.tkinter_setup()
+
+        self.check_user_functions()
+
+    def get_root(self):
+        """Provide access to the Tk root window for other components."""
+        return self.root
+
+    def tkinter_setup(self):
+        """Setup Tkinter related functionality"""
+        self.root.title(CONFIG.WINDOW_TITLE)
+        self.root.overrideredirect(True)
+        self.root.attributes("-topmost", True)
+        self.root.attributes("-alpha", CONFIG.ALPHA_TRANSPARENCY)
+        self.root.configure(bg=CONFIG.DARK_BG)
+
+        # Load window position
+        initial_x, initial_y = self.settings.get_window_position()
+        self.root.geometry(f"+{initial_x}+{initial_y}")
+
+        # --- Double click functionality for setting timer ---
+        self.root.bind("<Double-1>", lambda event: self.open_timer_dialog())
+
+        # Bind the right-click menu
+        self.root.bind("<Button-3>", lambda event: show_template_menu(event, self.template_handler))
+
+    # TODO uncertain this is best location?
+    def check_user_functions(self):
+
+        try:
+            user_init()
+        except NameError:
+            print_warning("No user_init function defined in template file")
+        except Exception as e:
+            print_error(f"Error calling user_init [{type(e).__name__}]: {e}")
+            traceback.print_exc(file=sys.stdout)
+            sys.exit(1)
+
+        # Check for user update function
+        function_name = "user_update"
+        if function_name in globals() and callable(globals()[function_name]):
+            self.user_update_function_defined = True
+        else:
+            self.user_update_function_defined = False
+            print_warning("No user_update function defined in template file")
+
+        function_name = "user_slow_update"
+        if function_name in globals() and callable(globals()[function_name]):
+            self.user_slow_update_function_defined = True
+        else:
+            self.user_slow_update_function_defined = False
+            print_warning("No user_slow_update function defined in template file")
+
+    def open_timer_dialog(self):
+        """
+        Open the CountdownTimerDialog to prompt the user to set a future countdown time and SimBrief settings.
+        """
+        try:
+            # Open the dialog with current SimBrief settings and last entered time
+            dialog = CountdownTimerDialog(self.root, self.settings)
+            self.root.wait_window(dialog)  # Wait for dialog to close
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open timer dialog: {str(e)}")
+
+    def start(self):
+        """Start any UI related functions"""
+        # Start display update
+        self.display_updater.update_display()
+
+class ServiceManager:
+    """Handles background services like SimConnect updates and SimBrief auto-update."""
+    def __init__(self, app_state, settings: "ApplicationSettings", root):
+        self.app_state = app_state
+        self.background_updater = BackgroundUpdater(self.app_state, root)
+        self.background_updater.start()
+        self.settings = settings # TODO shold we pass this in like this?
+        self.root = root
+
+    def start(self):
+        # Start SimBrief auto-update if enabled
+        if self.app_state.settings.simbrief_settings.auto_update_enabled:
+            print_info("Auto-update enabled. Scheduling SimBrief updates...")
+            self.root.after(CONFIG.SIMBRIEF_AUTO_UPDATE_INTERVAL_MS, lambda: SimBriefFunctions.auto_update_simbrief(root))
 
 # --- Timer Variables  ---
 @dataclass
@@ -186,12 +295,12 @@ class SimBriefSettings:
         )
 
 # --- Globals  ---
-state = StateManager()  # Global script state
 CONFIG = Config()       # Global configuration
+state: Optional["AppState"] = None
 countdown_state = CountdownState()
-simbrief_settings = SimBriefSettings()
 
 # Shared data structures for threading
+# TODO move these?
 simconnect_cache = {}
 variables_to_track = set()
 cache_lock = threading.Lock()
@@ -360,13 +469,16 @@ class BackgroundUpdater:
     MIN_UPDATE_INTERVAL = CONFIG.UPDATE_INTERVAL / 2  # Retry interval
     STANDARD_UPDATE_INTERVAL = CONFIG.UPDATE_INTERVAL  # Normal interval
 
-    def __init__(self, state):
+    def __init__(self, state, root):
+        # TODO needs reference to root and app_state - determine best way to do this
         self.state = state  # Store reference to global state
         self.variable_sleep = 0.01  # Sleep time between variable lookups
 
         self.last_successful_update_time = time.time()
         self.running = False
         self.thread = None
+
+        self.root = root
 
     def start(self):
         """Start the background update thread."""
@@ -394,14 +506,14 @@ class BackgroundUpdater:
             lookup_failed = False  # Track if any variable lookup failed
 
             try:
-                if not state.sim_connected:
+                if not self.state.sim_connected:
                     initialize_simconnect()
                     continue
 
-                if state.sim_connected:
-                    if state.sim_connect is None or not state.sim_connect.ok or state.sim_connect.quit == 1:
+                if self.state.sim_connected:
+                    if self.state.sim_connect is None or not self.state.sim_connect.ok or self.state.sim_connect.quit == 1:
                         print_warning("SimConnect state invalid. Disconnecting.")
-                        state.sim_connected = False
+                        self.state.sim_connected = False
                         continue
 
                     # Make a copy of the variables to avoid holding the lock during network calls
@@ -410,8 +522,8 @@ class BackgroundUpdater:
 
                     for variable_name in vars_to_update:
                         try:
-                            if state.aircraft_requests is not None and hasattr(state.aircraft_requests, 'get'):
-                                value = state.aircraft_requests.get(variable_name)
+                            if self.state.aircraft_requests is not None and hasattr(self.state.aircraft_requests, 'get'):
+                                value = self.state.aircraft_requests.get(variable_name)
                                 if value is not None:
                                     with cache_lock:
                                         simconnect_cache[variable_name] = value
@@ -443,10 +555,6 @@ class BackgroundUpdater:
                 # Update the last successful update time - used for 'heartbeat' functionality
                 self.last_successful_update_time = time.time()
 
-    def is_stale(self, threshold=30):
-        """Check if the updater has stalled (i.e., no successful updates)."""
-        return (time.time() - self.last_successful_update_time) > threshold
-
     def background_thread_watchdog_function(self):
         """Check background thread function to see if it has locked up"""
         now = time.time()
@@ -456,7 +564,7 @@ class BackgroundUpdater:
             print_error(f"Watchdog: Background updater has not completed a cycle in {int(now - last_successful_update_time)} seconds. Possible stall detected.")
 
         # Reschedule the watchdog to run again after 10 seconds
-        root.after(10_000, self.background_thread_watchdog_function)
+        self.root.after(10_000, self.background_thread_watchdog_function)
 
 # --- Timer Calcuation  ---
 def get_time_to_future_adjusted():
@@ -617,55 +725,38 @@ def set_future_time_internal(future_time_input, current_sim_time):
     except Exception as e:
         print_error(f"Unexpected error in set_future_time_internal: {str(e)}")
 
-def open_timer_dialog():
-    """
-    Open the CountdownTimerDialog to prompt the user to set a future countdown time and SimBrief settings.
-    """
-    try:
-        # Open the dialog with current SimBrief settings and last entered time
-        dialog = CountdownTimerDialog(
-            root,
-            simbrief_settings=simbrief_settings,
-            initial_time=countdown_state.last_entered_time,
-        )
-        root.wait_window(dialog)  # Wait for the dialog to close
-        # The dialog now handles all time and settings updates
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to open timer dialog: {str(e)}")
-
 # --- Template handling  ---
-@dataclass
 class TemplateHandler:
     """Class to manage the template file and selected template."""
-    templates: dict[str, str] = field(init=False, default_factory=dict)
-    selected_template_name: Optional[str] = None
-    cached_parsed_blocks: list = field(init=False, default_factory=list)
-    pending_template_change: bool = field(init=False, default=False)
-    parser: "TemplateParser" = field(init=False)
-
-    def __post_init__(self):
-        """Initialize templates and set the default selection."""
+    def __init__(self):
+        """
+        Initialize the TemplateHandler with the given settings.
+        """
         self.parser = TemplateParser()  # Initialize the parser
-        self.templates = self.load_templates()
-        self.load_template_functions()
-        self.selected_template_name = next(iter(self.templates), None)
+        self.templates = self.load_templates()  # Load templates from file
+        self.selected_template_name = next(iter(self.templates), None)  # Select the first template
+
         if not self.selected_template_name:
             raise ValueError("No templates available to select.")
 
-        # Initially cache the parsed blocks for the first template
+        self.cached_parsed_blocks = []  # Cache parsed blocks for the selected template
+        self.pending_template_change = False  # Track if the template was changed
+
+        self.load_template_functions()
         self.cache_parsed_blocks()
 
     def load_templates(self) -> dict[str, str]:
         """Load templates from the template file, creating the file if necessary."""
-        os.makedirs(state.settings.SETTINGS_DIR, exist_ok=True)
+        os.makedirs(CONFIG.SETTINGS_FILE, exist_ok=True)
 
-        if not os.path.exists(state.settings.TEMPLATE_FILE):
-            with open(state.settings.TEMPLATE_FILE, "w") as f:
+        if not os.path.exists(CONFIG.TEMPLATE_FILE):
+            with open(CONFIG.TEMPLATE_FILE, "w") as f:
                 f.write(DEFAULT_TEMPLATES.strip())
-            print(f"Created default template file at {state.settings.TEMPLATE_FILE}")
+            print(f"Created default template file at {CONFIG.TEMPLATE_FILE}")
 
         try:
-            spec = importlib.util.spec_from_file_location("status_bar_templates", state.settings.TEMPLATE_FILE)
+            spec = importlib.util.spec_from_file_location("status_bar_templates",
+                                                          CONFIG.TEMPLATE_FILE)
             templates_module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(templates_module)
             return templates_module.TEMPLATES if hasattr(templates_module, "TEMPLATES") else {}
@@ -679,7 +770,7 @@ class TemplateHandler:
         """
         try:
             spec = importlib.util.spec_from_file_location("status_bar_templates",
-                                                          state.settings.TEMPLATE_FILE)
+                                                          CONFIG.TEMPLATE_FILE)
             templates_module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(templates_module)
 
@@ -767,6 +858,7 @@ def get_dynamic_value(function_name):
     except Exception as e:
         print_debug(f"get_dynamic_value exception [{type(e).__name__ }]: {e}")
         return "Err"
+
 class WidgetPool:
     """Manages widgets and their order"""
     def __init__(self):
@@ -823,14 +915,14 @@ class DisplayUpdater:
 
         # Toggle -topmost only during slow updates
         if self.update_display_frame_count == 0:
-            root.attributes("-topmost", False)
-            root.attributes("-topmost", True)
-            if root.state() != "normal":
+            self.root.attributes("-topmost", False)
+            self.root.attributes("-topmost", True)
+            if self.root.state() != "normal":
                 print_warning("Restoring minimized window!")
-                root.deiconify()
+                self.root.deiconify()
 
         # Prevent updates while dragging
-        if state.drag_handler.is_moving:
+        if self.state.drag_handler.is_moving:
             self.root.after(CONFIG.UPDATE_INTERVAL, self.update_display)
             return
 
@@ -1237,53 +1329,55 @@ def switch_template(new_template_name, template_handler):
     except Exception as e:
         print_error(f"Error switching template: {e}")
 
+@dataclass
+class ApplicationSettings:
+    pos: dict = field(default_factory=lambda: {"x": 0, "y": 0})
+    simbrief_settings: "SimBriefSettings" = field(default_factory=SimBriefSettings)
+
+    def to_dict(self):
+        return {
+            "pos": self.pos,
+            "simbrief_settings": self.simbrief_settings.to_dict(),
+        }
+
+    @staticmethod
+    def from_dict(data: dict):
+        return ApplicationSettings(
+            pos=data.get("pos", {"x": 0, "y": 0}),
+            simbrief_settings=SimBriefSettings.from_dict(data.get("simbrief_settings", {})),
+        )
+
 class SettingsManager:
     """Handles loading, saving, and managing application settings."""
 
-    # Define settings paths
-    SCRIPT_DIR = os.path.dirname(__file__)
-    SETTINGS_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "Settings")
-    SETTINGS_FILE = os.path.join(SETTINGS_DIR, "custom_status_bar.json")
-    TEMPLATE_FILE = os.path.join(SETTINGS_DIR, "status_bar_templates.py")
+    def __init__(self, settings_dir=None):
+        # Allow dynamic configuration of paths
+        self.settings_dir = settings_dir or os.path.join(os.path.dirname(__file__), "Settings")
+        self.settings_file = os.path.join(self.settings_dir, "custom_status_bar.json")
+        self.template_file = os.path.join(self.settings_dir, "status_bar_templates.py")
 
-    def __init__(self):
-        # Ensure settings directory exists
-        os.makedirs(self.SETTINGS_DIR, exist_ok=True)
+        # Ensure the directory exists
+        os.makedirs(self.settings_dir, exist_ok=True)
 
-        # Load settings into memory
-        self.data, self.simbrief_settings = self.load_settings()
-
-    def load_settings(self):
+    def load_settings(self) -> ApplicationSettings:
         """Load settings from the JSON file."""
-        if os.path.exists(self.SETTINGS_FILE):
+        if os.path.exists(self.settings_file):
             try:
-                with open(self.SETTINGS_FILE, "r") as f:
+                with open(self.settings_file, "r") as f:
                     data = json.load(f)
-                    simbrief_settings = SimBriefSettings.from_dict(data.get("simbrief_settings", {}))
-                    return data, simbrief_settings
+                    return ApplicationSettings.from_dict(data)
             except json.JSONDecodeError:
                 print_error("Settings file is corrupted. Using defaults.")
+        # Return default settings if the file doesn't exist or is corrupted
+        return ApplicationSettings()
 
-        return {"x": 0, "y": 0}, SimBriefSettings()  # Default settings
-
-    def save_settings(self):
+    def save_settings(self, settings: ApplicationSettings):
         """Save settings to the JSON file."""
         try:
-            self.data["simbrief_settings"] = self.simbrief_settings.to_dict()
-            with open(self.SETTINGS_FILE, "w") as f:
-                json.dump(self.data, f, indent=4)
+            with open(self.settings_file, "w") as f:
+                json.dump(settings.to_dict(), f, indent=4)
         except Exception as e:
             print_error(f"Error saving settings: {e}")
-
-    def update_position(self, x, y):
-        """Update and save the window position."""
-        self.data["x"] = x
-        self.data["y"] = y
-        self.save_settings()
-
-    def get_window_position(self):
-        """Return saved window position (defaults to 0,0 if not set)."""
-        return self.data.get("x", 0), self.data.get("y", 0)
 
 def is_debugging():
     """Check if the script is running in a debugging environment."""
@@ -1370,92 +1464,20 @@ def log_global_state(event=None, log_path="detailed_state_log.txt", max_depth=2)
 
     print(f"Global state logged to {log_path}")
 
-def check_user_functions():
-    global state
-
-    try:
-        user_init()
-    except NameError:
-        print_warning("No user_init function defined in template file")
-    except Exception as e:
-        print_error(f"Error calling user_init [{type(e).__name__}]: {e}")
-        traceback.print_exc(file=sys.stdout)
-        sys.exit(1)
-
-    # Check for user update function
-    function_name = "user_update"
-    if function_name in globals() and callable(globals()[function_name]):
-        state.user_update_function_defined = True
-    else:
-        state.user_update_function_defined = False
-        print_warning("No user_update function defined in template file")
-
-    function_name = "user_slow_update"
-    if function_name in globals() and callable(globals()[function_name]):
-        state.user_slow_update_function_defined = True
-    else:
-        USER_SLOW_UPDATE_FUNCTION_DEFINED = False
-        print_warning("No user_slow_update function defined in template file")
-
 def main():
-    global root, simbrief_settings
-
     print_info("Starting custom status bar...")
 
-    # --- Load initial settings ---
-    state.settings = SettingsManager()
-    settings, simbrief_settings_loaded = state.settings.load_settings()
-    simbrief_settings = simbrief_settings_loaded
-    initial_x = settings.get("x", 0)
-    initial_y = settings.get("y", 0)
-    print_debug(f"Loaded window position - x: {initial_x}, y: {initial_y}")
-
-    # --- GUI Setup ---
-    root = tk.Tk()
-    root.title(CONFIG.WINDOW_TITLE)
-    root.overrideredirect(True)
-    root.attributes("-topmost", True)
-    root.attributes("-alpha", CONFIG.ALPHA_TRANSPARENCY)
-    root.configure(bg=CONFIG.DARK_BG)
-
-     # Start auto-update if enabled
-    if simbrief_settings.auto_update_enabled:
-        print_info("\nAuto-update is enabled. Starting periodic updates...\n")
-        root.after(1000, lambda: SimBriefFunctions.auto_update_simbrief(root))  # Initial delay of 1 second
-
-    # Apply initial geometry after creating the root window
     try:
-        # Set initial position
-        root.geometry(f"+{initial_x}+{initial_y}")
-    except Exception as e:
-        print_error(f"Failed to apply geometry - {e}")
 
-    # Bind mouse events to enable dragging of the window
-    state.drag_handler = DragHandler(root)
+        app_state = AppState()
+        ui_manager = UIManager(app_state.settings)
+        root = ui_manager.get_root()
+        service_manager = ServiceManager(app_state, app_state.settings, root)
 
-    # --- Double click functionality for setting timer ---
-    root.bind("<Double-1>", lambda event: open_timer_dialog())
+        ui_manager.start()
+        service_manager.start()
 
-    try:
-        # Initialize TemplateHandler
-        state.template_handler = TemplateHandler()
-
-        # Initialize Display Updater
-        state.display_updater = DisplayUpdater(root, state, state.template_handler)
-
-        # Check if user functions are defined
-        check_user_functions()
-
-        # Start the background thread
-        background_updater = BackgroundUpdater(state)
-        background_updater.start()
-
-        # Render the initial display
-        state.display_updater.update_display()
-
-        # Bind the right-click menu
-        root.bind("<Button-3>", lambda event: show_template_menu(event, state.template_handler))
-
+        # TODO move fault det, etc to servicestate
         #### FAULT DETECTION ###########
         def reset_traceback_timer():
             """Reset the faulthandler timer to prevent a dump."""
@@ -1488,10 +1510,16 @@ def main():
 # --- Utility Classes  ---
 class CountdownTimerDialog(tk.Toplevel):
     """A dialog to set the countdown timer and SimBrief settings"""
-    def __init__(self, parent, simbrief_settings: SimBriefSettings, initial_time=None, gate_out_time=None):
+    # TODO just pass in settings object?
+    def __init__(self, parent, settings_manager: SettingsManager):
         super().__init__(parent)
 
-        self.simbrief_settings = simbrief_settings
+        self.settings_manager = settings_manager
+        self.simbrief_settings = settings_manager.simbrief_settings
+
+         # Fetch times from global count_down_state
+        self.initial_time = countdown_state.last_entered_time
+        self.gate_out_time = countdown_state.gate_out_time
 
         # Remove the native title bar
         self.overrideredirect(True)
@@ -1749,7 +1777,10 @@ class CountdownTimerDialog(tk.Toplevel):
             self.update_simbrief_settings()
 
             # Save SimBrief settings regardless of whether a username is provided
-            state.settings.save_settings(state.settings.load_settings()[0], simbrief_settings)
+            # TODO how to best pass settings here??
+            app_state.settings.pos = state.settings.load_settings()[0]#FIX
+            app_state.settings.simbrief_settings #FIX
+            app_state.settings.save_settings()
 
             # Handle the time input
             time_text = self.time_entry.get().strip()
