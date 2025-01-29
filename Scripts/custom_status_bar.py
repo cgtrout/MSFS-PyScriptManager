@@ -1677,20 +1677,6 @@ class CountdownTimerDialog(tk.Toplevel):
         )
         pull_time_button.grid(row=0, column=2, sticky="w", padx=5, pady=2)
 
-    def get_default_gate_out_time(self):
-        """
-        Fetch the default gate-out time (sched_out) from SimBrief JSON.
-        """
-        try:
-            simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(self.simbrief_settings.username)
-            if not simbrief_json:
-                print("DEBUG: Failed to fetch SimBrief JSON.")
-                return None
-            return SimBriefFunctions.get_simbrief_ofp_gate_out_datetime(simbrief_json)
-        except Exception as e:
-            print(f"Error fetching default gate-out time: {e}")
-            return None
-
     def on_cancel(self):
         """Cancel the dialog."""
         self.result = None
