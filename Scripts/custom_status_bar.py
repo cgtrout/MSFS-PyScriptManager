@@ -127,6 +127,9 @@ class StateManager:
         self.traceback_log_file = open(self.log_file_path, "w")
         faulthandler.enable(file=self.traceback_log_file)
 
+        self.template_handler = None
+        self.display_updater = None
+
 # --- Timer Variables  ---
 @dataclass
 class CountdownState:
@@ -791,157 +794,154 @@ class WidgetPool:
 
 widget_pool = WidgetPool()
 
-# Frame counters used for slow update frequency
-UPDATE_DISPLAY_FRAME_COUNT = 0
-SLOW_UPDATE_INTERVAL = 15 # Approx every 500ms
+class DisplayUpdater:
+    """Handles the rendering and updating of the status bar display."""
 
-def update_display(template_handler:TemplateHandler):
-    """Render the parsed blocks onto the display frame"""
-    # Call user update function
-    call_user_functions()
+    # Do slow update every 15 normal updates (approx 500ms)
+    SLOW_UPDATE_INTERVAL = 15
 
-    # Update frame counters - used for determining 'slow' updates
-    update_frame_counter()
+    def __init__(self, root, state, template_handler):
+        self.root = root
+        self.state = state
+        self.template_handler = template_handler
+        self.display_frame = tk.Frame(root, bg=CONFIG.DARK_BG)
+        self.display_frame.pack(padx=10, pady=5)
 
-    # Toggle -topmost only during slow updates
-    if UPDATE_DISPLAY_FRAME_COUNT == 0:
-        root.attributes("-topmost", False)
-        root.attributes("-topmost", True)
-        if root.state() != "normal":
-            print_warning("Restoring minimized window!")
-            root.deiconify()
+        self.widget_pool = WidgetPool()  # Use WidgetPool instead of a direct dictionary
+        self.update_display_frame_count = 0
 
-    try:
-        # Do not update if drag move is occuring
+    def start(self):
+        """Starts the update loop for the display."""
+        self.update_display()
+
+    def update_display(self):
+        """Render and update the display based on the parsed template."""
+        self.call_user_functions()
+        self.update_frame_counter()
+
+        # Toggle -topmost only during slow updates
+        if self.update_display_frame_count == 0:
+            root.attributes("-topmost", False)
+            root.attributes("-topmost", True)
+            if root.state() != "normal":
+                print_warning("Restoring minimized window!")
+                root.deiconify()
+
+        # Prevent updates while dragging
         if is_moving:
-            root.after(CONFIG.UPDATE_INTERVAL, lambda: update_display(template_handler))
+            self.root.after(CONFIG.UPDATE_INTERVAL, self.update_display)
             return
 
-        # Re-parse the template if a change is pending
-        if template_handler.pending_template_change:
-            template_handler.cache_parsed_blocks()
-            template_handler.pending_template_change = False
+        # Handle template updates
+        if self.template_handler.pending_template_change:
+            self.template_handler.cache_parsed_blocks()
+            self.template_handler.pending_template_change = False
 
-        # Use cached parsed blocks
-        parsed_blocks = template_handler.cached_parsed_blocks
-
-        # Track whether a full refresh is needed
+        parsed_blocks = self.template_handler.cached_parsed_blocks
         full_refresh_needed = False
 
-        # Process each block and render the widgets
+        # Process each block
         for block in parsed_blocks:
-            needs_refresh = process_block(block, template_handler)
-            if needs_refresh:
+            if self.process_block(block):
                 full_refresh_needed = True
 
-        # Repack widgets in the correct order
-        # This is to avoid a dynamically added VARIF block from being placed at the end
-
-        # Repack widgets only if a full refresh is needed
+        # Only repack widgets if necessary
         if full_refresh_needed:
-            parsed_block_ids = [block.get("label", f"block_{id(block)}") for block in parsed_blocks]
-            for widget in display_frame.winfo_children():
-                widget.pack_forget()
-            for widget in widget_pool.get_widgets_in_order(parsed_block_ids):
-                widget.pack(side=tk.LEFT, padx=0, pady=0)
+            if full_refresh_needed:
+                self.repack_widgets(parsed_blocks)
 
-            # Force Tkinter to update the display to avoid flickering on VARIF changes
-            display_frame.update_idletasks()
+        # Adjust window size dynamically
+        self.adjust_window_size()
 
-        # Dynamically adjust the window size
-        new_width = display_frame.winfo_reqwidth() + CONFIG.PADDING_X
-        new_height = display_frame.winfo_reqheight() + CONFIG.PADDING_Y
+        # Schedule next update
+        self.root.after(CONFIG.UPDATE_INTERVAL, self.update_display)
 
-        min_dim = 10
-        if new_width < min_dim or new_height < min_dim:
-            print_warning(f"Detected an unusually small window size "
-                          f"({new_width}x{new_height})")
+    def repack_widgets(self, parsed_blocks):
+        """Repack widgets (for order preservation)"""
+        parsed_block_ids = [block.get("label", f"block_{id(block)}") for block in parsed_blocks]
+        for widget in self.display_frame.winfo_children():
+            widget.pack_forget()
+        for widget in widget_pool.get_widgets_in_order(parsed_block_ids):
+            widget.pack(side=tk.LEFT, padx=0, pady=0)
 
-        # Set to calculated geometry
-        root.geometry(f"{new_width}x{new_height}")
+    def process_block(self, block):
+        """Process one block from the parsed template."""
+        block_type = block["type"]
+        block_id = block.get("label", f"block_{id(block)}")
+        block_metadata = self.template_handler.parser.block_registry.get(block_type, {})
 
-    except Exception as e:
-        print_error(f"Error in update_display: {e}")
+        # Dynamically handle blocks with conditions
+        if "condition" in block_metadata["keys"]:
+            condition_function = block.get("condition")
+            if condition_function:
+                condition = get_dynamic_value(condition_function)
+                if not condition:
+                    # Remove the widget from the pool if the condition fails
+                    if widget_pool.has_widget(block_id):
+                        widget = widget_pool.get_widget(block_id)
+                        widget_pool.remove_widget(block_id)
+                        return True # Need refresh
+                    return False
 
-    # Schedule the next update
-    root.after(CONFIG.UPDATE_INTERVAL, lambda: update_display(template_handler))
+        # Attempt to retrieve an existing widget
+        widget = widget_pool.get_widget(block_id)
+        render_function = block_metadata.get("render")
 
-def process_block(block, template_handler):
-    """Process one block from the parsed template."""
-    block_type = block["type"]
-    block_id = block.get("label", f"block_{id(block)}")
-    block_metadata = template_handler.parser.block_registry.get(block_type, {})
+        if widget:
+            # Use render function to get new configuration
+            if render_function:
+                render_config = render_function(block)
 
-    # Dynamically handle blocks with conditions
-    if "condition" in block_metadata["keys"]:
-        condition_function = block.get("condition")
-        if condition_function:
-            condition = get_dynamic_value(condition_function)
-            if not condition:
-                # Remove the widget from the pool if the condition fails
-                if widget_pool.has_widget(block_id):
-                    widget = widget_pool.get_widget(block_id)
+                # Check if the render function returned valid data
+                if render_config:
+                    # Update the existing widget if needed
+                    if widget.cget("text") != render_config["text"] or widget.cget("fg") != render_config["color"]:
+                        widget.config(text=render_config["text"], fg=render_config["color"])
+                else:
+                    # Remove the widget if the config is invalid (e.g., condition failed)
                     widget_pool.remove_widget(block_id)
-                    return True # Need refresh
-                return False
+        else:
+            # Create and register a new widget
+            if render_function:
+                render_config = render_function(block)
+                if render_config:
+                    # Create a new widget based on the render function's config
+                    widget = tk.Label( self.display_frame, text=render_config["text"],
+                                    fg=render_config["color"], bg=CONFIG.DARK_BG, font=CONFIG.FONT )
+                    widget_pool.add_widget(block_id, widget)
+                    widget.pack(side=tk.LEFT, padx=5, pady=5)
+                    return True # Full refresh
+            return False
 
-    # Attempt to retrieve an existing widget
-    widget = widget_pool.get_widget(block_id)
-    render_function = block_metadata.get("render")
+    def adjust_window_size(self):
+        """Adjust the window size dynamically based on content."""
+        new_width = self.display_frame.winfo_reqwidth() + CONFIG.PADDING_X
+        new_height = self.display_frame.winfo_reqheight() + CONFIG.PADDING_Y
 
-    if widget:
-        # Use render function to get new configuration
-        if render_function:
-            render_config = render_function(block)
+        if new_width < 10 or new_height < 10:
+            print_warning(f"Detected unusually small window size ({new_width}x{new_height})")
 
-            # Check if the render function returned valid data
-            if render_config:
-                # Update the existing widget if needed
-                if widget.cget("text") != render_config["text"] or widget.cget("fg") != render_config["color"]:
-                    widget.config(text=render_config["text"], fg=render_config["color"])
-            else:
-                # Remove the widget if the config is invalid (e.g., condition failed)
-                widget_pool.remove_widget(block_id)
-    else:
-        # Create and register a new widget
-        if render_function:
-            render_config = render_function(block)
-            if render_config:
-                # Create a new widget based on the render function's config
-                widget = tk.Label(
-                    display_frame,
-                    text=render_config["text"],
-                    fg=render_config["color"],
-                    bg=CONFIG.DARK_BG,
-                    font=CONFIG.FONT
-                )
-                widget_pool.add_widget(block_id, widget)
-                widget.pack(side=tk.LEFT, padx=5, pady=5)
-                return True # Full refresh
-        return False
+        self.root.geometry(f"{new_width}x{new_height}")
 
-def call_user_functions():
-    """Invoke user-defined update functions with exception handling."""
-    if state.user_update_function_defined:
-        try:
-            user_update()
-        except Exception as e:
-            print_error(f"Error in user_update [{type(e).__name__}]: {e}")
+    def call_user_functions(self):
+        """Invoke user-defined update functions."""
+        if self.state.user_update_function_defined:
+            try:
+                user_update()
+            except Exception as e:
+                print_error(f"Error in user_update [{type(e).__name__}]: {e}")
 
-    if state.user_slow_update_function_defined:
-        try:
-            # Only call this every UPDATE_DISPLAY_FRAME_COUNT cycles
-            if UPDATE_DISPLAY_FRAME_COUNT == 0:
+        if self.state.user_slow_update_function_defined and self.update_display_frame_count == 0:
+            try:
                 user_slow_update()
-        except Exception as e:
-            print_error(f"Error in user_slow_update [{type(e).__name__}]: {e}")
+            except Exception as e:
+                print_error(f"Error in user_slow_update [{type(e).__name__}]: {e}")
 
-def update_frame_counter():
-    """Increment and reset the frame counter based on the slow update interval."""
-    global UPDATE_DISPLAY_FRAME_COUNT
-    UPDATE_DISPLAY_FRAME_COUNT += 1
-    if UPDATE_DISPLAY_FRAME_COUNT == SLOW_UPDATE_INTERVAL:
-        UPDATE_DISPLAY_FRAME_COUNT = 0
+    def update_frame_counter(self):
+        """Manage frame update frequency."""
+        self.update_display_frame_count += 1
+        if self.update_display_frame_count == self.SLOW_UPDATE_INTERVAL:
+            self.update_display_frame_count = 0
 
 # --- Simbrief functionality ---
 class SimBriefFunctions:
@@ -1373,7 +1373,7 @@ def check_user_functions():
         print_warning("No user_slow_update function defined in template file")
 
 def main():
-    global root, display_frame, simbrief_settings
+    global root, simbrief_settings
 
     print_info("Starting custom status bar...")
 
@@ -1409,16 +1409,16 @@ def main():
     root.bind("<B1-Motion>", do_move)
     root.bind("<ButtonRelease-1>", stop_move)
 
-    # Frame to hold the labels
-    display_frame = tk.Frame(root, bg=CONFIG.DARK_BG)
-    display_frame.pack(padx=10, pady=5)
 
     # --- Double click functionality for setting timer ---
     root.bind("<Double-1>", lambda event: open_timer_dialog())
 
     try:
         # Initialize TemplateHandler
-        template_handler = TemplateHandler()
+        state.template_handler = TemplateHandler()
+
+        # Initialize Display Updater
+        state.display_updater = DisplayUpdater(root, state, state.template_handler)
 
         # Check if user functions are defined
         check_user_functions()
@@ -1428,10 +1428,10 @@ def main():
         background_updater.start()
 
         # Render the initial display
-        update_display(template_handler)
+        state.display_updater.update_display()
 
         # Bind the right-click menu
-        root.bind("<Button-3>", lambda event: show_template_menu(event, template_handler))
+        root.bind("<Button-3>", lambda event: show_template_menu(event, state.template_handler))
 
         #### FAULT DETECTION ###########
         def reset_traceback_timer():
