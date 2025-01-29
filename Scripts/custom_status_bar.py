@@ -129,6 +129,7 @@ class StateManager:
 
         self.template_handler = None
         self.display_updater = None
+        self.drag_handler = None
 
 # --- Timer Variables  ---
 @dataclass
@@ -828,7 +829,7 @@ class DisplayUpdater:
                 root.deiconify()
 
         # Prevent updates while dragging
-        if is_moving:
+        if state.drag_handler.is_moving:
             self.root.after(CONFIG.UPDATE_INTERVAL, self.update_display)
             return
 
@@ -1171,29 +1172,38 @@ SIMBRIEF_TIME_OPTION_FUNCTIONS = {
 }
 
 # --- Drag functionality ---
-is_moving = False
+class DragHandler:
+    """Handles window dragging."""
 
-def start_move(event):
-    """Start moving the window."""
-    global is_moving, offset_x, offset_y
-    is_moving = True
-    offset_x = event.x
-    offset_y = event.y
+    def __init__(self, root):
+        self.root = root
+        self.is_moving = False
+        self.offset_x = 0
+        self.offset_y = 0
 
-def do_move(event):
-    """Handle window movement."""
-    if is_moving:
-        deltax = event.x - offset_x
-        deltay = event.y - offset_y
-        new_x = root.winfo_x() + deltax
-        new_y = root.winfo_y() + deltay
-        root.geometry(f"+{new_x}+{new_y}")
+        # Bind events
+        self.root.bind("<Button-1>", self.start_move)
+        self.root.bind("<B1-Motion>", self.do_move)
+        self.root.bind("<ButtonRelease-1>", self.stop_move)
 
-def stop_move(event):
-    """Stop moving the window."""
-    global is_moving
-    is_moving = False
-    save_settings({"x": root.winfo_x(), "y": root.winfo_y()}, simbrief_settings)
+    def start_move(self, event):
+        """Start moving the window."""
+        self.is_moving = True
+        self.offset_x = event.x
+        self.offset_y = event.y
+
+    def do_move(self, event):
+        """Handle window movement."""
+        if self.is_moving:
+            deltax = event.x - self.offset_x
+            deltay = event.y - self.offset_y
+            new_x = self.root.winfo_x() + deltax
+            new_y = self.root.winfo_y() + deltay
+            self.root.geometry(f"+{new_x}+{new_y}")
+
+    def stop_move(self, event):
+        """Stop moving the window."""
+        self.is_moving = False
 
 # --- Template Menu ---
 def show_template_menu(event, template_handler):
@@ -1405,10 +1415,7 @@ def main():
         print_error(f"Failed to apply geometry - {e}")
 
     # Bind mouse events to enable dragging of the window
-    root.bind("<Button-1>", start_move)
-    root.bind("<B1-Motion>", do_move)
-    root.bind("<ButtonRelease-1>", stop_move)
-
+    state.drag_handler = DragHandler(root)
 
     # --- Double click functionality for setting timer ---
     root.bind("<Double-1>", lambda event: open_timer_dialog())
