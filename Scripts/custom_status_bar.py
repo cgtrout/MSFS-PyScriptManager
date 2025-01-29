@@ -796,8 +796,6 @@ class WidgetPool:
                 widget.destroy()
         self.pool.clear()
 
-widget_pool = WidgetPool()
-
 class DisplayUpdater:
     """Handles the rendering and updating of the status bar display."""
 
@@ -865,7 +863,7 @@ class DisplayUpdater:
         parsed_block_ids = [block.get("label", f"block_{id(block)}") for block in parsed_blocks]
         for widget in self.display_frame.winfo_children():
             widget.pack_forget()
-        for widget in widget_pool.get_widgets_in_order(parsed_block_ids):
+        for widget in self.widget_pool.get_widgets_in_order(parsed_block_ids):
             widget.pack(side=tk.LEFT, padx=0, pady=0)
 
     def process_block(self, block):
@@ -881,14 +879,14 @@ class DisplayUpdater:
                 condition = get_dynamic_value(condition_function)
                 if not condition:
                     # Remove the widget from the pool if the condition fails
-                    if widget_pool.has_widget(block_id):
-                        widget = widget_pool.get_widget(block_id)
-                        widget_pool.remove_widget(block_id)
+                    if self.widget_pool.has_widget(block_id):
+                        widget = self.widget_pool.get_widget(block_id)
+                        self.widget_pool.remove_widget(block_id)
                         return True # Need refresh
                     return False
 
         # Attempt to retrieve an existing widget
-        widget = widget_pool.get_widget(block_id)
+        widget = self.widget_pool.get_widget(block_id)
         render_function = block_metadata.get("render")
 
         if widget:
@@ -903,7 +901,7 @@ class DisplayUpdater:
                         widget.config(text=render_config["text"], fg=render_config["color"])
                 else:
                     # Remove the widget if the config is invalid (e.g., condition failed)
-                    widget_pool.remove_widget(block_id)
+                   self.widget_pool.remove_widget(block_id)
         else:
             # Create and register a new widget
             if render_function:
@@ -912,7 +910,7 @@ class DisplayUpdater:
                     # Create a new widget based on the render function's config
                     widget = tk.Label( self.display_frame, text=render_config["text"],
                                     fg=render_config["color"], bg=CONFIG.DARK_BG, font=CONFIG.FONT )
-                    widget_pool.add_widget(block_id, widget)
+                    self.widget_pool.add_widget(block_id, widget)
                     widget.pack(side=tk.LEFT, padx=5, pady=5)
                     return True # Full refresh
             return False
