@@ -100,31 +100,40 @@ def user_init():
     pass
 """
 # --- Configurable Variables  ---
-ALPHA_TRANSPARENCY_LEVEL = 0.95  # Set transparency (0.0 = fully transparent, 1.0 = fully opaque)
-WINDOW_TITLE = "Simulator Time"
-DARK_BG = "#000000"
-FONT = ("Helvetica", 16)
-UPDATE_INTERVAL = 33  # in milliseconds
 
-SIMBRIEF_AUTO_UPDATE_INTERVAL_MS = 5 * 60 * 1000  # 5 minutes in milliseconds
-USER_UPDATE_FUNCTION_DEFINED = False
-USER_SLOW_UPDATE_FUNCTION_DEFINED = False
+@dataclass(frozen=True)
+class Config:
+    """Immutable configuration settings for the application."""
+    ALPHA_TRANSPARENCY: float = 0.95
+    WINDOW_TITLE: str = "Simulator Time"
+    DARK_BG: str = "#000000"
+    FONT: tuple = ("Helvetica", 16)
+    UPDATE_INTERVAL: int = 33
+    SIMBRIEF_AUTO_UPDATE_INTERVAL_MS: int = 5 * 60 * 1000
+    PADDING_X: int = 20
+    PADDING_Y: int = 10
+    UNIX_EPOCH: datetime = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
-PADDING_X = 20  # Horizontal padding for each label
-PADDING_Y = 10  # Vertical padding for the window
+CONFIG = Config()
 
-sim_connect = None
-aircraft_requests = None
-sim_connected = False
+class StateManager:
+    """Centralized storage for all mutable global state variables."""
+    def __init__(self):
+        self.sim_connect = None
+        self.aircraft_requests = None
+        self.sim_connected = False
+        self.user_update_function_defined = False
+        self.user_slow_update_function_defined = False
 
-log_file_path = "traceback.log"
-traceback_log_file = open(log_file_path, "w")
-faulthandler.enable(file=traceback_log_file)
+        # Log File
+        self.log_file_path = "traceback.log"
+        self.traceback_log_file = open(self.log_file_path, "w")
+        faulthandler.enable(file=self.traceback_log_file)
+
+# Create a single instance of the state
+state = StateManager()
 
 # --- Timer Variables  ---
-# Define epoch value to use as default value
-UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
-
 @dataclass
 class CountdownState:
     future_time_seconds: Optional[int] = None  # Time for countdown in seconds
@@ -132,7 +141,7 @@ class CountdownState:
     last_simbrief_generated_time: Optional[datetime] = None  # Last SimBrief time
     last_entered_time: Optional[str] = None  # Last entered time in HHMM format
     gate_out_time: Optional[datetime] = None  # Store last game out time
-    countdown_target_time: datetime = field(default_factory=lambda: UNIX_EPOCH)
+    countdown_target_time: datetime = field(default_factory=lambda: CONFIG.UNIX_EPOCH)
 
     def set_target_time(self, new_time: datetime):
         """Set a new countdown target time with type validation."""
@@ -190,7 +199,7 @@ def get_sim_time():
     """Fetch the simulator time from SimConnect, formatted as HH:MM:SS."""
     try:
 
-        if not sim_connected:
+        if not state.sim_connected:
             return "Sim Not Running"
 
         sim_time_seconds = get_simconnect_value("ZULU_TIME")
@@ -208,9 +217,9 @@ def get_simulator_datetime() -> datetime:
     """
     Fetches the absolute time from the simulator and converts it to a datetime object.
     """
-    global sim_connected
+    global state
     try:
-        if not sim_connected:
+        if not state.sim_connected:
             raise ValueError("SimConnect is not connected.")
 
         absolute_time = get_simconnect_value("ABSOLUTE_TIME")
@@ -227,7 +236,7 @@ def get_simulator_datetime() -> datetime:
         print(f"get_simulator_datetime: Failed to retrieve simulator datetime: {e}")
 
     # Return the Unix epoch if simulator time is unavailable
-    return UNIX_EPOCH
+    return CONFIG.UNIX_EPOCH
 
 def get_real_world_time():
     """Fetch the real-world Zulu time."""
@@ -262,18 +271,18 @@ def remain_label():
 
 def initialize_simconnect():
     """Initialize the connection to SimConnect."""
-    global sim_connect, aircraft_requests, sim_connected
+    global state
     try:
-        sim_connect = SimConnect()  # Connect to SimConnect
-        aircraft_requests = AircraftRequests(sim_connect, _time=0)
-        sim_connected = True
+        state.sim_connect = SimConnect()  # Connect to SimConnect
+        state.aircraft_requests = AircraftRequests(state.sim_connect, _time=0)
+        state.sim_connected = True
     except Exception:
-        sim_connected = False
+        state.sim_connected = False
 
 def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
                          retries: int = 10, retry_interval: float = 0.2) -> Any:
     """Fetch a SimConnect variable with caching and retry logic."""
-    if not sim_connected or sim_connect is None or not sim_connect.ok:
+    if not state.sim_connected or state.sim_connect is None or not state.sim_connect.ok:
         return "Sim Not Running"
 
     value = check_cache(variable_name)
@@ -324,7 +333,7 @@ def get_formatted_value(variable_names, format_string=None):
     - The formatted string, or an error message if retrieval fails.
     """
 
-    if not sim_connected or sim_connect is None or not sim_connect.ok:
+    if not state.sim_connected or state.sim_connect is None or not state.sim_connect.ok:
         return "Sim Not Running"
 
     if isinstance(variable_names, str):
@@ -344,24 +353,24 @@ def get_formatted_value(variable_names, format_string=None):
 
 # --- Background Updater ---
 VARIABLE_SLEEP = 0.01  # Sleep for 10ms between each variable looku
-MIN_UPDATE_INTERVAL = UPDATE_INTERVAL / 2  # Reduced interval for retry cycles (in milliseconds
-STANDARD_UPDATE_INTERVAL = UPDATE_INTERVAL  # Normal interval for successful cycles
+MIN_UPDATE_INTERVAL = CONFIG.UPDATE_INTERVAL / 2  # Reduced interval for retry cycles (in milliseconds
+STANDARD_UPDATE_INTERVAL = CONFIG.UPDATE_INTERVAL  # Normal interval for successful cycles
 
 last_successful_update_time = time.time()
 def simconnect_background_updater():
     """Background thread to update SimConnect variables with small sleep between updates."""
-    global sim_connected, last_successful_update_time
+    global state, last_successful_update_time
 
     while True:
         lookup_failed = False  # Track if any variable lookup failed
 
         try:
-            if not sim_connected:
+            if not state.sim_connected:
                 initialize_simconnect()
                 continue
 
-            if sim_connected:
-                if sim_connect is None or not sim_connect.ok or sim_connect.quit == 1:
+            if state.sim_connected:
+                if state.sim_connect is None or not state.sim_connect.ok or state.sim_connect.quit == 1:
                     print_warning("SimConnect state invalid. Disconnecting.")
                     sim_connected = False
                     continue
@@ -372,8 +381,8 @@ def simconnect_background_updater():
 
                 for variable_name in vars_to_update:
                     try:
-                        if aircraft_requests is not None and hasattr(aircraft_requests, 'get'):
-                            value = aircraft_requests.get(variable_name)
+                        if state.aircraft_requests is not None and hasattr(state.aircraft_requests, 'get'):
+                            value = state.aircraft_requests.get(variable_name)
                             if value is not None:
                                 with cache_lock:
                                     simconnect_cache[variable_name] = value
@@ -435,7 +444,7 @@ def get_time_to_future(adjusted_for_sim_rate: bool) -> str:
     """
     global countdown_state
 
-    if countdown_state.countdown_target_time == UNIX_EPOCH:  # Default unset state
+    if countdown_state.countdown_target_time == CONFIG.UNIX_EPOCH:  # Default unset state
         return "N/A"
 
     try:
@@ -483,7 +492,7 @@ def compute_countdown_timer(
     - countdown_str (str): Formatted countdown string "HH:MM:SS".
     """
     # Early out if we have no current sim time
-    if current_sim_time == UNIX_EPOCH:
+    if current_sim_time == CONFIG.UNIX_EPOCH:
         return "N/A"
 
     # Calculate remaining time
@@ -519,7 +528,7 @@ def get_simulator_time_offset():
         threshold = timedelta(seconds=5)
         simulator_time = get_simulator_datetime()
 
-        if simulator_time == UNIX_EPOCH:
+        if simulator_time == CONFIG.UNIX_EPOCH:
             print_debug("get_simulator_time_offset: skipping since time is == UNIX_EPOCH")
             return timedelta()
 
@@ -778,7 +787,7 @@ def update_display(template_handler:TemplateHandler):
     try:
         # Do not update if drag move is occuring
         if is_moving:
-            root.after(UPDATE_INTERVAL, lambda: update_display(template_handler))
+            root.after(CONFIG.UPDATE_INTERVAL, lambda: update_display(template_handler))
             return
 
         # Re-parse the template if a change is pending
@@ -813,8 +822,8 @@ def update_display(template_handler:TemplateHandler):
             display_frame.update_idletasks()
 
         # Dynamically adjust the window size
-        new_width = display_frame.winfo_reqwidth() + PADDING_X
-        new_height = display_frame.winfo_reqheight() + PADDING_Y
+        new_width = display_frame.winfo_reqwidth() + CONFIG.PADDING_X
+        new_height = display_frame.winfo_reqheight() + CONFIG.PADDING_Y
 
         min_dim = 10
         if new_width < min_dim or new_height < min_dim:
@@ -828,7 +837,7 @@ def update_display(template_handler:TemplateHandler):
         print_error(f"Error in update_display: {e}")
 
     # Schedule the next update
-    root.after(UPDATE_INTERVAL, lambda: update_display(template_handler))
+    root.after(CONFIG.UPDATE_INTERVAL, lambda: update_display(template_handler))
 
 def process_block(block, template_handler):
     """Process one block from the parsed template."""
@@ -856,28 +865,28 @@ def process_block(block, template_handler):
     if widget:
         # Use render function to get new configuration
         if render_function:
-            config = render_function(block)
+            render_config = render_function(block)
 
             # Check if the render function returned valid data
-            if config:
+            if render_config:
                 # Update the existing widget if needed
-                if widget.cget("text") != config["text"] or widget.cget("fg") != config["color"]:
-                    widget.config(text=config["text"], fg=config["color"])
+                if widget.cget("text") != render_config["text"] or widget.cget("fg") != render_config["color"]:
+                    widget.config(text=render_config["text"], fg=render_config["color"])
             else:
                 # Remove the widget if the config is invalid (e.g., condition failed)
                 widget_pool.remove_widget(block_id)
     else:
         # Create and register a new widget
         if render_function:
-            config = render_function(block)
-            if config:
+            render_config = render_function(block)
+            if render_config:
                 # Create a new widget based on the render function's config
                 widget = tk.Label(
                     display_frame,
-                    text=config["text"],
-                    fg=config["color"],
-                    bg=DARK_BG,
-                    font=FONT
+                    text=render_config["text"],
+                    fg=render_config["color"],
+                    bg=CONFIG.DARK_BG,
+                    font=CONFIG.FONT
                 )
                 widget_pool.add_widget(block_id, widget)
                 widget.pack(side=tk.LEFT, padx=5, pady=5)
@@ -886,13 +895,13 @@ def process_block(block, template_handler):
 
 def call_user_functions():
     """Invoke user-defined update functions with exception handling."""
-    if USER_UPDATE_FUNCTION_DEFINED:
+    if state.user_update_function_defined:
         try:
             user_update()
         except Exception as e:
             print_error(f"Error in user_update [{type(e).__name__}]: {e}")
 
-    if USER_SLOW_UPDATE_FUNCTION_DEFINED:
+    if state.user_slow_update_function_defined:
         try:
             # Only call this every UPDATE_DISPLAY_FRAME_COUNT cycles
             if UPDATE_DISPLAY_FRAME_COUNT == 0:
@@ -1075,7 +1084,7 @@ class SimBriefFunctions:
             print_error(f"DEBUG: Exception during auto-update: {e}")
 
         # Schedule the next auto-update
-        root.after(SIMBRIEF_AUTO_UPDATE_INTERVAL_MS, lambda: SimBriefFunctions.auto_update_simbrief(root))
+        root.after(CONFIG.SIMBRIEF_AUTO_UPDATE_INTERVAL_MS, lambda: SimBriefFunctions.auto_update_simbrief(root))
 
     @staticmethod
     def adjust_gate_out_delta(
@@ -1310,7 +1319,7 @@ def log_global_state(event=None, log_path="detailed_state_log.txt", max_depth=2)
     print(f"Global state logged to {log_path}")
 
 def check_user_functions():
-    global USER_UPDATE_FUNCTION_DEFINED, USER_SLOW_UPDATE_FUNCTION_DEFINED
+    global state
 
     try:
         user_init()
@@ -1324,14 +1333,14 @@ def check_user_functions():
     # Check for user update function
     function_name = "user_update"
     if function_name in globals() and callable(globals()[function_name]):
-        USER_UPDATE_FUNCTION_DEFINED = True
+        state.user_update_function_defined = True
     else:
-        USER_UPDATE_FUNCTION_DEFINED = False
+        state.user_update_function_defined = False
         print_warning("No user_update function defined in template file")
 
     function_name = "user_slow_update"
     if function_name in globals() and callable(globals()[function_name]):
-        USER_SLOW_UPDATE_FUNCTION_DEFINED = True
+        state.user_slow_update_function_defined = True
     else:
         USER_SLOW_UPDATE_FUNCTION_DEFINED = False
         print_warning("No user_slow_update function defined in template file")
@@ -1350,11 +1359,11 @@ def main():
 
     # --- GUI Setup ---
     root = tk.Tk()
-    root.title(WINDOW_TITLE)
+    root.title(CONFIG.WINDOW_TITLE)
     root.overrideredirect(True)
     root.attributes("-topmost", True)
-    root.attributes("-alpha", ALPHA_TRANSPARENCY_LEVEL)
-    root.configure(bg=DARK_BG)
+    root.attributes("-alpha", CONFIG.ALPHA_TRANSPARENCY)
+    root.configure(bg=CONFIG.DARK_BG)
 
      # Start auto-update if enabled
     if simbrief_settings.auto_update_enabled:
@@ -1374,7 +1383,7 @@ def main():
     root.bind("<ButtonRelease-1>", stop_move)
 
     # Frame to hold the labels
-    display_frame = tk.Frame(root, bg=DARK_BG)
+    display_frame = tk.Frame(root, bg=CONFIG.DARK_BG)
     display_frame.pack(padx=10, pady=5)
 
     # --- Double click functionality for setting timer ---
@@ -1403,7 +1412,7 @@ def main():
         #### FAULT DETECTION ###########
         def reset_traceback_timer():
             """Reset the faulthandler timer to prevent a dump."""
-            faulthandler.dump_traceback_later(30, file=traceback_log_file, exit=True)
+            faulthandler.dump_traceback_later(30, file=state.traceback_log_file, exit=True)
             root.after(10000, reset_traceback_timer)
         if not is_debugging():
             print_info("Traceback fault timer started")
