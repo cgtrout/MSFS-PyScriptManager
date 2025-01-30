@@ -345,6 +345,28 @@ class ServiceManager:
             print_info("Auto-update enabled. Scheduling SimBrief updates...")
             self.root.after(5000, lambda: SimBriefFunctions.auto_update_simbrief(self.root))
 
+        self.start_debugging_utils()
+
+    def start_debugging_utils(self):
+        """Start debug related utilites"""
+        def reset_traceback_timer():
+            """Reset the faulthandler timer to prevent a dump."""
+            faulthandler.dump_traceback_later(30, file=state.traceback_log_file, exit=True)
+            self.root.after(10000, reset_traceback_timer)
+        if not is_debugging():
+            print_info("Traceback fault timer started")
+            reset_traceback_timer()
+        else:
+            print_info("Traceback fault timer NOT started (debugging detected)")
+
+        # Bind log that can be executed during runtime
+        try:
+            import keyboard # pylint: disable=import-outside-toplevel
+            keyboard.add_hotkey("ctrl+alt+shift+l", log_global_state)
+            print_info("Global hotkey 'Ctrl+Alt+Shift+L' registered for logging state.")
+        except ImportError:
+            print_warning("Please 'pip install keyboard' for dynamic logging")
+
 # --- Timer Variables  ---
 @dataclass
 class CountdownState:
@@ -1476,28 +1498,6 @@ def main():
 
         ui_manager.start()
         service_manager.start()
-
-        # TODO move fault det, etc to servicestate
-        #### FAULT DETECTION ###########
-        def reset_traceback_timer():
-            """Reset the faulthandler timer to prevent a dump."""
-            faulthandler.dump_traceback_later(30, file=state.traceback_log_file, exit=True)
-            root.after(10000, reset_traceback_timer)
-        if not is_debugging():
-            print_info("Traceback fault timer started")
-            reset_traceback_timer()
-        else:
-            print_info("Traceback fault timer NOT started (debugging detected)")
-        #### FAULT DETECTION ########### - END
-
-        # Bind log that can be executed during runtime
-        try:
-            import keyboard # pylint: disable=import-outside-toplevel
-            keyboard.add_hotkey("ctrl+alt+shift+l", log_global_state)
-            print_info("Global hotkey 'Ctrl+Alt+Shift+L' registered for logging state.")
-        except ImportError:
-            print_warning("Please 'pip install keyboard' for dynamic logging")
-
 
         root.mainloop()
     except ValueError as e:
