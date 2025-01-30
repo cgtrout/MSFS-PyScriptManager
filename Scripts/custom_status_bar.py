@@ -854,7 +854,7 @@ class BackgroundUpdater:
 
                     for variable_name in vars_to_update:
                         try:
-                            if self.state.aircraft_requests is not None and hasattr(self.state.aircraft_requests, 'get'):
+                            if self._is_aircraft_requests_defined():
                                 value = self.state.aircraft_requests.get(variable_name)
                                 if value is not None:
                                     with cache_lock:
@@ -888,6 +888,10 @@ class BackgroundUpdater:
             finally:
                 # Update the last successful update time - used for 'heartbeat' functionality
                 self.last_successful_update_time = time.time()
+
+    def _is_aircraft_requests_defined(self):
+        """Helper function to see if aircraft_requests is valid as an object"""
+        if self.state.aircraft_requests is not None and hasattr(self.state.aircraft_requests, 'get'):
 
     def background_thread_watchdog_function(self):
         """Check background thread function to see if it has locked up"""
