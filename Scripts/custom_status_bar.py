@@ -106,13 +106,12 @@ def user_init():
 # This is a very large file, I recommend collapsing the headers when browsing this file
 # I've left it as one large file to try it keep it self contained relative to others scripts.
 
-
-# --- Globals  ------------------------------------------------------------------
+# --- Globals  ----------------------------------------------------------------
 state: Optional["AppState"] = None                      # Main Script State
 countdown_state : Optional["CountdownState"] = None     # Countdown timer State
 simbrief_settings: Optional["SimBriefSettings"] = None  # Simbrief settings
 
-# --- CONFIG Global Variables  --------------------------------------------------
+# --- CONFIG Global Variables  ------------------------------------------------
 
 @dataclass(frozen=True)
 class Config:
@@ -135,13 +134,13 @@ class Config:
     TEMPLATE_FILE: ClassVar[str] = os.path.join(SETTINGS_DIR, "status_bar_templates.py")
 CONFIG = Config()       # Global configuration
 
-# --- SimBrief Data Structures  -------------------------------------------------
+# --- SimBrief Data Structures  -----------------------------------------------
 class SimBriefTimeOption(Enum):
     """Type of time to pull from SimBrief"""
     ESTIMATED_IN = "Estimated In"
     ESTIMATED_TOD = "Estimated TOD"
 
-# --- Settings Handling  --------------------------------------------------------
+# --- Settings Handling  ------------------------------------------------------
 @dataclass
 class SimBriefSettings:
     """Contains settings related to Simbrief functionality"""
@@ -232,7 +231,7 @@ class SettingsManager:
         except Exception as e:
             print_error(f"Error saving settings: {e}")
 
-# --- Main operational classes --------------------------------------------------
+# --- Main operational classes ------------------------------------------------
 class AppState:
     """Manages core application state like SimConnect, logging, and settings."""
     def __init__(self):
@@ -411,7 +410,7 @@ class ServiceManager:
         except ImportError:
             print_warning("Please 'pip install keyboard' for dynamic logging")
 
-# --- Timer Variables  ----------------------------------------------------------
+# --- Timer Variables  --------------------------------------------------------
 @dataclass
 class CountdownState:
     """Countdown timer state"""
@@ -434,7 +433,7 @@ simconnect_cache = {}
 variables_to_track = set()
 cache_lock = threading.Lock()
 
-# --- SimConnect Lookup Functions------------------------------------------------
+# --- SimConnect Template Functions -------------------------------------------
 def get_sim_time():
     """Fetch the simulator time from SimConnect, formatted as HH:MM:SS."""
     try:
@@ -509,7 +508,7 @@ def remain_label():
         return "Rem(adj):"
     return "Remaining:"
 
-# --- SimConnect Lookup Functions ------------------------------------------------
+# --- SimConnect Lookup Functions ---------------------------------------------
 # TODO - would it be better to make this more 'functional' to avoid global maniplation
 def initialize_simconnect():
     """Initialize the connection to SimConnect."""
@@ -529,6 +528,9 @@ def is_simconnect_available() -> bool:
         state.sim_connect.ok
     )
 
+# --- Cache Lookup Functions --------------------------------------------------
+# These will lookup values from cache values which are updated from Background-
+# Updater
 def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
                          retries: int = 10, retry_interval: float = 0.2) -> Any:
     """Fetch a SimConnect variable with caching and retry logic."""
@@ -602,7 +604,7 @@ def get_formatted_value(variable_names, format_string=None):
     result = values[0] if len(values) == 1 else values
     return result
 
-# --- Background Updater -------------------------------------------------------
+# --- Background Updater ------------------------------------------------------
 class BackgroundUpdater:
     """Continously updates cached values from Simconnect"""
 
@@ -707,7 +709,7 @@ class BackgroundUpdater:
         # Reschedule the watchdog to run again after 10 seconds
         self.root.after(10_000, self.background_thread_watchdog_function)
 
-# --- Timer Calcuation  --------------------------------------------------------
+# --- Timer Calcuation Functions-----------------------------------------------
 def get_time_to_future_adjusted():
     """
     Calculate and return the countdown timer string.
@@ -864,7 +866,7 @@ def set_future_time_internal(future_time_input, current_sim_time):
     except Exception as e:
         print_error(f"Unexpected error in set_future_time_internal: {str(e)}")
 
-# --- Display Update  -----------------------------------------------------------
+# --- Display Update  ---------------------------------------------------------
 def get_dynamic_value(function_name):
     """ Get a value dynamically from the function name. """
     try:
@@ -1029,7 +1031,7 @@ class DisplayUpdater:
         if self.update_display_frame_count == self.SLOW_UPDATE_INTERVAL:
             self.update_display_frame_count = 0
 
-# --- Simbrief functionality ----------------------------------------------------
+# --- Simbrief functionality --------------------------------------------------
 class SimBriefFunctions:
     """Contains grouping of static Simbrief Functions mainly for organizational purposes"""
     last_simbrief_generated_time = None
@@ -1256,7 +1258,7 @@ SIMBRIEF_TIME_OPTION_FUNCTIONS = {
     SimBriefTimeOption.ESTIMATED_TOD: SimBriefFunctions.get_simbrief_ofp_tod_datetime,
 }
 
-# --- Drag functionality --------------------------------------------------------
+# --- Drag functionality ------------------------------------------------------
 class DragHandler:
     """Handles window dragging."""
 
@@ -1290,6 +1292,8 @@ class DragHandler:
         """Stop moving the window."""
         self.is_moving = False
 
+# --- MISC - debugging --------------------------------------------------------
+# TODO: consider moving to Service class?
 def is_debugging():
     """Check if the script is running in a debugging environment."""
     try:
@@ -1375,7 +1379,7 @@ def log_global_state(event=None, log_path="detailed_state_log.log", max_depth=2)
 
     print(f"Global state logged to {log_path}")
 
-# --- MAIN Function -------------------------------------------------------------
+# --- MAIN Function -----------------------------------------------------------
 def main():
     """Main entry point to script"""
     # Globals here necessary for template support
@@ -1401,7 +1405,7 @@ def main():
         print_error(f"Error: {e}")
         print("Please check your DISPLAY_TEMPLATE and try again.")
 
-# --- Utility Classes  ----------------------------------------------------------
+# --- Utility Classes  --------------------------------------------------------
 class CountdownTimerDialog(tk.Toplevel):
     """A dialog to set the countdown timer and SimBrief settings"""
     # TODO just pass in settings object?
@@ -1928,7 +1932,7 @@ class WidgetPool:  # pylint: disable=missing-function-docstring
                 widget.destroy()
         self.pool.clear()
 
-# --- Template handling  --------------------------------------------------------
+# --- Template handling  ------------------------------------------------------
 class TemplateHandler:
     """Class to manage the template file and selected template."""
     def __init__(self):
