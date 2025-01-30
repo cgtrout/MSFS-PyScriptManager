@@ -707,10 +707,10 @@ def is_simconnect_available() -> bool:
 
 @dataclass
 class SimVarLookup:
-    """Tracks a SimConnect lookup"""
+    """Tracks an individual SimConnect lookup - used by cache system"""
     name: str
     last_update: float = field(default_factory=lambda: 0.0)
-    value: Any = "N/A"  # Default value before it's updated
+    _value: Any = "N/A"  # Default value before it's updated
 
     def needs_update(self, update_frequency: float) -> bool:
         """Check if the variable needs an update based on its last refresh time."""
@@ -720,9 +720,14 @@ class SimVarLookup:
         """Update the last update timestamp."""
         self.last_update = time.time()
 
+    def get_value(self, max_age=5.0):
+        """Retrieve the value, marking it stale if too old."""
+        if self.needs_update(max_age):
+           self._value = None
+        return self._value
+
 sim_variables: dict[str, SimVarLookup] = {}
 cache_lock = threading.Lock()
-
 
 def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
                          retries: int = 10, retry_interval: float = 0.2) -> Any:
@@ -751,11 +756,12 @@ def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
     )
     return default_value
 
+# TODO: possibly should be get_cache_value?
 def check_cache(variable_name):
     """Return cached value if available, otherwise None."""
     with cache_lock:
         lookup = sim_variables.get(variable_name)
-        return lookup.value if lookup else None  # Get cached value from SimVarLookup
+        return lookup.get_value if lookup else None  # Get cached value from SimVarLookup
 
 def add_to_cache(variable_name, default_value="N/A"):
     """Ensure a SimConnect variable is tracked and initialized in `sim_variables`."""
