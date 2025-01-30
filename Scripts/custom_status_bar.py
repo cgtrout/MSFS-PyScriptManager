@@ -47,7 +47,7 @@ DEFAULT_TEMPLATES = """
 #  including dynamic data elements such as:
 # ('VAR()' and 'VARIF()' 'functions') and static text.
 
-# Syntax:
+# Syntax:`
 # VAR(label, function_name, color)
 # - 'label': Static text prefix.
 # - 'function_name': Python function to fetch dynamic values.
@@ -254,7 +254,7 @@ class UIManager:
         self.root.bind("<Double-1>", lambda event: self.open_timer_dialog())
 
         # Bind the right-click menu
-        self.root.bind("<Button-3>", lambda event: show_template_menu(event, self.template_handler))
+        self.root.bind("<Button-3>", self.show_template_menu)
 
     # TODO uncertain this is best location?
     def check_user_functions(self):
@@ -291,6 +291,36 @@ class UIManager:
         # Open the dialog with current SimBrief settings and last entered time
         dialog = CountdownTimerDialog(self.root, self.app_state)
         self.root.wait_window(dialog)  # Wait for dialog to close
+
+    def show_template_menu(self, event):
+        """
+        Display a context menu to allow the user to select a template.
+        """
+        menu = tk.Menu(self.root, tearoff=0)
+
+        # Add all templates to the menu
+        for template_name in self.template_handler.templates.keys():
+            menu.add_command(
+                label=template_name,
+                command=lambda name=template_name: self.switch_template(name)
+            )
+
+        # Show the menu at the cursor position
+        menu.post(event.x_root, event.y_root)
+
+    def switch_template(self, new_template_name):
+        """
+        Switch to a new template and mark it for re-rendering in the next update cycle.
+        """
+        try:
+            # Update the selected template
+            self.template_handler.selected_template_name = new_template_name
+            self.template_handler.mark_template_change()  # Mark the change
+
+            print(f"Switched to template: {new_template_name}")
+
+        except Exception as e:
+            print_error(f"Error switching template: {e}")
 
     def start(self):
         """Start any UI related functions"""
@@ -1343,36 +1373,7 @@ class DragHandler:
         """Stop moving the window."""
         self.is_moving = False
 
-# --- Template Menu ---
-def show_template_menu(event, template_handler):
-    """
-    Display a context menu to allow the user to select a template.
-    """
-    menu = tk.Menu(root, tearoff=0)
 
-    # Add all templates to the menu
-    for template_name in template_handler.templates.keys():
-        menu.add_command(
-            label=template_name,
-            command=lambda name=template_name: switch_template(name, template_handler)
-        )
-
-    # Show the menu at the cursor position
-    menu.post(event.x_root, event.y_root)
-
-def switch_template(new_template_name, template_handler):
-    """
-    Switch to a new template and mark it for re-rendering in the next update cycle.
-    """
-    try:
-        # Update the selected template
-        template_handler.selected_template_name = new_template_name
-        template_handler.mark_template_change()  # Mark the change
-
-        print(f"Switched to template: {new_template_name}")
-
-    except Exception as e:
-        print_error(f"Error switching template: {e}")
 
 class SettingsManager:
     """Handles loading, saving, and managing application settings."""
