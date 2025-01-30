@@ -106,6 +106,7 @@ def user_init():
 # This is a very large file, I recommend collapsing the headers when browsing this file
 # I've left it as one large file to try it keep it self contained relative to others scripts.
 
+
 # --- Globals  ------------------------------------------------------------------
 state: Optional["AppState"] = None                      # Main Script State
 countdown_state : Optional["CountdownState"] = None     # Countdown timer State
@@ -230,7 +231,6 @@ class SettingsManager:
                 json.dump(settings.to_dict(), f, indent=4)
         except Exception as e:
             print_error(f"Error saving settings: {e}")
-
 
 # --- Main operational classes --------------------------------------------------
 class AppState:
@@ -905,6 +905,7 @@ class DisplayUpdater:
         self.update_frame_counter()
 
         # Toggle -topmost only during slow updates
+        # TODO: split in to function
         if self.update_display_frame_count == 0:
             self.root.attributes("-topmost", False)
             self.root.attributes("-topmost", True)
