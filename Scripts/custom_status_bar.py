@@ -1344,8 +1344,6 @@ class DragHandler:
         """Stop moving the window."""
         self.is_moving = False
 
-
-
 class SettingsManager:
     """Handles loading, saving, and managing application settings."""
 
