@@ -101,7 +101,9 @@ def user_slow_update():
 def user_init():
     pass
 """
-# --- Configurable Variables  ---
+
+# --- CONFIG Global Variables  --------------------------------------------------
+
 @dataclass(frozen=True)
 class Config:
     """Immutable configuration settings for the application."""
@@ -122,7 +124,7 @@ class Config:
     SETTINGS_FILE: ClassVar[str] = os.path.join(SETTINGS_DIR, "custom_status_bar.json")
     TEMPLATE_FILE: ClassVar[str] = os.path.join(SETTINGS_DIR, "status_bar_templates.py")
 
-# --- SimBrief Data Structures  ---
+# --- SimBrief Data Structures  -------------------------------------------------
 class SimBriefTimeOption(Enum):
     """Type of time to pull from SimBrief"""
     ESTIMATED_IN = "Estimated In"
@@ -367,7 +369,7 @@ class ServiceManager:
         except ImportError:
             print_warning("Please 'pip install keyboard' for dynamic logging")
 
-# --- Timer Variables  ---
+# --- Timer Variables  ----------------------------------------------------------
 @dataclass
 class CountdownState:
     """Countdown timer state"""
@@ -396,7 +398,7 @@ simconnect_cache = {}
 variables_to_track = set()
 cache_lock = threading.Lock()
 
-# --- SimConnect Lookup  ---
+# --- SimConnect Lookup  --------------------------------------------------------
 def get_sim_time():
     """Fetch the simulator time from SimConnect, formatted as HH:MM:SS."""
     try:
@@ -562,7 +564,7 @@ def get_formatted_value(variable_names, format_string=None):
     result = values[0] if len(values) == 1 else values
     return result
 
-# --- Background Updater ---
+# --- Background Updater -------------------------------------------------------
 class BackgroundUpdater:
     """Handles background updates for SimConnect data."""
 
@@ -667,7 +669,7 @@ class BackgroundUpdater:
         # Reschedule the watchdog to run again after 10 seconds
         self.root.after(10_000, self.background_thread_watchdog_function)
 
-# --- Timer Calcuation  ---
+# --- Timer Calcuation  --------------------------------------------------------
 def get_time_to_future_adjusted():
     """
     Calculate and return the countdown timer string.
@@ -824,7 +826,7 @@ def set_future_time_internal(future_time_input, current_sim_time):
     except Exception as e:
         print_error(f"Unexpected error in set_future_time_internal: {str(e)}")
 
-# --- Template handling  ---
+# --- Template handling  --------------------------------------------------------
 class TemplateHandler:
     """Class to manage the template file and selected template."""
     def __init__(self):
@@ -943,7 +945,7 @@ class TemplateHandler:
         """Mark that a template change is pending."""
         self.pending_template_change = True
 
-# --- Display Update  ---
+# --- Display Update  -----------------------------------------------------------
 def get_dynamic_value(function_name):
     """ Get a value dynamically from the function name. """
     try:
@@ -1107,7 +1109,7 @@ class DisplayUpdater:
         if self.update_display_frame_count == self.SLOW_UPDATE_INTERVAL:
             self.update_display_frame_count = 0
 
-# --- Simbrief functionality ---
+# --- Simbrief functionality ----------------------------------------------------
 class SimBriefFunctions:
     """Contains grouping of static Simbrief Functions mainly for organizational purposes"""
     last_simbrief_generated_time = None
@@ -1334,7 +1336,7 @@ SIMBRIEF_TIME_OPTION_FUNCTIONS = {
     SimBriefTimeOption.ESTIMATED_TOD: SimBriefFunctions.get_simbrief_ofp_tod_datetime,
 }
 
-# --- Drag functionality ---
+# --- Drag functionality --------------------------------------------------------
 class DragHandler:
     """Handles window dragging."""
 
@@ -1405,7 +1407,7 @@ def is_debugging():
     except Exception:
         return False
 
-def log_global_state(event=None, log_path="detailed_state_log.txt", max_depth=2):
+def log_global_state(event=None, log_path="detailed_state_log.log", max_depth=2):
     """
     Log the global state and nested attributes to a file, prioritizing user-defined globals.
 
@@ -1504,7 +1506,7 @@ def main():
         print_error(f"Error: {e}")
         print("Please check your DISPLAY_TEMPLATE and try again.")
 
-# --- Utility Classes  ---
+# --- Utility Classes  ----------------------------------------------------------
 class CountdownTimerDialog(tk.Toplevel):
     """A dialog to set the countdown timer and SimBrief settings"""
     # TODO just pass in settings object?
