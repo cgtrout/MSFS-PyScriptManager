@@ -117,7 +117,8 @@ class Config:
     UNIX_EPOCH: ClassVar[datetime] = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
     SCRIPT_DIR: ClassVar[str] = os.path.dirname(__file__)
-    SETTINGS_DIR: ClassVar[str] = os.path.join(os.path.dirname(SCRIPT_DIR), "Settings")
+    ROOT_DIR: ClassVar[str] = os.path.dirname(SCRIPT_DIR)
+    SETTINGS_DIR: ClassVar[str] = os.path.join(ROOT_DIR, "Settings")
     SETTINGS_FILE: ClassVar[str] = os.path.join(SETTINGS_DIR, "custom_status_bar.json")
     TEMPLATE_FILE: ClassVar[str] = os.path.join(SETTINGS_DIR, "status_bar_templates.py")
 
@@ -1377,20 +1378,17 @@ def switch_template(new_template_name, template_handler):
 class SettingsManager:
     """Handles loading, saving, and managing application settings."""
 
-    def __init__(self, settings_dir=None):
+    def __init__(self):
         # Allow dynamic configuration of paths
-        self.settings_dir = settings_dir or os.path.join(os.path.dirname(__file__), "Settings")
-        self.settings_file = os.path.join(self.settings_dir, "custom_status_bar.json")
-        self.template_file = os.path.join(self.settings_dir, "status_bar_templates.py")
 
         # Ensure the directory exists
-        os.makedirs(self.settings_dir, exist_ok=True)
+        os.makedirs(CONFIG.SETTINGS_DIR, exist_ok=True)
 
     def load_settings(self) -> ApplicationSettings:
         """Load settings from the JSON file."""
-        if os.path.exists(self.settings_file):
+        if os.path.exists(CONFIG.SETTINGS_FILE):
             try:
-                with open(self.settings_file, "r") as f:
+                with open(CONFIG.SETTINGS_FILE, "r") as f:
                     data = json.load(f)
                     return ApplicationSettings.from_dict(data)
             except json.JSONDecodeError:
@@ -1401,7 +1399,7 @@ class SettingsManager:
     def save_settings(self, settings: ApplicationSettings):
         """Save settings to the JSON file."""
         try:
-            with open(self.settings_file, "w") as f:
+            with open(CONFIG.SETTINGS_FILE, "w") as f:
                 json.dump(settings.to_dict(), f, indent=4)
         except Exception as e:
             print_error(f"Error saving settings: {e}")
