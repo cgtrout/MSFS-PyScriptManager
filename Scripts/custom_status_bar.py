@@ -1288,6 +1288,10 @@ class SimBriefFunctions:
         Adjust the gate-out time based on SimBrief data and user-provided input.
         Returns the calculated gate time offset as a timedelta.
         """
+        # Return zero if count_down state not yet set
+        if countdown_state is None:
+            return timedelta(0)
+
         # Fetch SimBrief gate-out time
         simbrief_gate_time = SimBriefFunctions.get_simbrief_ofp_gate_out_datetime(simbrief_json)
         if not simbrief_gate_time:
