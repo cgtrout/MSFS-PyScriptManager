@@ -934,35 +934,6 @@ def get_dynamic_value(function_name):
         print_debug(f"get_dynamic_value exception [{type(e).__name__ }]: {e}")
         return "Err"
 
-class WidgetPool:  # pylint: disable=missing-function-docstring
-    """Manages widgets and their order"""
-    def __init__(self):
-        self.pool = {}
-
-    def add_widget(self, block_id, widget):
-        if block_id not in self.pool:
-            self.pool[block_id] = widget
-
-    def remove_widget(self, block_id):
-        if block_id in self.pool:
-            self.pool[block_id].destroy()
-            del self.pool[block_id]
-
-    def get_widget(self, block_id):
-        return self.pool.get(block_id)
-
-    def has_widget(self, block_id):
-        return block_id in self.pool
-
-    def get_widgets_in_order(self, parsed_block_ids):
-        return [self.pool[block_id] for block_id in parsed_block_ids if block_id in self.pool]
-
-    def clear(self):
-        for widget in self.pool.values():
-            if widget and hasattr(widget, "destroy"):
-                widget.destroy()
-        self.pool.clear()
-
 class DisplayUpdater:
     """Handles the rendering and updating of the status bar display."""
 
@@ -2033,6 +2004,35 @@ class CollapsibleSection(tk.Frame):
         """Expand the section."""
         self.content_frame.pack(fill="x", padx=2, pady=2)
         self.toggle_button.config(text="▲ " + self.toggle_button.cget("text")[2:])
+
+class WidgetPool:  # pylint: disable=missing-function-docstring
+    """Manages Tkinter widgets and their order - used by DisplayUpdater"""
+    def __init__(self):
+        self.pool = {}
+
+    def add_widget(self, block_id, widget):
+        if block_id not in self.pool:
+            self.pool[block_id] = widget
+
+    def remove_widget(self, block_id):
+        if block_id in self.pool:
+            self.pool[block_id].destroy()
+            del self.pool[block_id]
+
+    def get_widget(self, block_id):
+        return self.pool.get(block_id)
+
+    def has_widget(self, block_id):
+        return block_id in self.pool
+
+    def get_widgets_in_order(self, parsed_block_ids):
+        return [self.pool[block_id] for block_id in parsed_block_ids if block_id in self.pool]
+
+    def clear(self):
+        for widget in self.pool.values():
+            if widget and hasattr(widget, "destroy"):
+                widget.destroy()
+        self.pool.clear()
 
 class TemplateParser:
     """
