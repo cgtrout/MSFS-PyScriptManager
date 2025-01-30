@@ -1388,7 +1388,7 @@ class SettingsManager:
         """Load settings from the JSON file."""
         if os.path.exists(CONFIG.SETTINGS_FILE):
             try:
-                with open(CONFIG.SETTINGS_FILE, "r") as f:
+                with open(CONFIG.SETTINGS_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     return ApplicationSettings.from_dict(data)
             except json.JSONDecodeError:
@@ -1399,7 +1399,7 @@ class SettingsManager:
     def save_settings(self, settings: ApplicationSettings):
         """Save settings to the JSON file."""
         try:
-            with open(CONFIG.SETTINGS_FILE, "w") as f:
+            with open(CONFIG.SETTINGS_FILE, "w", encoding="utf-8") as f:
                 json.dump(settings.to_dict(), f, indent=4)
         except Exception as e:
             print_error(f"Error saving settings: {e}")
