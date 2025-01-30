@@ -214,9 +214,10 @@ class AppState:
 
 class UIManager:
     """Manages UI-specific state, such as dragging and widget updates."""
-    def __init__(self, settings: "ApplicationSettings"):
+    def __init__(self, app_state: AppState):
         self.root = tk.Tk()
-        self.settings = settings
+        self.app_state = app_state
+        self.settings = app_state.settings
         self.drag_handler = DragHandler(self.root)
         self.template_handler = TemplateHandler()
         self.display_updater = DisplayUpdater(self.root, self, self.template_handler)
@@ -286,7 +287,7 @@ class UIManager:
         Open the CountdownTimerDialog to prompt the user to set a future countdown time and SimBrief settings.
         """
         # Open the dialog with current SimBrief settings and last entered time
-        dialog = CountdownTimerDialog(self.root, self.settings)
+        dialog = CountdownTimerDialog(self.root, self.app_state)
         self.root.wait_window(dialog)  # Wait for dialog to close
 
     def start(self):
@@ -1496,9 +1497,8 @@ def main():
     print_info("Starting custom status bar...")
 
     try:
-
         state = AppState()
-        ui_manager = UIManager(state.settings)
+        ui_manager = UIManager(state)
         root = ui_manager.get_root()
         service_manager = ServiceManager(state, state.settings, root)
 
