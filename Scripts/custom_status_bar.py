@@ -865,8 +865,9 @@ def compute_countdown_timer(
         adjusted_seconds = remaining_time.total_seconds()
 
     # Enforce allow_negative_timer setting
-    if simbrief_settings is None or not simbrief_settings.allow_negative_timer:
-        adjusted_seconds = 0
+    if simbrief_settings is not None:
+        if not simbrief_settings.allow_negative_timer and adjusted_seconds < 0:
+            adjusted_seconds = 0
 
     # Format the adjusted remaining time as HH:MM:SS
     total_seconds = int(adjusted_seconds)
