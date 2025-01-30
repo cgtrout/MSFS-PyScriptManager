@@ -294,8 +294,9 @@ class SimBriefSettings:
 
 # --- Globals  ---
 CONFIG = Config()       # Global configuration
-state: Optional["AppState"] = None
+state: Optional[AppState] = None
 countdown_state = CountdownState()
+simbrief_settings: Optional[SimBriefSettings] = None
 
 # Shared data structures for threading
 # TODO move these?
@@ -328,7 +329,7 @@ def get_simulator_datetime() -> datetime:
     """
     global state
     try:
-        if not state.sim_connected:
+        if state is None or not state.sim_connected:
             raise ValueError("SimConnect is not connected.")
 
         absolute_time = get_simconnect_value("ABSOLUTE_TIME")
@@ -388,10 +389,19 @@ def initialize_simconnect():
     except Exception:
         state.sim_connected = False
 
+def is_simconnect_available() -> bool:
+    """Check if SimConnect is available and running."""
+    return (
+        state is not None and
+        state.sim_connected and
+        state.sim_connect is not None and
+        state.sim_connect.ok
+    )
+
 def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
                          retries: int = 10, retry_interval: float = 0.2) -> Any:
     """Fetch a SimConnect variable with caching and retry logic."""
-    if not state.sim_connected or state.sim_connect is None or not state.sim_connect.ok:
+    if not is_simconnect_available():
         return "Sim Not Running"
 
     value = check_cache(variable_name)
@@ -644,7 +654,7 @@ def compute_countdown_timer(
         adjusted_seconds = remaining_time.total_seconds()
 
     # Enforce allow_negative_timer setting
-    if not simbrief_settings.allow_negative_timer and adjusted_seconds < 0:
+    if simbrief_settings is None or not simbrief_settings.allow_negative_timer:
         adjusted_seconds = 0
 
     # Format the adjusted remaining time as HH:MM:SS
@@ -1467,7 +1477,7 @@ def log_global_state(event=None, log_path="detailed_state_log.txt", max_depth=2)
     print(f"Global state logged to {log_path}")
 
 def main():
-    global state
+    global state, simbrief_settings
     print_info("Starting custom status bar...")
 
     try:
@@ -1476,6 +1486,9 @@ def main():
         ui_manager = UIManager(state.settings)
         root = ui_manager.get_root()
         service_manager = ServiceManager(state, state.settings, root)
+
+        # Expose this globally to not adversly affect Templates
+        simbrief_settings = state.settings.simbrief_settings
 
         ui_manager.start()
         service_manager.start()
