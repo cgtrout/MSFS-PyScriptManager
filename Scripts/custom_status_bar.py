@@ -858,124 +858,6 @@ def set_future_time_internal(future_time_input, current_sim_time):
     except Exception as e:
         print_error(f"Unexpected error in set_future_time_internal: {str(e)}")
 
-# --- Template handling  --------------------------------------------------------
-class TemplateHandler:
-    """Class to manage the template file and selected template."""
-    def __init__(self):
-        """
-        Initialize the TemplateHandler with the given settings.
-        """
-        self.parser = TemplateParser()  # Initialize the parser
-        self.templates = self.load_templates()  # Load templates from file
-        self.selected_template_name = next(iter(self.templates), None)  # Select the first template
-
-        if not self.selected_template_name:
-            raise ValueError("No templates available to select.")
-
-        self.cached_parsed_blocks = []  # Cache parsed blocks for the selected template
-        self.pending_template_change = False  # Track if the template was changed
-
-        self.load_template_functions()
-        self.cache_parsed_blocks()
-
-    def load_templates(self) -> dict[str, str]:
-        """Load templates from the template file, creating the file if necessary."""
-        os.makedirs(CONFIG.SETTINGS_DIR, exist_ok=True)
-
-        if not os.path.exists(CONFIG.TEMPLATE_FILE):
-            with open(CONFIG.TEMPLATE_FILE, "w", encoding="utf-8") as f:
-                f.write(DEFAULT_TEMPLATES.strip())
-            print(f"Created default template file at {CONFIG.TEMPLATE_FILE}")
-
-        try:
-            spec = importlib.util.spec_from_file_location("status_bar_templates",
-                                                          CONFIG.TEMPLATE_FILE)
-            templates_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(templates_module)
-            return templates_module.TEMPLATES if hasattr(templates_module, "TEMPLATES") else {}
-        except Exception as e:
-            print(f"Error loading templates: {e}")
-            return {}
-
-    def load_template_functions(self):
-        """
-        Dynamically import functions from the template file and inject only relevant globals.
-        """
-        try:
-            spec = importlib.util.spec_from_file_location("status_bar_templates",
-                                                          CONFIG.TEMPLATE_FILE)
-            templates_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(templates_module)
-
-            # First, filter globals to exclude built-ins and modules
-            relevant_globals = {
-                k: v for k, v in globals().items()
-                if not k.startswith("__") and not isinstance(v, type(importlib))  # Exclude built-ins and modules
-            }
-
-            # Debug: Log the filtered globals being injected, grouping functions properly
-            self._print_sorted_globals(relevant_globals)
-
-            # Inject filtered globals into the template module
-            templates_module.__dict__.update(relevant_globals)
-
-            # Add callable objects to this global namespace
-            for name, obj in vars(templates_module).items():
-                if callable(obj):
-                    globals()[name] = obj
-
-            print_debug("load_template_functions: DONE\n")
-
-        except Exception as e: # pylint: disable=broad-except
-            print_error(f"Error loading template functions: {e}")
-
-    def _print_sorted_globals(self, globals_dict):
-        """Sorts and prints the provided globals dictionary in two columns with colors."""
-        def sort_by_type_and_name(item):
-            obj_type = type(item[1]).__name__ if item[1] is not None else "NoneType"
-            priority = {"function": 0, "type": 1}.get(obj_type, 2)
-            return priority, item[0]
-
-        sorted_globals = sorted(globals_dict.items(), key=sort_by_type_and_name)
-
-        max_name_length = max(len(name) for name, _ in sorted_globals) + 1
-        max_type_length = min(8, max(len(type(obj).__name__) for _, obj in sorted_globals))
-
-        mid_index = (len(sorted_globals) + 1) // 2
-        left_column = sorted_globals[:mid_index]
-        right_column = sorted_globals[mid_index:]
-
-        print_debug("Filtered Globals to Inject:")
-
-        # Helper to format a single column
-        def format_column(name, obj):
-            obj_type = type(obj).__name__ if obj is not None else "NoneType"
-            return f"[green(]{name.ljust(max_name_length)}:[)] {obj_type.ljust(max_type_length)}"
-
-        # Loop and print each row
-        for i in range(max(len(left_column), len(right_column))):
-            left = left_column[i] if i < len(left_column) else ("", None)
-            right = right_column[i] if i < len(right_column) else ("", None)
-
-            left_col = format_column(*left)
-            right_col = format_column(*right)
-
-            print_color(f" {left_col} {right_col}")
-
-    def get_current_template(self) -> str:
-        """Return the content of the currently selected template."""
-        if not self.selected_template_name or self.selected_template_name not in self.templates:
-            raise ValueError("No valid template selected.")
-        return self.templates[self.selected_template_name]
-
-    def cache_parsed_blocks(self):
-        """Cache the parsed blocks for the currently selected template."""
-        template_content = self.get_current_template()
-        self.cached_parsed_blocks = self.parser.parse_template(template_content)
-
-    def mark_template_change(self):
-        """Mark that a template change is pending."""
-        self.pending_template_change = True
 
 # --- Display Update  -----------------------------------------------------------
 def get_dynamic_value(function_name):
@@ -2035,6 +1917,125 @@ class WidgetPool:  # pylint: disable=missing-function-docstring
             if widget and hasattr(widget, "destroy"):
                 widget.destroy()
         self.pool.clear()
+
+# --- Template handling  --------------------------------------------------------
+class TemplateHandler:
+    """Class to manage the template file and selected template."""
+    def __init__(self):
+        """
+        Initialize the TemplateHandler with the given settings.
+        """
+        self.parser = TemplateParser()  # Initialize the parser
+        self.templates = self.load_templates()  # Load templates from file
+        self.selected_template_name = next(iter(self.templates), None)  # Select the first template
+
+        if not self.selected_template_name:
+            raise ValueError("No templates available to select.")
+
+        self.cached_parsed_blocks = []  # Cache parsed blocks for the selected template
+        self.pending_template_change = False  # Track if the template was changed
+
+        self.load_template_functions()
+        self.cache_parsed_blocks()
+
+    def load_templates(self) -> dict[str, str]:
+        """Load templates from the template file, creating the file if necessary."""
+        os.makedirs(CONFIG.SETTINGS_DIR, exist_ok=True)
+
+        if not os.path.exists(CONFIG.TEMPLATE_FILE):
+            with open(CONFIG.TEMPLATE_FILE, "w", encoding="utf-8") as f:
+                f.write(DEFAULT_TEMPLATES.strip())
+            print(f"Created default template file at {CONFIG.TEMPLATE_FILE}")
+
+        try:
+            spec = importlib.util.spec_from_file_location("status_bar_templates",
+                                                          CONFIG.TEMPLATE_FILE)
+            templates_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(templates_module)
+            return templates_module.TEMPLATES if hasattr(templates_module, "TEMPLATES") else {}
+        except Exception as e:
+            print(f"Error loading templates: {e}")
+            return {}
+
+    def load_template_functions(self):
+        """
+        Dynamically import functions from the template file and inject only relevant globals.
+        """
+        try:
+            spec = importlib.util.spec_from_file_location("status_bar_templates",
+                                                          CONFIG.TEMPLATE_FILE)
+            templates_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(templates_module)
+
+            # First, filter globals to exclude built-ins and modules
+            relevant_globals = {
+                k: v for k, v in globals().items()
+                if not k.startswith("__") and not isinstance(v, type(importlib))  # Exclude built-ins and modules
+            }
+
+            # Debug: Log the filtered globals being injected, grouping functions properly
+            self._print_sorted_globals(relevant_globals)
+
+            # Inject filtered globals into the template module
+            templates_module.__dict__.update(relevant_globals)
+
+            # Add callable objects to this global namespace
+            for name, obj in vars(templates_module).items():
+                if callable(obj):
+                    globals()[name] = obj
+
+            print_debug("load_template_functions: DONE\n")
+
+        except Exception as e: # pylint: disable=broad-except
+            print_error(f"Error loading template functions: {e}")
+
+    def _print_sorted_globals(self, globals_dict):
+        """Sorts and prints the provided globals dictionary in two columns with colors."""
+        def sort_by_type_and_name(item):
+            obj_type = type(item[1]).__name__ if item[1] is not None else "NoneType"
+            priority = {"function": 0, "type": 1}.get(obj_type, 2)
+            return priority, item[0]
+
+        sorted_globals = sorted(globals_dict.items(), key=sort_by_type_and_name)
+
+        max_name_length = max(len(name) for name, _ in sorted_globals) + 1
+        max_type_length = min(8, max(len(type(obj).__name__) for _, obj in sorted_globals))
+
+        mid_index = (len(sorted_globals) + 1) // 2
+        left_column = sorted_globals[:mid_index]
+        right_column = sorted_globals[mid_index:]
+
+        print_debug("Filtered Globals to Inject:")
+
+        # Helper to format a single column
+        def format_column(name, obj):
+            obj_type = type(obj).__name__ if obj is not None else "NoneType"
+            return f"[green(]{name.ljust(max_name_length)}:[)] {obj_type.ljust(max_type_length)}"
+
+        # Loop and print each row
+        for i in range(max(len(left_column), len(right_column))):
+            left = left_column[i] if i < len(left_column) else ("", None)
+            right = right_column[i] if i < len(right_column) else ("", None)
+
+            left_col = format_column(*left)
+            right_col = format_column(*right)
+
+            print_color(f" {left_col} {right_col}")
+
+    def get_current_template(self) -> str:
+        """Return the content of the currently selected template."""
+        if not self.selected_template_name or self.selected_template_name not in self.templates:
+            raise ValueError("No valid template selected.")
+        return self.templates[self.selected_template_name]
+
+    def cache_parsed_blocks(self):
+        """Cache the parsed blocks for the currently selected template."""
+        template_content = self.get_current_template()
+        self.cached_parsed_blocks = self.parser.parse_template(template_content)
+
+    def mark_template_change(self):
+        """Mark that a template change is pending."""
+        self.pending_template_change = True
 
 class TemplateParser:
     """
