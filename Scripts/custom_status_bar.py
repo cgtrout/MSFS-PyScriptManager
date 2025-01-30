@@ -119,6 +119,64 @@ class Config:
     SETTINGS_FILE: ClassVar[str] = os.path.join(SETTINGS_DIR, "custom_status_bar.json")
     TEMPLATE_FILE: ClassVar[str] = os.path.join(SETTINGS_DIR, "status_bar_templates.py")
 
+# --- SimBrief Data Structures  ---
+class SimBriefTimeOption(Enum):
+    ESTIMATED_IN = "Estimated In"
+    ESTIMATED_TOD = "Estimated TOD"
+
+@dataclass
+class SimBriefSettings:
+    username: str = ""
+    use_adjusted_time: bool = False
+    selected_time_option: Any = SimBriefTimeOption.ESTIMATED_IN
+    allow_negative_timer: bool = False
+    auto_update_enabled: bool = False
+
+    def to_dict(self):
+        return {
+            "username": self.username,
+            "use_adjusted_time": self.use_adjusted_time,
+            "selected_time_option": (
+                self.selected_time_option.value
+                if isinstance(self.selected_time_option, SimBriefTimeOption)
+                else SimBriefTimeOption.ESTIMATED_IN.value
+            ),
+            "allow_negative_timer": self.allow_negative_timer,
+            "auto_update_enabled": self.auto_update_enabled,
+        }
+
+    @staticmethod
+    def from_dict(data):
+        return SimBriefSettings(
+            username=data.get("username", ""),
+            use_adjusted_time=data.get("use_adjusted_time", False),
+            selected_time_option=SimBriefTimeOption(data.get("selected_time_option", SimBriefTimeOption.ESTIMATED_IN.value)),
+            allow_negative_timer=data.get("allow_negative_timer", False),
+            auto_update_enabled=data.get("auto_update_enabled", False),
+        )
+
+@dataclass
+class ApplicationSettings:
+    pos: dict = field(default_factory=lambda: {"x": 0, "y": 0})
+    simbrief_settings: "SimBriefSettings" = field(default_factory=SimBriefSettings)
+
+    def get_window_position(self):
+        """Get x, y window position returned as tuple"""
+        return self.pos["x"], self.pos["y"]
+
+    def to_dict(self):
+        return {
+            "pos": self.pos,
+            "simbrief_settings": self.simbrief_settings.to_dict(),
+        }
+
+    @staticmethod
+    def from_dict(data: dict):
+        return ApplicationSettings(
+            pos=data.get("pos", {"x": 0, "y": 0}),
+            simbrief_settings=SimBriefSettings.from_dict(data.get("simbrief_settings", {})),
+        )
+
 class AppState:
     """Manages core application state like SimConnect, logging, and settings."""
     def __init__(self):
@@ -189,7 +247,7 @@ class UIManager:
     def check_user_functions(self):
 
         try:
-            user_init()
+            user_init() # pylint: disable=undefined-variable
         except NameError:
             print_warning("No user_init function defined in template file")
         except Exception as e:
@@ -238,7 +296,7 @@ class ServiceManager:
         # Start SimBrief auto-update if enabled
         if self.app_state.settings.simbrief_settings.auto_update_enabled:
             print_info("Auto-update enabled. Scheduling SimBrief updates...")
-            self.root.after(CONFIG.SIMBRIEF_AUTO_UPDATE_INTERVAL_MS, lambda: SimBriefFunctions.auto_update_simbrief(root))
+            self.root.after(CONFIG.SIMBRIEF_AUTO_UPDATE_INTERVAL_MS, lambda: SimBriefFunctions.auto_update_simbrief(self.root))
 
 # --- Timer Variables  ---
 @dataclass
@@ -256,41 +314,6 @@ class CountdownState:
             raise TypeError("countdown_target_time must be a datetime object")
         self.countdown_target_time = new_time
 
-# --- SimBrief Data Structures  ---
-class SimBriefTimeOption(Enum):
-    ESTIMATED_IN = "Estimated In"
-    ESTIMATED_TOD = "Estimated TOD"
-
-@dataclass
-class SimBriefSettings:
-    username: str = ""
-    use_adjusted_time: bool = False
-    selected_time_option: Any = SimBriefTimeOption.ESTIMATED_IN
-    allow_negative_timer: bool = False
-    auto_update_enabled: bool = False
-
-    def to_dict(self):
-        return {
-            "username": self.username,
-            "use_adjusted_time": self.use_adjusted_time,
-            "selected_time_option": (
-                self.selected_time_option.value
-                if isinstance(self.selected_time_option, SimBriefTimeOption)
-                else SimBriefTimeOption.ESTIMATED_IN.value
-            ),
-            "allow_negative_timer": self.allow_negative_timer,
-            "auto_update_enabled": self.auto_update_enabled,
-        }
-
-    @staticmethod
-    def from_dict(data):
-        return SimBriefSettings(
-            username=data.get("username", ""),
-            use_adjusted_time=data.get("use_adjusted_time", False),
-            selected_time_option=SimBriefTimeOption(data.get("selected_time_option", SimBriefTimeOption.ESTIMATED_IN.value)),
-            allow_negative_timer=data.get("allow_negative_timer", False),
-            auto_update_enabled=data.get("auto_update_enabled", False),
-        )
 
 # --- Globals  ---
 CONFIG = Config()       # Global configuration
@@ -569,7 +592,8 @@ class BackgroundUpdater:
         threshold = 30  # seconds before we consider the updater "stuck"
 
         if now - self.last_successful_update_time > threshold:
-            print_error(f"Watchdog: Background updater has not completed a cycle in {int(now - last_successful_update_time)} seconds. Possible stall detected.")
+            print_error(f"Watchdog: Background updater has not completed a cycle in"
+                        f"{int(now - self.last_successful_update_time)} seconds. Possible stall detected.")
 
         # Reschedule the watchdog to run again after 10 seconds
         self.root.after(10_000, self.background_thread_watchdog_function)
@@ -1029,13 +1053,13 @@ class DisplayUpdater:
         """Invoke user-defined update functions."""
         if self.state.user_update_function_defined:
             try:
-                user_update()
+                user_update() # pylint: disable=undefined-variable
             except Exception as e:
                 print_error(f"Error in user_update [{type(e).__name__}]: {e}")
 
         if self.state.user_slow_update_function_defined and self.update_display_frame_count == 0:
             try:
-                user_slow_update()
+                user_slow_update() # pylint: disable=undefined-variable
             except Exception as e:
                 print_error(f"Error in user_slow_update [{type(e).__name__}]: {e}")
 
@@ -1336,28 +1360,6 @@ def switch_template(new_template_name, template_handler):
 
     except Exception as e:
         print_error(f"Error switching template: {e}")
-
-@dataclass
-class ApplicationSettings:
-    pos: dict = field(default_factory=lambda: {"x": 0, "y": 0})
-    simbrief_settings: "SimBriefSettings" = field(default_factory=SimBriefSettings)
-
-    def get_window_position(self):
-        """Get x, y window position returned as tuple"""
-        return self.pos["x"], self.pos["y"]
-
-    def to_dict(self):
-        return {
-            "pos": self.pos,
-            "simbrief_settings": self.simbrief_settings.to_dict(),
-        }
-
-    @staticmethod
-    def from_dict(data: dict):
-        return ApplicationSettings(
-            pos=data.get("pos", {"x": 0, "y": 0}),
-            simbrief_settings=SimBriefSettings.from_dict(data.get("simbrief_settings", {})),
-        )
 
 class SettingsManager:
     """Handles loading, saving, and managing application settings."""
