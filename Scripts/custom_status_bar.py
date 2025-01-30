@@ -4,8 +4,6 @@ real-time flight simulator metrics like time, altitude, and temperature in a com
    - use instructions below to customize
    - Uses https://github.com/odwdinc/Python-SimConnect library to obtain values from SimConnect
 """
-# Attempt here is to keep file self contained within context of Project
-# pylint: disable=too-many-lines
 
 import faulthandler
 import importlib
@@ -105,6 +103,8 @@ def user_init():
 #### NOTE ####
 # This is a fairly large file, I recommend collapsing the headers when browsing this file.
 # I've left it as one large file to try it keep it self contained relative to others scripts.
+
+# pylint: disable=too-many-lines
 
 # --- Globals  ----------------------------------------------------------------
 state: Optional["AppState"] = None                      # Main Script State
