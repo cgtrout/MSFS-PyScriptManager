@@ -598,7 +598,7 @@ def get_formatted_value(variable_names, format_string=None):
 
 # --- Background Updater -------------------------------------------------------
 class BackgroundUpdater:
-    """Handles background updates for SimConnect data."""
+    """Continously updates cached values from Simconnect"""
 
     MIN_UPDATE_INTERVAL = CONFIG.UPDATE_INTERVAL / 2  # Retry interval
     STANDARD_UPDATE_INTERVAL = CONFIG.UPDATE_INTERVAL  # Normal interval
