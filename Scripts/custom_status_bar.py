@@ -770,6 +770,12 @@ def prefetch_variables(*variables):
             if variable_name not in sim_variables:
                 sim_variables[variable_name] = SimVarLookup(name=variable_name)
 
+def reset_cache():
+    """Reset all cached SimConnect variables."""
+    with cache_lock:
+        sim_variables.clear()
+    print_warning("SimConnect cache reset!")
+
 def get_formatted_value(variable_names, format_string=None):
     """
     Fetch one or more SimConnect variables, apply optional formatting if provided.
@@ -883,6 +889,7 @@ class BackgroundUpdater:
                         time.sleep(self.variable_sleep)
 
                 else: # sim_connected == False
+                    reset_cache()
                     time.sleep(5)
 
                 # Adjust sleep interval dynamically
