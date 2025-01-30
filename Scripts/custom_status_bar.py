@@ -103,7 +103,7 @@ def user_init():
 """
 
 #### NOTE ####
-# This is a very large file, I recommend collapsing the headers when browsing this file
+# This is a fairly large file, I recommend collapsing the headers when browsing this file.
 # I've left it as one large file to try it keep it self contained relative to others scripts.
 
 # --- Globals  ----------------------------------------------------------------
