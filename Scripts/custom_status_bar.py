@@ -263,7 +263,7 @@ class UIManager:
             user_init() # pylint: disable=undefined-variable
         except NameError:
             print_warning("No user_init function defined in template file")
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-except # Is valid case to catch all
             print_error(f"Error calling user_init [{type(e).__name__}]: {e}")
             traceback.print_exc(file=sys.stdout)
             sys.exit(1)
@@ -285,7 +285,8 @@ class UIManager:
 
     def open_timer_dialog(self):
         """
-        Open the CountdownTimerDialog to prompt the user to set a future countdown time and SimBrief settings.
+        Open the CountdownTimerDialog to prompt the user to set a future countdown time and
+        SimBrief settings.
         """
         # Open the dialog with current SimBrief settings and last entered time
         dialog = CountdownTimerDialog(self.root, self.app_state)
@@ -416,9 +417,9 @@ def remain_label():
         return "Rem(adj):"
     return "Remaining:"
 
+# TODO - would it be better to make this more 'functional' to avoid global maniplation
 def initialize_simconnect():
     """Initialize the connection to SimConnect."""
-    global state
     try:
         state.sim_connect = SimConnect()  # Connect to SimConnect
         state.aircraft_requests = AircraftRequests(state.sim_connect, _time=0)
@@ -587,7 +588,7 @@ class BackgroundUpdater:
 
                 else:
                     print_warning("SimConnect not connected. Retrying in 1 second.")
-                    time.sleep(1)
+                    time.sleep(1) # TODO - maybe this is excessive retry interval?
 
                 # Adjust sleep interval dynamically
                 sleep_interval = self.MIN_UPDATE_INTERVAL if lookup_failed else self.STANDARD_UPDATE_INTERVAL
