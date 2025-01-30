@@ -605,11 +605,7 @@ class CountdownState:
             raise TypeError("countdown_target_time must be a datetime object")
         self.countdown_target_time = new_time
 
-# Shared data structures for threading
-# TODO move these?
-simconnect_cache = {}
-variables_to_track = set()
-cache_lock = threading.Lock()
+
 
 # --- SimConnect Template Functions -------------------------------------------
 def get_sim_time():
@@ -708,10 +704,27 @@ def is_simconnect_available() -> bool:
 # --- Cache Lookup Functions --------------------------------------------------
 # These will lookup values from cache values which are updated from Background-
 # Updater
+
+@dataclass
+class SimVarLookup:
+    """Tracks a SimConnect lookup"""
+    name: str
+    last_update: float = field(default_factory=lambda: 0.0)
+
+    def needs_update(self, update_frequency: float) -> bool:
+        """Check if the variable needs an update based on its last refresh time."""
+        return (time.time() - self.last_update) >= update_frequency
+
+    def mark_updated(self):
+        """Update the last update timestamp."""
+        self.last_update = time.time()
+
+sim_variables: dict[str, SimVarLookup] = {}
+cache_lock = threading.Lock()
+
 def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
                          retries: int = 10, retry_interval: float = 0.2) -> Any:
-    """Fetch a SimConnect variable with caching and retry logic."""
-    # TODO: requires more detailed documentation on behavior
+    """Fetch a SimConnect variable from the cache"""
     if not is_simconnect_available():
         return "Sim Not Running"
 
@@ -733,23 +746,23 @@ def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
     return default_value
 
 def check_cache(variable_name):
-    """Return SimConnect cached value for variable if available, otherwise None."""
+    """Return cached value if available, otherwise None."""
     with cache_lock:
-        return simconnect_cache.get(variable_name)
+        lookup = sim_variables.get(variable_name)
+        return lookup.value if lookup else None  # Get cached value from SimVarLookup
 
 def add_to_cache(variable_name, default_value="N/A"):
-    """Add SimConnect variable to cache with default value and track it."""
+    """Ensure a SimConnect variable is tracked and initialized in `sim_variables`."""
     with cache_lock:
-        simconnect_cache[variable_name] = default_value
-        variables_to_track.add(variable_name)
+        if variable_name not in sim_variables:
+            sim_variables[variable_name] = SimVarLookup(name=variable_name)
 
-def prefetch_variables(*variables, default_value="N/A"):
-    """Prefetch variables by initializing them in the cache and tracking list."""
+def prefetch_variables(*variables):
+    """Ensure SimConnect variables are tracked without fetching them yet."""
     with cache_lock:
         for variable_name in variables:
-            if variable_name not in simconnect_cache:  # Ensure each variable is only added once
-                simconnect_cache[variable_name] = default_value
-                variables_to_track.add(variable_name)
+            if variable_name not in sim_variables:
+                sim_variables[variable_name] = SimVarLookup(name=variable_name)
 
 def get_formatted_value(variable_names, format_string=None):
     """
@@ -837,7 +850,7 @@ class BackgroundUpdater:
 
                     # Make a copy of the variables to avoid holding the lock during network calls
                     with cache_lock:
-                        vars_to_update = list(variables_to_track)
+                        vars_to_update = list(sim_variables.keys())
 
                     for variable_name in vars_to_update:
                         try:
@@ -845,7 +858,8 @@ class BackgroundUpdater:
                                 value = self.state.aircraft_requests.get(variable_name)
                                 if value is not None:
                                     with cache_lock:
-                                        simconnect_cache[variable_name] = value
+                                        sim_variables[variable_name].value = value
+                                        sim_variables[variable_name].mark_updated()
                                 else:
                                     lookup_failed = True
                             else:
