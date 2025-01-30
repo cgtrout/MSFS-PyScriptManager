@@ -710,6 +710,7 @@ class SimVarLookup:
     """Tracks a SimConnect lookup"""
     name: str
     last_update: float = field(default_factory=lambda: 0.0)
+    value: Any = "N/A"  # Default value before it's updated
 
     def needs_update(self, update_frequency: float) -> bool:
         """Check if the variable needs an update based on its last refresh time."""
