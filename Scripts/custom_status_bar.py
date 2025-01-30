@@ -702,8 +702,8 @@ def is_simconnect_available() -> bool:
     )
 
 # --- Cache Lookup Functions --------------------------------------------------
-# These will lookup values from cache values which are updated from Background-
-# Updater
+
+# These will lookup values from cache values which are updated from Background-Updater
 
 @dataclass
 class SimVarLookup:
@@ -726,8 +726,8 @@ class SimVarLookup:
            self._value = None
         return self._value
 
-sim_variables: dict[str, SimVarLookup] = {}
-cache_lock = threading.Lock()
+sim_variables: dict[str, SimVarLookup] = {}     # Cache of looked up SimConnect variables
+cache_lock = threading.Lock()                   # Lock used by cache system
 
 def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
                          retries: int = 10, retry_interval: float = 0.2) -> Any:
@@ -738,12 +738,16 @@ def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
     def is_value_valid(value: Any, default_value: Any) -> bool:
         return value is not None and value != default_value
 
+    # Check cache value
     value = check_cache(variable_name)
     if is_value_valid(value, default_value):
         return value
     else:
-        # Add/reset cache value
+        # Add/reset cache value since value isn't valid
         add_to_cache(variable_name, default_value)
+
+    # Retry lookup loop - purpose is to handle first lookup to give it a chance for it to be
+    # captured in background updater
     for _ in range(retries):
         value = check_cache(variable_name)
         if is_value_valid(value, default_value):
