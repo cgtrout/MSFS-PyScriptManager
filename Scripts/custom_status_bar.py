@@ -156,7 +156,9 @@ class SimBriefSettings:
         return SimBriefSettings(
             username=data.get("username", ""),
             use_adjusted_time=data.get("use_adjusted_time", False),
-            selected_time_option=SimBriefTimeOption(data.get("selected_time_option", SimBriefTimeOption.ESTIMATED_IN.value)),
+            selected_time_option=SimBriefTimeOption(
+                                    data.get("selected_time_option",
+                                    SimBriefTimeOption.ESTIMATED_IN.value)),
             allow_negative_timer=data.get("allow_negative_timer", False),
             auto_update_enabled=data.get("auto_update_enabled", False),
         )
