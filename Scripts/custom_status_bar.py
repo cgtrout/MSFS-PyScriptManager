@@ -917,7 +917,7 @@ class BackgroundUpdater:
 
     def _is_aircraft_requests_defined(self):
         """Helper function to see if aircraft_requests is valid as an object"""
-        return self.state.aircraft_requests is not None and hasattr(self.state.aircraft_requests, 'get'):
+        return self.state.aircraft_requests is not None and hasattr(self.state.aircraft_requests, 'get')
 
     def background_thread_watchdog_function(self):
         """Check background thread function to see if it has locked up"""
