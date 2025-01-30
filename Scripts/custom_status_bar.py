@@ -27,7 +27,7 @@ from SimConnect import SimConnect, AircraftRequests
 
 try:
     # Import all color print functions
-    from Lib.color_print import *  # pylint: disable=wildcard-import
+    from Lib.color_print import *  # pylint: disable=unused-wildcard-import, wildcard-import
 
 except ImportError:
     print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
