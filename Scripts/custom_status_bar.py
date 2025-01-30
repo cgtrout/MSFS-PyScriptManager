@@ -875,9 +875,8 @@ class BackgroundUpdater:
                         # Introduce a small sleep between variable updates
                         time.sleep(self.variable_sleep)
 
-                else:
-                    print_warning("SimConnect not connected. Retrying in 1 second.")
-                    time.sleep(1) # TODO - maybe this is excessive retry interval?
+                else: # sim_connected == False
+                    time.sleep(5)
 
                 # Adjust sleep interval dynamically
                 sleep_interval = self.MIN_UPDATE_INTERVAL \
