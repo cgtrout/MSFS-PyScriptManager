@@ -260,7 +260,7 @@ class UIManager:
     def check_user_functions(self):
         """Check to see if user functions have been defined"""
         try:
-            user_init() # pylint: disable=undefined-variable
+            user_init()  # type: ignore  # pylint: disable=undefined-variable
         except NameError:
             print_warning("No user_init function defined in template file")
         except Exception as e:  # pylint: disable=broad-except # Is valid case to catch all
@@ -1066,13 +1066,13 @@ class DisplayUpdater:
         """Invoke user-defined update functions."""
         if self.state.user_update_function_defined:
             try:
-                user_update() # pylint: disable=undefined-variable
+                user_update() # type: ignore  # pylint: disable=undefined-variable
             except Exception as e:
                 print_error(f"Error in user_update [{type(e).__name__}]: {e}")
 
         if self.state.user_slow_update_function_defined and self.update_display_frame_count == 0:
             try:
-                user_slow_update() # pylint: disable=undefined-variable
+                user_slow_update() # type: ignore  # pylint: disable=undefined-variable
             except Exception as e:
                 print_error(f"Error in user_slow_update [{type(e).__name__}]: {e}")
 
