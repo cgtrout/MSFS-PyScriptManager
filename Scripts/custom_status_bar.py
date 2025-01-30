@@ -1423,9 +1423,12 @@ class CountdownTimerDialog(tk.Toplevel):
         self.app_state = app_state
         self.simbrief_settings = app_state.settings.simbrief_settings
 
-         # Fetch times from global count_down_state
-        self.initial_time = countdown_state.last_entered_time
-        self.gate_out_time = countdown_state.gate_out_time
+        # Fetch times from global count_down_state
+        if countdown_state is not None:
+            self.initial_time = countdown_state.last_entered_time
+            self.gate_out_time = countdown_state.gate_out_time
+        else:
+            raise ValueError("CountdownTimerDialog: countdown_state not set!")
 
         # Forward declarations of UI components
         self.title_bar: Optional[tk.Frame] = None
