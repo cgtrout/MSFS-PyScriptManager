@@ -804,7 +804,7 @@ def get_time_to_future(adjusted_for_sim_rate: bool) -> str:
     """
     Calculate and return the countdown timer string.
     """
-    if countdown_state.countdown_target_time == CONFIG.UNIX_EPOCH:  # Default unset state
+    if countdown_state is None or countdown_state.countdown_target_time == CONFIG.UNIX_EPOCH:
         return "N/A"
 
     try:
