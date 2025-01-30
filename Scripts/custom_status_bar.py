@@ -1498,10 +1498,7 @@ def main():
         except ImportError:
             print_warning("Please 'pip install keyboard' for dynamic logging")
 
-        # Uncomment to test out traceback timer
-        #while True:
-        #    pass
-        # Run the GUI event loop
+
         root.mainloop()
     except ValueError as e:
         print_error(f"Error: {e}")
