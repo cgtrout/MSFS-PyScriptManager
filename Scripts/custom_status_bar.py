@@ -474,7 +474,8 @@ class ServiceManager:
             log_file.write(f"--- Global State Log: {datetime.now()} ---\n\n")
 
             # Tkinter state
-            log_file.write(f"winfo_geometry={self.root.winfo_geometry()}, state={self.root.state()}\n")
+            log_file.write(f"winfo_geometry="
+                           "{self.root.winfo_geometry()}, state={self.root.state()}\n")
 
             # Log user-defined globals first
             log_file.write("### User-Defined Globals ###\n")
@@ -574,7 +575,8 @@ def is_sim_rate_accelerated():
 
 def get_temp():
     """Fetch both TAT and SAT temperatures from SimConnect, formatted with labels."""
-    return get_formatted_value(["AMBIENT_TEMPERATURE", "TOTAL_AIR_TEMPERATURE"], "TAT {1:.0f}°C  SAT {0:.0f}°C")
+    return get_formatted_value(["AMBIENT_TEMPERATURE", "TOTAL_AIR_TEMPERATURE"],
+                               "TAT {1:.0f}°C  SAT {0:.0f}°C")
 
 def remain_label():
     """
@@ -764,7 +766,8 @@ class BackgroundUpdater:
                     time.sleep(1) # TODO - maybe this is excessive retry interval?
 
                 # Adjust sleep interval dynamically
-                sleep_interval = self.MIN_UPDATE_INTERVAL if lookup_failed else self.STANDARD_UPDATE_INTERVAL
+                sleep_interval = self.MIN_UPDATE_INTERVAL \
+                                    if lookup_failed else self.STANDARD_UPDATE_INTERVAL
                 time.sleep(sleep_interval / 1000.0)
 
             except Exception as e:
@@ -781,7 +784,8 @@ class BackgroundUpdater:
 
         if now - self.last_successful_update_time > threshold:
             print_error(f"Watchdog: Background updater has not completed a cycle in"
-                        f"{int(now - self.last_successful_update_time)} seconds. Possible stall detected.")
+                        f"{int(now - self.last_successful_update_time)} seconds. "
+                        "Possible stall detected.")
 
         # Reschedule the watchdog to run again after 10 seconds
         self.root.after(10_000, self.background_thread_watchdog_function)
@@ -813,7 +817,8 @@ def get_time_to_future(adjusted_for_sim_rate: bool) -> str:
             raise ValueError("Target time or simulator time is offset-naive. "
                              "Ensure all times are offset-aware.")
 
-        # Fetch sim rate if we want to adjust for it, otherwise default to 1.0 (normal time progression)
+        # Fetch sim rate if we want to adjust for it,
+        # otherwise default to 1.0 (normal time progression)
         sim_rate = 1.0
         if adjusted_for_sim_rate:
             sim_rate_str = get_sim_rate()
@@ -1163,7 +1168,9 @@ class SimBriefFunctions:
     def get_simbrief_ofp_tod_datetime(simbrief_json):
         """Fetch the Top of Descent (TOD) time from SimBrief JSON data."""
         try:
-            if "times" not in simbrief_json or "navlog" not in simbrief_json or "fix" not in simbrief_json["navlog"]:
+            if "times" not in simbrief_json \
+                or "navlog" not in simbrief_json \
+                or "fix" not in simbrief_json["navlog"]:
                 print_warning("Invalid SimBrief JSON format.")
                 return None
 
@@ -1241,14 +1248,16 @@ class SimBriefFunctions:
     @staticmethod
     def auto_update_simbrief(root):
         """
-        Automatically fetch SimBrief data and update the countdown timer if the generation time has changed.
+        Automatically fetch SimBrief data and update the countdown timer if the generation time
+        has changed.
         """
         if not simbrief_settings.auto_update_enabled:
             return  # Exit if auto-update is disabled
 
         try:
             # Fetch the latest SimBrief data
-            simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(simbrief_settings.username)
+            simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(
+                                                                        simbrief_settings.username)
             if simbrief_json:
                 # Extract the generation time
                 current_generated_time = simbrief_json.get("params", {}).get("time_generated")
