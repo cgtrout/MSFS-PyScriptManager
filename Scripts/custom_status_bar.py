@@ -202,7 +202,7 @@ class AppState:
 
         # Log File
         self.log_file_path = "traceback.log"
-        self.traceback_log_file = open(self.log_file_path, "w")
+        self.traceback_log_file = open(self.log_file_path, "w", encoding="utf-8")
         faulthandler.enable(file=self.traceback_log_file)
 
         self.user_update_function_defined = False
@@ -630,8 +630,6 @@ def get_time_to_future(adjusted_for_sim_rate: bool) -> str:
     """
     Calculate and return the countdown timer string.
     """
-    global countdown_state
-
     if countdown_state.countdown_target_time == CONFIG.UNIX_EPOCH:  # Default unset state
         return "N/A"
 
@@ -797,7 +795,7 @@ class TemplateHandler:
         os.makedirs(CONFIG.SETTINGS_DIR, exist_ok=True)
 
         if not os.path.exists(CONFIG.TEMPLATE_FILE):
-            with open(CONFIG.TEMPLATE_FILE, "w") as f:
+            with open(CONFIG.TEMPLATE_FILE, "w", encoding="utf-8") as f:
                 f.write(DEFAULT_TEMPLATES.strip())
             print(f"Created default template file at {CONFIG.TEMPLATE_FILE}")
 
@@ -1472,7 +1470,7 @@ def log_global_state(event=None, log_path="detailed_state_log.txt", max_depth=2)
     external_globals = {k: v for k, v in globals().items() if k not in user_globals}
 
     # Start logging
-    with open(log_path, "w") as log_file:
+    with open(log_path, "w", encoding="utf-8") as log_file:
         log_file.write(f"--- Global State Log: {datetime.now()} ---\n\n")
 
         # Tkinter state
