@@ -8,22 +8,22 @@ real-time flight simulator metrics like time, altitude, and temperature in a com
 # pylint: disable=too-many-lines
 
 import faulthandler
-import tkinter as tk
-from tkinter import messagebox
-from SimConnect import SimConnect, AircraftRequests
-from datetime import datetime, timezone, timedelta
-import os
-import json
 import importlib
-import requests
+import json
+import os
+import sys
+import threading
 import time
+import tkinter as tk
+import traceback
+from tkinter import messagebox
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 from dataclasses import dataclass, field
-
-import threading
-import sys
-import traceback
 from typing import Any, ClassVar, Optional
+
+import requests
+from SimConnect import SimConnect, AircraftRequests
 
 try:
     # Import all color print functions
