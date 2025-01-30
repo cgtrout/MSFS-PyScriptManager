@@ -747,7 +747,7 @@ class TemplateHandler:
 
     def load_templates(self) -> dict[str, str]:
         """Load templates from the template file, creating the file if necessary."""
-        os.makedirs(CONFIG.SETTINGS_FILE, exist_ok=True)
+        os.makedirs(CONFIG.SETTINGS_DIR, exist_ok=True)
 
         if not os.path.exists(CONFIG.TEMPLATE_FILE):
             with open(CONFIG.TEMPLATE_FILE, "w") as f:
