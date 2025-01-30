@@ -130,6 +130,7 @@ class SimBriefTimeOption(Enum):
     ESTIMATED_IN = "Estimated In"
     ESTIMATED_TOD = "Estimated TOD"
 
+# --- Settings Handling  --------------------------------------------------------
 @dataclass
 class SimBriefSettings:
     """Contains settings related to Simbrief functionality"""
@@ -166,6 +167,35 @@ class SimBriefSettings:
             auto_update_enabled=data.get("auto_update_enabled", False),
         )
 
+class SettingsManager:
+    """Handles loading, saving, and managing application settings."""
+
+    def __init__(self):
+        # Allow dynamic configuration of paths
+
+        # Ensure the directory exists
+        os.makedirs(CONFIG.SETTINGS_DIR, exist_ok=True)
+
+    def load_settings(self) -> ApplicationSettings:
+        """Load settings from the JSON file."""
+        if os.path.exists(CONFIG.SETTINGS_FILE):
+            try:
+                with open(CONFIG.SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return ApplicationSettings.from_dict(data)
+            except json.JSONDecodeError:
+                print_error("Settings file is corrupted. Using defaults.")
+        # Return default settings if the file doesn't exist or is corrupted
+        return ApplicationSettings()
+
+    def save_settings(self, settings: ApplicationSettings):
+        """Save settings to the JSON file."""
+        try:
+            with open(CONFIG.SETTINGS_FILE, "w", encoding="utf-8") as f:
+                json.dump(settings.to_dict(), f, indent=4)
+        except Exception as e:
+            print_error(f"Error saving settings: {e}")
+
 @dataclass
 class ApplicationSettings:
     """Script settings definitions - used by SettingsManager"""
@@ -191,6 +221,7 @@ class ApplicationSettings:
             simbrief_settings=SimBriefSettings.from_dict(data.get("simbrief_settings", {})),
         )
 
+# --- Main operational classes --------------------------------------------------
 class AppState:
     """Manages core application state like SimConnect, logging, and settings."""
     def __init__(self):
@@ -495,6 +526,7 @@ def is_simconnect_available() -> bool:
 def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
                          retries: int = 10, retry_interval: float = 0.2) -> Any:
     """Fetch a SimConnect variable with caching and retry logic."""
+    # TODO: requires more detailed documentation on behavior
     if not is_simconnect_available():
         return "Sim Not Running"
 
@@ -1369,35 +1401,6 @@ class DragHandler:
     def stop_move(self, event):
         """Stop moving the window."""
         self.is_moving = False
-
-class SettingsManager:
-    """Handles loading, saving, and managing application settings."""
-
-    def __init__(self):
-        # Allow dynamic configuration of paths
-
-        # Ensure the directory exists
-        os.makedirs(CONFIG.SETTINGS_DIR, exist_ok=True)
-
-    def load_settings(self) -> ApplicationSettings:
-        """Load settings from the JSON file."""
-        if os.path.exists(CONFIG.SETTINGS_FILE):
-            try:
-                with open(CONFIG.SETTINGS_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    return ApplicationSettings.from_dict(data)
-            except json.JSONDecodeError:
-                print_error("Settings file is corrupted. Using defaults.")
-        # Return default settings if the file doesn't exist or is corrupted
-        return ApplicationSettings()
-
-    def save_settings(self, settings: ApplicationSettings):
-        """Save settings to the JSON file."""
-        try:
-            with open(CONFIG.SETTINGS_FILE, "w", encoding="utf-8") as f:
-                json.dump(settings.to_dict(), f, indent=4)
-        except Exception as e:
-            print_error(f"Error saving settings: {e}")
 
 def is_debugging():
     """Check if the script is running in a debugging environment."""
