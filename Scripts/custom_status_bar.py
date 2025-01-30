@@ -1018,8 +1018,7 @@ class DisplayUpdater:
 
         # Only repack widgets if necessary
         if full_refresh_needed:
-            if full_refresh_needed:
-                self.repack_widgets(parsed_blocks)
+            self.repack_widgets(parsed_blocks)
 
         # Adjust window size dynamically
         self.adjust_window_size()
