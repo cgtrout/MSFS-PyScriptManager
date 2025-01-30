@@ -341,7 +341,7 @@ class ServiceManager:
         # Start SimBrief auto-update if enabled
         if self.app_state.settings.simbrief_settings.auto_update_enabled:
             print_info("Auto-update enabled. Scheduling SimBrief updates...")
-            self.root.after(CONFIG.SIMBRIEF_AUTO_UPDATE_INTERVAL_MS, lambda: SimBriefFunctions.auto_update_simbrief(self.root))
+            self.root.after(0, lambda: SimBriefFunctions.auto_update_simbrief(self.root))
 
 # --- Timer Variables  ---
 @dataclass
