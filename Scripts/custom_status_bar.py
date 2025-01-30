@@ -332,16 +332,18 @@ class ServiceManager:
     def __init__(self, app_state, settings: "ApplicationSettings", root):
         self.app_state = app_state
         self.background_updater = BackgroundUpdater(self.app_state, root)
-        self.background_updater.start()
+
         self.settings = settings # TODO shold we pass this in like this?
         self.root = root
 
     def start(self):
         """Start service manager tasks"""
+        self.background_updater.start()
+
         # Start SimBrief auto-update if enabled
         if self.app_state.settings.simbrief_settings.auto_update_enabled:
             print_info("Auto-update enabled. Scheduling SimBrief updates...")
-            self.root.after(0, lambda: SimBriefFunctions.auto_update_simbrief(self.root))
+            self.root.after(5000, lambda: SimBriefFunctions.auto_update_simbrief(self.root))
 
 # --- Timer Variables  ---
 @dataclass
@@ -1460,7 +1462,7 @@ def log_global_state(event=None, log_path="detailed_state_log.txt", max_depth=2)
 
 def main():
     """Main entry point to script"""
-    global state, simbrief_settings
+    global state, simbrief_settings  # pylint: disable=global-statement # Necessary for templates
     print_info("Starting custom status bar...")
 
     try:
