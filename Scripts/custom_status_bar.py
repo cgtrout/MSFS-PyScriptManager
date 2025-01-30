@@ -730,7 +730,7 @@ def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
         return "Sim Not Running"
 
     value = check_cache(variable_name)
-    if value and value != default_value:
+    if ( value is not None ) and ( value != default_value ):
         return value
 
     add_to_cache(variable_name, default_value)
