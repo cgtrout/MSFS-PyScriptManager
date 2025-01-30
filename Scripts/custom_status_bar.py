@@ -840,10 +840,12 @@ class BackgroundUpdater:
             try:
                 if not self.state.sim_connected:
                     initialize_simconnect()
-                    continue
+                    # Allow execution to continue so we can detect if connection was successful or
+                    # not
 
                 if self.state.sim_connected:
-                    if self.state.sim_connect is None or not self.state.sim_connect.ok or self.state.sim_connect.quit == 1:
+                    # Detect if sim_connect lib is reporting issue or quit status
+                    if not self.state.sim_connect.ok or self.state.sim_connect.quit == 1:
                         print_warning("SimConnect state invalid. Disconnecting.")
                         self.state.sim_connected = False
                         continue
