@@ -420,7 +420,7 @@ class ServiceManager:
             log_path (str): Path to save the log file.
             max_depth (int): Maximum recursion depth for nested attributes.
         """
-        import inspect
+        import inspect # pylint: disable=import-outside-toplevel # Deliberate lazy load
 
         def is_user_defined(var_name, var_value):
             """
