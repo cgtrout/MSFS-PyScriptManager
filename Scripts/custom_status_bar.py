@@ -782,6 +782,7 @@ def prefetch_variables(*variables):
 
 def reset_cache():
     """Reset all cached SimConnect variables."""
+    # TODO: possibly have flag to represent empty?
     with cache_lock:
         sim_variables.clear()
     print_warning("SimConnect cache reset!")
