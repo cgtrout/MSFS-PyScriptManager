@@ -852,8 +852,9 @@ class BackgroundUpdater:
                         continue
 
                     # Make a copy of the variables to avoid holding the lock during network calls
+                    # Prioritize by last_update
                     with cache_lock:
-                        vars_to_update = list(sim_variables.keys())
+                        vars_to_update = sorted( sim_variables.values(), key=lambda v: v.last_update )
 
                     for variable_name in vars_to_update:
                         try:
