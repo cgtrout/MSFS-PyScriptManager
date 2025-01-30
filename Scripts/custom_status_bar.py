@@ -723,20 +723,25 @@ class SimVarLookup:
 sim_variables: dict[str, SimVarLookup] = {}
 cache_lock = threading.Lock()
 
+
 def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
                          retries: int = 10, retry_interval: float = 0.2) -> Any:
     """Fetch a SimConnect variable from the cache"""
     if not is_simconnect_available():
         return "Sim Not Running"
 
-    value = check_cache(variable_name)
-    if ( value is not None ) and ( value != default_value ):
-        return value
+    def is_value_valid(value: Any, default_value: Any) -> bool:
+        return value is not None and value != default_value
 
-    add_to_cache(variable_name, default_value)
+    value = check_cache(variable_name)
+    if is_value_valid(value, default_value):
+        return value
+    else:
+        # Add/reset cache value
+        add_to_cache(variable_name, default_value)
     for _ in range(retries):
         value = check_cache(variable_name)
-        if value is not None and value != default_value:
+        if is_value_valid(value, default_value):
             return value
         time.sleep(retry_interval)
 
