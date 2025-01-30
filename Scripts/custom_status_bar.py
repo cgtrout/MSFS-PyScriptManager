@@ -534,7 +534,6 @@ def get_simulator_datetime() -> datetime:
     """
     Fetches the absolute time from the simulator and converts it to a datetime object.
     """
-    global state
     try:
         if state is None or not state.sim_connected:
             raise ValueError("SimConnect is not connected.")
