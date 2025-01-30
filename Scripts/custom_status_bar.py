@@ -1,7 +1,11 @@
-# custom_status_bar.py: shows a draggable, customizable status bar using SimConnect to display real-time flight simulator metrics like time, altitude, and temperature in a compact GUI.
-#   - use instructions below to customize
-#   - Uses https://github.com/odwdinc/Python-SimConnect library to obtain values from SimConnect
-
+"""
+custom_status_bar.py: shows a draggable, customizable status bar using SimConnect to display
+real-time flight simulator metrics like time, altitude, and temperature in a compact GUI.
+   - use instructions below to customize
+   - Uses https://github.com/odwdinc/Python-SimConnect library to obtain values from SimConnect
+"""
+# Attempt here is to keep file self contained within context of Project
+# pylint: disable=too-many-lines
 
 import faulthandler
 import tkinter as tk
@@ -20,8 +24,6 @@ import threading
 import sys
 import traceback
 from typing import Any, ClassVar, Optional
-
-
 
 try:
     # Import all color print functions
@@ -121,11 +123,13 @@ class Config:
 
 # --- SimBrief Data Structures  ---
 class SimBriefTimeOption(Enum):
+    """Type of time to pull from SimBrief"""
     ESTIMATED_IN = "Estimated In"
     ESTIMATED_TOD = "Estimated TOD"
 
 @dataclass
 class SimBriefSettings:
+    """Contains settings related to Simbrief functionality"""
     username: str = ""
     use_adjusted_time: bool = False
     selected_time_option: Any = SimBriefTimeOption.ESTIMATED_IN
@@ -133,6 +137,7 @@ class SimBriefSettings:
     auto_update_enabled: bool = False
 
     def to_dict(self):
+        """Create dictionary from values"""
         return {
             "username": self.username,
             "use_adjusted_time": self.use_adjusted_time,
@@ -147,6 +152,7 @@ class SimBriefSettings:
 
     @staticmethod
     def from_dict(data):
+        """Take values from dictionary"""
         return SimBriefSettings(
             username=data.get("username", ""),
             use_adjusted_time=data.get("use_adjusted_time", False),
@@ -157,6 +163,7 @@ class SimBriefSettings:
 
 @dataclass
 class ApplicationSettings:
+    """Script settings definitions - used by SettingsManager"""
     pos: dict = field(default_factory=lambda: {"x": 0, "y": 0})
     simbrief_settings: "SimBriefSettings" = field(default_factory=SimBriefSettings)
 
@@ -165,6 +172,7 @@ class ApplicationSettings:
         return self.pos["x"], self.pos["y"]
 
     def to_dict(self):
+        """Create dictionary from values"""
         return {
             "pos": self.pos,
             "simbrief_settings": self.simbrief_settings.to_dict(),
@@ -172,6 +180,7 @@ class ApplicationSettings:
 
     @staticmethod
     def from_dict(data: dict):
+        """Take values from dictionary"""
         return ApplicationSettings(
             pos=data.get("pos", {"x": 0, "y": 0}),
             simbrief_settings=SimBriefSettings.from_dict(data.get("simbrief_settings", {})),
@@ -245,7 +254,7 @@ class UIManager:
 
     # TODO uncertain this is best location?
     def check_user_functions(self):
-
+        """Check to see if user functions have been defined"""
         try:
             user_init() # pylint: disable=undefined-variable
         except NameError:
@@ -293,6 +302,7 @@ class ServiceManager:
         self.root = root
 
     def start(self):
+        """Start service manager tasks"""
         # Start SimBrief auto-update if enabled
         if self.app_state.settings.simbrief_settings.auto_update_enabled:
             print_info("Auto-update enabled. Scheduling SimBrief updates...")
@@ -301,6 +311,7 @@ class ServiceManager:
 # --- Timer Variables  ---
 @dataclass
 class CountdownState:
+    """Countdown timer state"""
     future_time_seconds: Optional[int] = None  # Time for countdown in seconds
     is_future_time_manually_set: bool = False  # Flag for manual setting
     last_simbrief_generated_time: Optional[datetime] = None  # Last SimBrief time
@@ -313,7 +324,6 @@ class CountdownState:
         if not isinstance(new_time, datetime):
             raise TypeError("countdown_target_time must be a datetime object")
         self.countdown_target_time = new_time
-
 
 # --- Globals  ---
 CONFIG = Config()       # Global configuration
@@ -891,7 +901,7 @@ def get_dynamic_value(function_name):
         print_debug(f"get_dynamic_value exception [{type(e).__name__ }]: {e}")
         return "Err"
 
-class WidgetPool:
+class WidgetPool:  # pylint: disable=missing-function-docstring
     """Manages widgets and their order"""
     def __init__(self):
         self.pool = {}
@@ -1479,6 +1489,7 @@ def log_global_state(event=None, log_path="detailed_state_log.txt", max_depth=2)
     print(f"Global state logged to {log_path}")
 
 def main():
+    """Main entry point to script"""
     global state, simbrief_settings
     print_info("Starting custom status bar...")
 
@@ -1510,7 +1521,7 @@ def main():
 
         # Bind log that can be executed during runtime
         try:
-            import keyboard
+            import keyboard # pylint: disable=import-outside-toplevel
             keyboard.add_hotkey("ctrl+alt+shift+l", log_global_state)
             print_info("Global hotkey 'Ctrl+Alt+Shift+L' registered for logging state.")
         except ImportError:
