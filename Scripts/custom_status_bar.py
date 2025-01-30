@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 import threading
 import sys
 import traceback
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional
 
 
 
@@ -103,20 +103,21 @@ def user_init():
 @dataclass(frozen=True)
 class Config:
     """Immutable configuration settings for the application."""
-    ALPHA_TRANSPARENCY: float = 0.95
-    WINDOW_TITLE: str = "Simulator Time"
-    DARK_BG: str = "#000000"
-    FONT: tuple = ("Helvetica", 16)
-    UPDATE_INTERVAL: int = 33
-    SIMBRIEF_AUTO_UPDATE_INTERVAL_MS: int = 5 * 60 * 1000
-    PADDING_X: int = 20
-    PADDING_Y: int = 10
-    UNIX_EPOCH: datetime = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
-    SCRIPT_DIR: str = os.path.dirname(__file__)
-    SETTINGS_DIR: str = os.path.join(os.path.dirname(SCRIPT_DIR), "Settings")
-    SETTINGS_FILE: str = os.path.join(SETTINGS_DIR, "custom_status_bar.json")
-    TEMPLATE_FILE: str = os.path.join(SETTINGS_DIR, "status_bar_templates.py")
+    ALPHA_TRANSPARENCY: ClassVar[float] = 0.95
+    WINDOW_TITLE: ClassVar[str] = "Simulator Time"
+    DARK_BG: ClassVar[str] = "#000000"
+    FONT: ClassVar[tuple] = ("Helvetica", 16)
+    UPDATE_INTERVAL: ClassVar[int] = 33
+    SIMBRIEF_AUTO_UPDATE_INTERVAL_MS: ClassVar[int] = 5 * 60 * 1000
+    PADDING_X: ClassVar[int] = 20
+    PADDING_Y: ClassVar[int] = 10
+    UNIX_EPOCH: ClassVar[datetime] = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+    SCRIPT_DIR: ClassVar[str] = os.path.dirname(__file__)
+    SETTINGS_DIR: ClassVar[str] = os.path.join(os.path.dirname(SCRIPT_DIR), "Settings")
+    SETTINGS_FILE: ClassVar[str] = os.path.join(SETTINGS_DIR, "custom_status_bar.json")
+    TEMPLATE_FILE: ClassVar[str] = os.path.join(SETTINGS_DIR, "status_bar_templates.py")
 
 class AppState:
     """Manages core application state like SimConnect, logging, and settings."""
