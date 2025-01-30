@@ -123,6 +123,7 @@ class Config:
     SETTINGS_DIR: ClassVar[str] = os.path.join(ROOT_DIR, "Settings")
     SETTINGS_FILE: ClassVar[str] = os.path.join(SETTINGS_DIR, "custom_status_bar.json")
     TEMPLATE_FILE: ClassVar[str] = os.path.join(SETTINGS_DIR, "status_bar_templates.py")
+CONFIG = Config()       # Global configuration
 
 # --- SimBrief Data Structures  -------------------------------------------------
 class SimBriefTimeOption(Enum):
@@ -417,19 +418,13 @@ class CountdownState:
             raise TypeError("countdown_target_time must be a datetime object")
         self.countdown_target_time = new_time
 
-# --- Globals  ---
-CONFIG = Config()       # Global configuration
-state: Optional[AppState] = None
-countdown_state = CountdownState()
-simbrief_settings: Optional[SimBriefSettings] = None
-
 # Shared data structures for threading
 # TODO move these?
 simconnect_cache = {}
 variables_to_track = set()
 cache_lock = threading.Lock()
 
-# --- SimConnect Lookup  --------------------------------------------------------
+# --- SimConnect Lookup Functions------------------------------------------------
 def get_sim_time():
     """Fetch the simulator time from SimConnect, formatted as HH:MM:SS."""
     try:
@@ -504,6 +499,7 @@ def remain_label():
         return "Rem(adj):"
     return "Remaining:"
 
+# --- SimConnect Lookup Functions ------------------------------------------------
 # TODO - would it be better to make this more 'functional' to avoid global maniplation
 def initialize_simconnect():
     """Initialize the connection to SimConnect."""
@@ -857,7 +853,6 @@ def set_future_time_internal(future_time_input, current_sim_time):
         print_error(f"Validation error in set_future_time_internal: {ve}")
     except Exception as e:
         print_error(f"Unexpected error in set_future_time_internal: {str(e)}")
-
 
 # --- Display Update  -----------------------------------------------------------
 def get_dynamic_value(function_name):
@@ -1369,12 +1364,16 @@ def log_global_state(event=None, log_path="detailed_state_log.log", max_depth=2)
 
     print(f"Global state logged to {log_path}")
 
+# --- MAIN Function -------------------------------------------------------------
 def main():
     """Main entry point to script"""
-    global state, simbrief_settings  # pylint: disable=global-statement # Necessary for templates
+    # Globals here necessary for template support
+    global state, simbrief_settings, countdown_state  # pylint: disable=global-statement
     print_info("Starting custom status bar...")
 
     try:
+        countdown_state = CountdownState()
+
         state = AppState()
         ui_manager = UIManager(state)
         root = ui_manager.get_root()
