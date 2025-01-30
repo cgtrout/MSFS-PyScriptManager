@@ -216,12 +216,9 @@ class UIManager:
         """
         Open the CountdownTimerDialog to prompt the user to set a future countdown time and SimBrief settings.
         """
-        try:
-            # Open the dialog with current SimBrief settings and last entered time
-            dialog = CountdownTimerDialog(self.root, self.settings)
-            self.root.wait_window(dialog)  # Wait for dialog to close
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to open timer dialog: {str(e)}")
+        # Open the dialog with current SimBrief settings and last entered time
+        dialog = CountdownTimerDialog(self.root, self.settings)
+        self.root.wait_window(dialog)  # Wait for dialog to close
 
     def start(self):
         """Start any UI related functions"""
