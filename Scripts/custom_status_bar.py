@@ -168,6 +168,31 @@ class SimBriefSettings:
             auto_update_enabled=data.get("auto_update_enabled", False),
         )
 
+@dataclass
+class ApplicationSettings:
+    """Script settings definitions - used by SettingsManager"""
+    pos: dict = field(default_factory=lambda: {"x": 0, "y": 0})
+    simbrief_settings: "SimBriefSettings" = field(default_factory=SimBriefSettings)
+
+    def get_window_position(self):
+        """Get x, y window position returned as tuple"""
+        return self.pos["x"], self.pos["y"]
+
+    def to_dict(self):
+        """Create dictionary from values"""
+        return {
+            "pos": self.pos,
+            "simbrief_settings": self.simbrief_settings.to_dict(),
+        }
+
+    @staticmethod
+    def from_dict(data: dict):
+        """Take values from dictionary"""
+        return ApplicationSettings(
+            pos=data.get("pos", {"x": 0, "y": 0}),
+            simbrief_settings=SimBriefSettings.from_dict(data.get("simbrief_settings", {})),
+        )
+
 class SettingsManager:
     """Handles loading, saving, and managing application settings."""
 
@@ -197,30 +222,6 @@ class SettingsManager:
         except Exception as e:
             print_error(f"Error saving settings: {e}")
 
-@dataclass
-class ApplicationSettings:
-    """Script settings definitions - used by SettingsManager"""
-    pos: dict = field(default_factory=lambda: {"x": 0, "y": 0})
-    simbrief_settings: "SimBriefSettings" = field(default_factory=SimBriefSettings)
-
-    def get_window_position(self):
-        """Get x, y window position returned as tuple"""
-        return self.pos["x"], self.pos["y"]
-
-    def to_dict(self):
-        """Create dictionary from values"""
-        return {
-            "pos": self.pos,
-            "simbrief_settings": self.simbrief_settings.to_dict(),
-        }
-
-    @staticmethod
-    def from_dict(data: dict):
-        """Take values from dictionary"""
-        return ApplicationSettings(
-            pos=data.get("pos", {"x": 0, "y": 0}),
-            simbrief_settings=SimBriefSettings.from_dict(data.get("simbrief_settings", {})),
-        )
 
 # --- Main operational classes --------------------------------------------------
 class AppState:
