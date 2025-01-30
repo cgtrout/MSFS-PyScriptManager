@@ -1552,8 +1552,6 @@ class CountdownTimerDialog(tk.Toplevel):
         self.initial_time = countdown_state.last_entered_time
         self.gate_out_time = countdown_state.gate_out_time
 
-        self._setup_window(parent)
-
         # Forward declarations of UI components
         self.title_bar: Optional[tk.Frame] = None
         self.title_label: Optional[tk.Label] = None
@@ -1570,6 +1568,8 @@ class CountdownTimerDialog(tk.Toplevel):
         self.time_dropdown: Optional[tk.OptionMenu] = None
         self._drag_start_x: int = 0
         self._drag_start_y: int = 0
+
+        self._setup_window(parent)
 
     def _setup_window(self, parent: tk.Tk):
         """Configure window properties (positioning, colors, focus, etc.)"""
@@ -1829,33 +1829,29 @@ class CountdownTimerDialog(tk.Toplevel):
         Validate user input, update SimBrief settings, and set the countdown timer if time
         is provided.
         """
-        try:
-            print_debug("on_ok---------------------------")
+        print_debug("on_ok---------------------------")
 
-            # Update SimBrief settings from dialog inputs
-            self.update_simbrief_settings()
+        # Update SimBrief settings from dialog inputs
+        self.update_simbrief_settings()
 
-            # Save SimBrief settings regardless of whether a username is provided
-            settings = self.app_state.settings
-            self.app_state.settings_manager.save_settings(settings)
+        # Save SimBrief settings regardless of whether a username is provided
+        settings = self.app_state.settings
+        self.app_state.settings_manager.save_settings(settings)
 
-            # Handle the time input
-            time_text = self.time_entry.get().strip()
-            if time_text:
-                if not self.validate_time_format(time_text):
-                    messagebox.showerror("Invalid Input", "Please enter time in HHMM format.")
-                    return
+        # Handle the time input
+        time_text = self.time_entry.get().strip()
+        if time_text:
+            if not self.validate_time_format(time_text):
+                messagebox.showerror("Invalid Input", "Please enter time in HHMM format.")
+                return
 
-                future_time = self.calculate_future_time(time_text)
-                if not self.set_countdown_timer(future_time):
-                    messagebox.showerror("Error", "Failed to set the countdown timer.")
-                    return
+            future_time = self.calculate_future_time(time_text)
+            if not self.set_countdown_timer(future_time):
+                messagebox.showerror("Error", "Failed to set the countdown timer.")
+                return
 
-            # Close the dialog
-            self.destroy()
-
-        except Exception as e:
-            messagebox.showerror("Error", f"An unexpected error occurred: {str(e)}")
+        # Close the dialog
+        self.destroy()
 
     def pull_time(self):
         """
@@ -1911,17 +1907,16 @@ class CountdownTimerDialog(tk.Toplevel):
 
     def update_simbrief_settings(self):
         """Update SimBrief settings from dialog inputs."""
-        simbrief_settings = self.simbrief_settings
-        simbrief_settings.username = self.simbrief_entry.get().strip()
-        simbrief_settings.use_adjusted_time = self.simbrief_checkbox_var.get()
+        self.simbrief_settings.username = self.simbrief_entry.get().strip()
+        self.simbrief_settings.use_adjusted_time = self.simbrief_checkbox_var.get()
 
         # Validate selected_time_option - ignore custom values
         selected_time = self.selected_time_option.get()
         if selected_time in [option.value for option in SimBriefTimeOption]:
-            simbrief_settings.selected_time_option = SimBriefTimeOption(selected_time)
+            self.simbrief_settings.selected_time_option = SimBriefTimeOption(selected_time)
 
-        simbrief_settings.allow_negative_timer = self.negative_timer_checkbox_var.get()
-        simbrief_settings.auto_update_enabled = self.auto_update_var.get()
+        self.simbrief_settings.allow_negative_timer = self.negative_timer_checkbox_var.get()
+        self.simbrief_settings.auto_update_enabled = self.auto_update_var.get()
 
     def validate_simbrief_username(self):
         """Validate SimBrief username and show an error if invalid."""
