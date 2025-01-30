@@ -765,7 +765,7 @@ def check_cache(variable_name):
     """Return cached value if available, otherwise None."""
     with cache_lock:
         lookup = sim_variables.get(variable_name)
-        return lookup.get_value if lookup else None  # Get cached value from SimVarLookup
+        return lookup.get_value() if lookup else None  # Get cached value from SimVarLookup
 
 def add_to_cache(variable_name, default_value="N/A"):
     """Ensure a SimConnect variable is tracked and initialized in `sim_variables`."""
