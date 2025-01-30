@@ -475,7 +475,7 @@ class ServiceManager:
 
             # Tkinter state
             log_file.write(f"winfo_geometry="
-                           "{self.root.winfo_geometry()}, state={self.root.state()}\n")
+                           f"{self.root.winfo_geometry()}, state={self.root.state()}\n")
 
             # Log user-defined globals first
             log_file.write("### User-Defined Globals ###\n")
