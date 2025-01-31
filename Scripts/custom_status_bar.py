@@ -309,7 +309,7 @@ class AppState:
             try:
                 user_update() # type: ignore  # pylint: disable=undefined-variable
             except Exception as e:
-               print_error(f"Error in user_update [{type(e).__name__}]: {e}")
+                print_error(f"Error in user_update [{type(e).__name__}]: {e}")
 
     def call_user_slow_update(self):
         """Invoke slow update function every 500ms."""
@@ -687,7 +687,6 @@ def remain_label():
     return "Remaining:"
 
 # --- SimConnect Lookup Functions ---------------------------------------------
-# TODO - would it be better to make this more 'functional' to avoid global maniplation
 def initialize_simconnect():
     """Initialize the connection to SimConnect."""
     try:
@@ -789,9 +788,9 @@ class BackgroundUpdater:
     MIN_UPDATE_INTERVAL = 33 / 2  # Retry interval
     STANDARD_UPDATE_INTERVAL = 33  # Normal interval
 
-    def __init__(self, state, root):
+    def __init__(self, app_state, root):
         # TODO needs reference to root and app_state - determine best way to do this
-        self.state = state  # Store reference to global state
+        self.state = app_state  # Store reference to global state
         self.variable_sleep = 0.01  # Sleep time between variable lookups
 
         self.last_successful_update_time = time.time()
