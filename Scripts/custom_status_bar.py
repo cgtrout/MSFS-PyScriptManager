@@ -263,6 +263,8 @@ class AppState:
         Start tick loop - this 'tick' is used to clock user functions
         Based on a Tkinter .after scheduler so it needs root
         """
+        # This calls user_init - do it here to ensure TemplateHandler has been initialized
+        self.check_user_functions()
         self.tick_manager.start(root)
 
     def check_user_functions(self):
