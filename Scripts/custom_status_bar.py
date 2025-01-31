@@ -1482,6 +1482,9 @@ def main():
         root = ui_manager.get_root()
         service_manager = ServiceManager(state, state.settings, root)
 
+        # Load template once all globals are initialize to ensure template file has proper scope
+        ui_manager.template_handler.load_template_file()
+
         state.start(root)           # Clocks user updates
         ui_manager.start()          # Clocks display updates
         service_manager.start()     # Starts service tasks (background updater)
@@ -2034,14 +2037,17 @@ class TemplateHandler:
         Initialize the TemplateHandler with the given settings.
         """
         self.parser = TemplateParser()  # Initialize the parser
-        self.templates = self.load_templates()  # Load templates from file
-        self.selected_template_name = next(iter(self.templates), None)  # Select the first template
 
-        if not self.selected_template_name:
-            raise ValueError("No templates available to select.")
+        self.templates = self.load_templates()  # Load templates from file
+        self.selected_template_name = next(iter(self.templates), None)
 
         self.cached_parsed_blocks = []  # Cache parsed blocks for the selected template
         self.pending_template_change = False  # Track if the template was changed
+
+    def load_template_file(self):
+        """Initialization - separated so we can carefully determine injection point of template"""
+        if not self.selected_template_name:
+            raise ValueError("No templates available to select.")
 
         self.load_template_functions()
         self.cache_parsed_blocks()
