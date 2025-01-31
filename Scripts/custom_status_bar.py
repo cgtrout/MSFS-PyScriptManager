@@ -468,7 +468,7 @@ class ServiceManager:
         self.app_state = app_state
         self.background_updater = BackgroundUpdater(self.app_state, root)
 
-        self.settings = settings # TODO shold we pass this in like this?
+        self.settings = settings
         self.root = root
 
     def start(self):
@@ -1493,7 +1493,6 @@ def main():
 # --- Utility Classes  --------------------------------------------------------
 class CountdownTimerDialog(tk.Toplevel):
     """A dialog to set the countdown timer and SimBrief settings"""
-    # TODO just pass in settings object?
     def __init__(self, parent, app_state: AppState):
         super().__init__(parent)
 
