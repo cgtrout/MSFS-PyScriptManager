@@ -205,8 +205,6 @@ class SettingsManager:
     """Handles loading, saving, and managing application settings."""
 
     def __init__(self):
-        # Allow dynamic configuration of paths
-
         # Ensure the directory exists
         os.makedirs(CONFIG.SETTINGS_DIR, exist_ok=True)
 
