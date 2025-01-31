@@ -488,7 +488,7 @@ class ServiceManager:
             """Reset the faulthandler timer to prevent a dump."""
             faulthandler.dump_traceback_later(30, file=state.traceback_log_file, exit=True)
             self.root.after(10000, reset_traceback_timer)
-        if not is_debugging():
+        if not self.is_debugging():
             print_info("Traceback fault timer started")
             reset_traceback_timer()
         else:
@@ -502,6 +502,13 @@ class ServiceManager:
         except ImportError:
             print_warning("Please 'pip install keyboard' for dynamic logging")
 
+    def is_debugging(self):
+        """Check if the script is running in a debugging environment."""
+        try:
+            if sys.monitoring.get_tool(sys.monitoring.DEBUGGER_ID) is not None:
+                return True
+        except Exception:
+            return False
 
     def log_global_state(self, event=None, log_path="detailed_state_log.log", max_depth=2):
         """
@@ -1456,16 +1463,6 @@ class DragHandler:
     def stop_move(self, event):
         """Stop moving the window."""
         self.is_moving = False
-
-# --- MISC - debugging --------------------------------------------------------
-# TODO: consider moving to Service class?
-def is_debugging():
-    """Check if the script is running in a debugging environment."""
-    try:
-        if sys.monitoring.get_tool(sys.monitoring.DEBUGGER_ID) is not None:
-            return True
-    except Exception:
-        return False
 
 # --- MAIN Function -----------------------------------------------------------
 def main():
