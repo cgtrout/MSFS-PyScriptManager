@@ -507,7 +507,7 @@ class ServiceManager:
         try:
             if sys.monitoring.get_tool(sys.monitoring.DEBUGGER_ID) is not None:
                 return True
-        except Exception:
+        except Exception: # pylint: disable=broad-exception-caught
             return False
 
     def log_global_state(self, event=None, log_path="detailed_state_log.log", max_depth=2):
