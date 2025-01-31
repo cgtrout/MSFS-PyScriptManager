@@ -474,7 +474,7 @@ class ServiceManager:
             log_file.write(f"--- Global State Log: {datetime.now()} ---\n\n")
 
             # Tkinter state
-            log_file.write(f"winfo_geometry="
+            log_file.write("winfo_geometry="
                            f"{self.root.winfo_geometry()}, state={self.root.state()}\n")
 
             # Log user-defined globals first
@@ -1065,11 +1065,12 @@ class DisplayUpdater:
                 # Check if the render function returned valid data
                 if render_config:
                     # Update the existing widget if needed
-                    if widget.cget("text") != render_config["text"] or widget.cget("fg") != render_config["color"]:
+                    if widget.cget("text") != render_config["text"] \
+                    or widget.cget("fg") != render_config["color"]:
                         widget.config(text=render_config["text"], fg=render_config["color"])
                 else:
                     # Remove the widget if the config is invalid (e.g., condition failed)
-                   self.widget_pool.remove_widget(block_id)
+                    self.widget_pool.remove_widget(block_id)
         else:
             # Create and register a new widget
             if render_function:
@@ -1263,7 +1264,8 @@ class SimBriefFunctions:
                 if not current_generated_time:
                     print_warning("Unable to determine SimBrief flight plan generation time.")
                 elif current_generated_time != SimBriefFunctions.last_simbrief_generated_time:
-                    print_info(f"New SimBrief flight plan detected. Generation Time: {current_generated_time}")
+                    print_info( "New SimBrief flight plan detected. "
+                                f"Generation Time: {current_generated_time}")
 
                     # Try to reload SimBrief future time
                     success = SimBriefFunctions.update_countdown_from_simbrief(
@@ -1285,7 +1287,8 @@ class SimBriefFunctions:
             print_error(f"DEBUG: Exception during auto-update: {e}")
 
         # Schedule the next auto-update
-        root.after(CONFIG.SIMBRIEF_AUTO_UPDATE_INTERVAL_MS, lambda: SimBriefFunctions.auto_update_simbrief(root))
+        root.after(CONFIG.SIMBRIEF_AUTO_UPDATE_INTERVAL_MS,
+                    lambda: SimBriefFunctions.auto_update_simbrief(root))
 
     @staticmethod
     def adjust_gate_out_delta(
@@ -1320,7 +1323,8 @@ class SimBriefFunctions:
         if gate_out_entry_value:
             hours, minutes = int(gate_out_entry_value[:2]), int(gate_out_entry_value[2:])
             current_sim_time = get_simulator_datetime()
-            user_gate_time_dt = current_sim_time.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+            user_gate_time_dt = current_sim_time.replace(hour=hours, minute=minutes,
+                                                         second=0, microsecond=0)
 
             # Handle next-day adjustment
             if user_gate_time_dt.time() < current_sim_time.time():
@@ -1492,10 +1496,10 @@ class CountdownTimerDialog(tk.Toplevel):
         # Countdown Time Input
         countdown_frame = tk.Frame(self, bg=self.bg_color)
         countdown_frame.pack(pady=10, anchor="w")
-        tk.Label(countdown_frame, text="Enter Countdown Time (HHMM):", bg=self.bg_color, fg=self.fg_color,
-                font=large_font).pack(side="left", padx=5)
-        self.time_entry = tk.Entry(countdown_frame, justify="center", bg=self.entry_bg_color, fg=self.entry_fg_color,
-                                    font=("Helvetica", 16), width=10)  # Larger font for the entry
+        tk.Label(countdown_frame, text="Enter Countdown Time (HHMM):",
+                 bg=self.bg_color, fg=self.fg_color, font=large_font).pack(side="left", padx=5)
+        self.time_entry = tk.Entry(countdown_frame, justify="center", bg=self.entry_bg_color,
+                                    fg=self.entry_fg_color, font=("Helvetica", 16), width=10)
         if self.initial_time:
             self.time_entry.insert(0, self.initial_time)
         self.time_entry.pack(side="left", padx=5)
@@ -1506,12 +1510,14 @@ class CountdownTimerDialog(tk.Toplevel):
         # OK and Cancel Buttons
         button_frame = tk.Frame(self, bg=self.bg_color)
         button_frame.pack(pady=20)
-        tk.Button(button_frame, text="OK", command=self.on_ok, bg=self.button_bg_color, fg=self.button_fg_color,
-                activebackground=self.entry_bg_color, activeforeground=self.fg_color, font=small_font, width=10
+        tk.Button(  button_frame, text="OK", command=self.on_ok, bg=self.button_bg_color,
+                    fg=self.button_fg_color, activebackground=self.entry_bg_color,
+                    activeforeground=self.fg_color, font=small_font, width=10
                 ).pack(side="left", padx=5)
 
-        tk.Button(button_frame, text="Cancel", command=self.on_cancel, bg=self.button_bg_color, fg=self.button_fg_color,
-                activebackground=self.entry_bg_color, activeforeground=self.fg_color, font=small_font, width=10
+        tk.Button(  button_frame, text="Cancel", command=self.on_cancel, bg=self.button_bg_color,
+                    fg=self.button_fg_color, activebackground=self.entry_bg_color,
+                    activeforeground=self.fg_color, font=small_font, width=10
                 ).pack(side="right", padx=5)
 
         # Bind Enter to OK button
@@ -1540,7 +1546,8 @@ class CountdownTimerDialog(tk.Toplevel):
         self.title_bar.pack(side="top", fill="x")
 
         # Title Label
-        self.title_label = tk.Label(self.title_bar, text="Set Countdown Timer and SimBrief Settings",
+        self.title_label = tk.Label(self.title_bar,
+                                    text="Set Countdown Timer and SimBrief Settings",
                                     bg=self.title_bar_bg, fg=self.fg_color,
                                     font=("Helvetica", 10, "bold"))
         self.title_label.pack(side="left", padx=10)
@@ -1672,12 +1679,12 @@ class CountdownTimerDialog(tk.Toplevel):
 
         if isinstance(self.simbrief_settings.selected_time_option, str):
             # If it's already a string, assign it directly
-            self.selected_time_option = tk.StringVar(value=self.simbrief_settings.selected_time_option)
+            self.selected_time_option = tk.StringVar(
+                                            value=self.simbrief_settings.selected_time_option )
         elif isinstance(self.simbrief_settings.selected_time_option, Enum):
             # If it's an Enum, use its value
             self.selected_time_option = tk.StringVar(
-                value=self.simbrief_settings.selected_time_option.value
-            )
+                value=self.simbrief_settings.selected_time_option.value )
         else:
             # Handle unexpected types
             print_warning("Invalid type for selected_time_option")
@@ -1812,7 +1819,8 @@ class CountdownTimerDialog(tk.Toplevel):
 
     def fetch_simbrief_data(self):
         """Fetch and return SimBrief JSON data."""
-        simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(self.simbrief_settings.username)
+        simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(
+                                                                self.simbrief_settings.username)
         if not simbrief_json:
             messagebox.showerror("Error", "Failed to fetch SimBrief data. "
                                  "Please check the username or try again.")
@@ -1882,7 +1890,8 @@ class CollapsibleSection(tk.Frame):
         self.border_color = "#444444"
 
         # Frame styling to reduce white padding
-        self.configure(bg=self.bg_color, highlightbackground=self.border_color, highlightthickness=1)
+        self.configure( bg=self.bg_color, highlightbackground=self.border_color,
+                        highlightthickness=1)
 
         # Toggle button (with an arrow)
         self.toggle_button = tk.Button(
@@ -2248,7 +2257,8 @@ class TemplateParser:
                 # Handle an opening parenthesis
                 # Look backward to find the block name before '('
                 name_start = i - 1
-                while name_start >= 0 and (template_string[name_start].isalnum() or template_string[name_start] == "_"):
+                while name_start >= 0 and (template_string[name_start].isalnum()
+                or template_string[name_start] == "_"):
                     name_start -= 1
                 block_name = template_string[name_start + 1:i].strip()
 
