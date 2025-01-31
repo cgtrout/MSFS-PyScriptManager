@@ -251,11 +251,6 @@ class AppState:
         self.user_update_function_defined = False
         self.user_slow_update_function_defined = False
 
-    # TODO not 100% certain i like this here...
-    def save_settings(self):
-        """Save the current application settings."""
-        self.settings_manager.save_settings(self.settings)
-
 class UIManager:
     """Manages UI-specific state, such as dragging and widget updates."""
     def __init__(self, app_state: AppState):
