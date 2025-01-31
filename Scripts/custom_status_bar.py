@@ -175,6 +175,7 @@ class SimBriefSettings:
             allow_negative_timer=data.get("allow_negative_timer", False),
             auto_update_enabled=data.get("auto_update_enabled", False),
         )
+simbrief_settings = SimBriefSettings()
 
 @dataclass
 class ApplicationSettings:
@@ -1480,9 +1481,6 @@ def main():
         ui_manager = UIManager(state)
         root = ui_manager.get_root()
         service_manager = ServiceManager(state, state.settings, root)
-
-        # Expose this globally to not adversly affect Templates
-        simbrief_settings = state.settings.simbrief_settings
 
         state.start(root)           # Clocks user updates
         ui_manager.start()          # Clocks display updates
