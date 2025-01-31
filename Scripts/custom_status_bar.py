@@ -121,7 +121,6 @@ class Config:
     WINDOW_TITLE: ClassVar[str] = "Simulator Time"
     DARK_BG: ClassVar[str] = "#000000"
     FONT: ClassVar[tuple] = ("Helvetica", 16)
-    UPDATE_INTERVAL: ClassVar[int] = 33
     SIMBRIEF_AUTO_UPDATE_INTERVAL_MS: ClassVar[int] = 5 * 60 * 1000
     PADDING_X: ClassVar[int] = 20
     PADDING_Y: ClassVar[int] = 10
@@ -248,53 +247,26 @@ class AppState:
         self.traceback_log_file = open(self.log_file_path, "w", encoding="utf-8")
         faulthandler.enable(file=self.traceback_log_file)
 
+        # User functions
         self.user_update_function_defined = False
         self.user_slow_update_function_defined = False
 
-class UIManager:
-    """Manages UI-specific state, such as dragging and widget updates."""
-    def __init__(self, app_state: AppState):
-        self.root = tk.Tk()
-        self.app_state = app_state
-        self.settings = app_state.settings
-        self.drag_handler = DragHandler(self.root)
-        self.template_handler = TemplateHandler()
-        self.display_updater = DisplayUpdater(self.root, self, self.template_handler)
+         # Initialize TickManager
+        self.tick_manager = TickManager()
 
-        # These define if user functions are defined or not
-        self.user_update_function_defined = False
-        self.user_slow_update_function_defined = False
+        # Subscribe to ticks for user functions
+        self.tick_manager.subscribe_to_tick(self)
+        self.tick_manager.subscribe_to_slow_tick(self)
 
-        # Last known UI position (loaded from settings)
-        self.window_x, self.window_y = 0, 0
+        self.root = None
 
-        self.tkinter_setup()
+    def start(self, root):
+        """
+        Start tick loop - this 'tick' is used to clock user functions
+        Based on a Tkinter .after scheduler so it needs root
+        """
+        self.tick_manager.start(root)
 
-        self.check_user_functions()
-
-    def get_root(self):
-        """Provide access to the Tk root window for other components."""
-        return self.root
-
-    def tkinter_setup(self):
-        """Setup Tkinter related functionality"""
-        self.root.title(CONFIG.WINDOW_TITLE)
-        self.root.overrideredirect(True)
-        self.root.attributes("-topmost", True)
-        self.root.attributes("-alpha", CONFIG.ALPHA_TRANSPARENCY)
-        self.root.configure(bg=CONFIG.DARK_BG)
-
-        # Load window position
-        initial_x, initial_y = self.settings.get_window_position()
-        self.root.geometry(f"+{initial_x}+{initial_y}")
-
-        # --- Double click functionality for setting timer ---
-        self.root.bind("<Double-1>", lambda event: self.open_timer_dialog())
-
-        # Bind the right-click menu
-        self.root.bind("<Button-3>", self.show_template_menu)
-
-    # TODO uncertain this is best location?
     def check_user_functions(self):
         """Check to see if user functions have been defined"""
         try:
@@ -320,6 +292,130 @@ class UIManager:
         else:
             self.user_slow_update_function_defined = False
             print_warning("No user_slow_update function defined in template file")
+
+
+    def tick(self):
+        """Normal tick (tick manager)"""
+        self.call_user_update()
+
+    def slow_tick(self):
+        """Slow tick (tick manager)"""
+        self.call_user_slow_update()
+
+    def call_user_update(self):
+        """Invoke user-defined update function (if it exists)."""
+        if "user_update" in globals():
+            try:
+                user_update() # type: ignore  # pylint: disable=undefined-variable
+            except Exception as e:
+               print_error(f"Error in user_update [{type(e).__name__}]: {e}")
+
+    def call_user_slow_update(self):
+        """Invoke slow update function every 500ms."""
+        if "user_slow_update" in globals():
+            try:
+                user_slow_update() # type: ignore  # pylint: disable=undefined-variable
+            except Exception as e:
+                print_error(f"Error in user_slow_update [{type(e).__name__}]: {e}")
+
+class TickManager:
+    """
+    Handles scheduling and notifying tick subscribers.
+    Used to handle timing for user calls and display update
+    """
+    UPDATE_INTERVAL = 33
+    SLOW_UPDATE_INTERVAL = 500
+    SLOW_UPDATE_TICKS = SLOW_UPDATE_INTERVAL // UPDATE_INTERVAL
+
+    def __init__(self):
+        """Initialize tick tracking and subscriber lists."""
+        self.tick_count = 0
+        self.root = None  # Assigned when `start()` is called
+
+        # Crate tick subscriber sets
+        self.tick_subscribers = set()
+        self.slow_tick_subscribers = set()
+
+    def start(self, root):
+        """Start ticking using Tkinter's scheduler."""
+        self.root = root
+        self.tick()
+
+    def tick(self):
+        """Called every `update_interval` to notify subscribers."""
+        self.tick_count += 1
+
+        # Notify fast tick subscribers
+        for subscriber in self.tick_subscribers:
+            subscriber.tick()
+
+        # If slow tick interval is reached
+        if self.tick_count >= self.SLOW_UPDATE_TICKS:
+            for subscriber in self.slow_tick_subscribers:
+                subscriber.slow_tick()
+            self.tick_count = 0  # Reset tick count
+
+        # Schedule the next tick
+        self.root.after(self.UPDATE_INTERVAL, self.tick)
+
+    def subscribe_to_tick(self, subscriber):
+        """Register a component for fast tick updates."""
+        self._validate_subscriber(subscriber, "tick")
+        self.tick_subscribers.add(subscriber)
+
+    def subscribe_to_slow_tick(self, subscriber):
+        """Register a component for slow tick updates."""
+        self._validate_subscriber(subscriber, "slow_tick")
+        self.slow_tick_subscribers.add(subscriber)
+
+    @staticmethod
+    def _validate_subscriber(subscriber, method_name):
+        """Ensure the subscriber implements the required method."""
+        if not hasattr(subscriber, method_name) or not callable(getattr(subscriber, method_name)):
+            raise TypeError(f"Subscriber {subscriber.__class__.__name__} "
+                            f"must implement '{method_name}()'")
+
+class UIManager:
+    """Manages UI-specific state, such as dragging and widget updates."""
+    def __init__(self, app_state: AppState):
+        self.root = tk.Tk()
+        self.app_state = app_state
+        self.settings = app_state.settings
+        self.drag_handler = DragHandler(self.root)
+        self.template_handler = TemplateHandler()
+        self.display_updater = DisplayUpdater( self.root, self.app_state,
+                                               self.template_handler, self.drag_handler )
+
+        # These define if user functions are defined or not
+        self.user_update_function_defined = False
+        self.user_slow_update_function_defined = False
+
+        # Last known UI position (loaded from settings)
+        self.window_x, self.window_y = 0, 0
+
+        self.tkinter_setup()
+
+    def get_root(self):
+        """Provide access to the Tk root window for other components."""
+        return self.root
+
+    def tkinter_setup(self):
+        """Setup Tkinter related functionality"""
+        self.root.title(CONFIG.WINDOW_TITLE)
+        self.root.overrideredirect(True)
+        self.root.attributes("-topmost", True)
+        self.root.attributes("-alpha", CONFIG.ALPHA_TRANSPARENCY)
+        self.root.configure(bg=CONFIG.DARK_BG)
+
+        # Load window position
+        initial_x, initial_y = self.settings.get_window_position()
+        self.root.geometry(f"+{initial_x}+{initial_y}")
+
+        # --- Double click functionality for setting timer ---
+        self.root.bind("<Double-1>", lambda event: self.open_timer_dialog())
+
+        # Bind the right-click menu
+        self.root.bind("<Button-3>", self.show_template_menu)
 
     def open_timer_dialog(self):
         """
@@ -682,8 +778,8 @@ def get_formatted_value(variable_names, format_string=None):
 class BackgroundUpdater:
     """Continously updates cached values from Simconnect"""
 
-    MIN_UPDATE_INTERVAL = CONFIG.UPDATE_INTERVAL / 2  # Retry interval
-    STANDARD_UPDATE_INTERVAL = CONFIG.UPDATE_INTERVAL  # Normal interval
+    MIN_UPDATE_INTERVAL = 33 / 2  # Retry interval
+    STANDARD_UPDATE_INTERVAL = 33  # Normal interval
 
     def __init__(self, state, root):
         # TODO needs reference to root and app_state - determine best way to do this
@@ -965,27 +1061,27 @@ class DisplayUpdater:
     # Do slow update every 15 normal updates (approx 500ms)
     SLOW_UPDATE_INTERVAL = 15
 
-    def __init__(self, root, state, template_handler):
+    def __init__(self, root, app_state, template_handler, drag_handler):
         self.root = root
-        self.state = state
+        self.state = app_state
         self.template_handler = template_handler
+        self.drag_handler = drag_handler
         self.display_frame = tk.Frame(root, bg=CONFIG.DARK_BG)
         self.display_frame.pack(padx=10, pady=5)
 
-        self.widget_pool = WidgetPool()  # Use WidgetPool instead of a direct dictionary
+        self.widget_pool = WidgetPool()
         self.update_display_frame_count = 0
 
-    def start(self):
-        """Starts the update loop for the display."""
+        # Subscribe to tick manager
+        self.state.tick_manager.subscribe_to_tick(self)
+        self.state.tick_manager.subscribe_to_slow_tick(self)
+
+    def tick(self):
+        """Handles fast tick updates."""
         self.update_display()
 
-    def update_display(self):
-        """Render and update the display based on the parsed template."""
-        self.call_user_functions()
-        self.update_frame_counter()
-
-        # Toggle -topmost only during slow updates
-        # TODO: split in to function
+    def slow_tick(self):
+        """Handles slow tick updates."""
         if self.update_display_frame_count == 0:
             self.root.attributes("-topmost", False)
             self.root.attributes("-topmost", True)
@@ -993,9 +1089,11 @@ class DisplayUpdater:
                 print_warning("Restoring minimized window!")
                 self.root.deiconify()
 
+    def update_display(self):
+        """Render and update the display based on the parsed template."""
+
         # Prevent updates while dragging
-        if self.state.drag_handler.is_moving:
-            self.root.after(CONFIG.UPDATE_INTERVAL, self.update_display)
+        if self.drag_handler.is_moving:
             return
 
         # Handle template updates
@@ -1017,9 +1115,6 @@ class DisplayUpdater:
 
         # Adjust window size dynamically
         self.adjust_window_size()
-
-        # Schedule next update
-        self.root.after(CONFIG.UPDATE_INTERVAL, self.update_display)
 
     def repack_widgets(self, parsed_blocks):
         """Repack widgets (for order preservation)"""
@@ -1088,26 +1183,6 @@ class DisplayUpdater:
             print_warning(f"Detected unusually small window size ({new_width}x{new_height})")
 
         self.root.geometry(f"{new_width}x{new_height}")
-
-    def call_user_functions(self):
-        """Invoke user-defined update functions."""
-        if self.state.user_update_function_defined:
-            try:
-                user_update() # type: ignore  # pylint: disable=undefined-variable
-            except Exception as e:
-                print_error(f"Error in user_update [{type(e).__name__}]: {e}")
-
-        if self.state.user_slow_update_function_defined and self.update_display_frame_count == 0:
-            try:
-                user_slow_update() # type: ignore  # pylint: disable=undefined-variable
-            except Exception as e:
-                print_error(f"Error in user_slow_update [{type(e).__name__}]: {e}")
-
-    def update_frame_counter(self):
-        """Manage frame update frequency."""
-        self.update_display_frame_count += 1
-        if self.update_display_frame_count == self.SLOW_UPDATE_INTERVAL:
-            self.update_display_frame_count = 0
 
 # --- Simbrief functionality --------------------------------------------------
 class SimBriefFunctions:
@@ -1391,8 +1466,6 @@ def is_debugging():
     except Exception:
         return False
 
-
-
 # --- MAIN Function -----------------------------------------------------------
 def main():
     """Main entry point to script"""
@@ -1411,8 +1484,9 @@ def main():
         # Expose this globally to not adversly affect Templates
         simbrief_settings = state.settings.simbrief_settings
 
-        ui_manager.start()
-        service_manager.start()
+        state.start(root)           # Clocks user updates
+        ui_manager.start()          # Clocks display updates
+        service_manager.start()     # Starts service tasks (background updater)
 
         root.mainloop()
     except ValueError as e:
