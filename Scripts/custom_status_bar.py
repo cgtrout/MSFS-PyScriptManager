@@ -788,7 +788,8 @@ def reset_cache():
     # TODO: possibly have flag to represent empty?
     with cache_lock:
         sim_variables.clear()
-    print_warning("SimConnect cache reset!")
+    if state.sim_connected:
+        print_warning("SimConnect cache reset!")
 
 def get_formatted_value(variable_names, format_string=None):
     """
