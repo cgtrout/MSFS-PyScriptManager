@@ -109,7 +109,6 @@ def user_init():
 # --- Globals  ----------------------------------------------------------------
 state: Optional["AppState"] = None                      # Main Script State
 countdown_state : Optional["CountdownState"] = None     # Countdown timer State
-simbrief_settings: Optional["SimBriefSettings"] = None  # Simbrief settings
 
 # --- CONFIG Global Variables  ------------------------------------------------
 
@@ -175,7 +174,6 @@ class SimBriefSettings:
             allow_negative_timer=data.get("allow_negative_timer", False),
             auto_update_enabled=data.get("auto_update_enabled", False),
         )
-simbrief_settings = SimBriefSettings()
 
 @dataclass
 class ApplicationSettings:
@@ -250,7 +248,7 @@ class AppState:
         self.user_update_function_defined = False
         self.user_slow_update_function_defined = False
 
-         # Initialize TickManager
+        # Initialize TickManager
         self.tick_manager = TickManager()
 
         # Subscribe to ticks for user functions
@@ -1017,8 +1015,8 @@ def compute_countdown_timer(
         adjusted_seconds = remaining_time.total_seconds()
 
     # Enforce allow_negative_timer setting
-    if simbrief_settings is not None:
-        if not simbrief_settings.allow_negative_timer and adjusted_seconds < 0:
+    if state is not None and state.settings.simbrief_settings is not None:
+        if not state.settings.simbrief_settings.allow_negative_timer and adjusted_seconds < 0:
             adjusted_seconds = 0
 
     # Format the adjusted remaining time as HH:MM:SS
@@ -1083,7 +1081,8 @@ def set_future_time_internal(future_time_input, current_sim_time):
 
         if isinstance(future_time_input, datetime):
             # Validate that the future time is after the current simulator time
-            if future_time_input <= current_sim_time and not simbrief_settings.allow_negative_timer:
+            if future_time_input <= current_sim_time and \
+            not state.settings.simbrief_settings.allow_negative_timer:
                 raise ValueError("Future time must be later than the current simulator time.")
 
             # Log successful setting of the timer
@@ -1378,6 +1377,7 @@ class SimBriefFunctions:
         Automatically fetch SimBrief data and update the countdown timer if the generation time
         has changed.
         """
+        simbrief_settings = state.settings.simbrief_settings
         if not simbrief_settings.auto_update_enabled:
             return  # Exit if auto-update is disabled
 
