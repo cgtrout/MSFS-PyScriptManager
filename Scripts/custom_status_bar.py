@@ -687,7 +687,7 @@ def initialize_simconnect():
     """Initialize the connection to SimConnect."""
     try:
         state.sim_connect = SimConnect()  # Connect to SimConnect
-        state.aircraft_requests = AircraftRequests(state.sim_connect, _time=0)
+        state.aircraft_requests = AircraftRequests(state.sim_connect, _time=10, _attemps=2)
         state.sim_connected = True
     except Exception:
         state.sim_connected = False
