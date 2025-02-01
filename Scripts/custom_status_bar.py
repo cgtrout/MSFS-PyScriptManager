@@ -832,8 +832,8 @@ class BackgroundUpdater:
 
     def __init__(self, app_state, root):
         # TODO needs reference to root and app_state - determine best way to do this
-        self.state = app_state  # Store reference to global state
-        self.variable_sleep = 0.01  # Sleep time between variable lookups
+        self.state = state  # Store reference to global state
+        self.variable_sleep = 0.001  # Sleep time between variable lookups
 
         self.last_successful_update_time = time.time()
         self.running = False
