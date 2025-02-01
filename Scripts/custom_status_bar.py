@@ -731,7 +731,11 @@ cache_lock = threading.Lock()                   # Lock used by cache system
 
 def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
                          retries: int = 10, retry_interval: float = 0.2) -> Any:
-    """Fetch a SimConnect variable from the cache"""
+    """
+    Fetch a SimConnect variable from the cache
+    Retries is intended to deal with first time calls - gives a chance for value to be loaded
+    by Simconnect module rather than returning None
+    """
     if not is_simconnect_available():
         return "Sim Not Running"
 
