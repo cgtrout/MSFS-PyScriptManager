@@ -735,6 +735,8 @@ def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
     Fetch a SimConnect variable from the cache
     Retries is intended to deal with first time calls - gives a chance for value to be loaded
     by Simconnect module rather than returning None
+    Note: for faster lookups it may be preferable to call check_cache which will return value
+    from cache
     """
     if not is_simconnect_available():
         return "Sim Not Running"
