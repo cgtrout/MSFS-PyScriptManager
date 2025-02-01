@@ -743,7 +743,7 @@ def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
         return value is not None and value != default_value
 
     # Check cache value
-    value = check_cache(variable_name)
+    value = get_cache_value(variable_name)
     if is_value_valid(value, default_value):
         return value
     else:
@@ -753,7 +753,7 @@ def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
     # Retry lookup loop - purpose is to handle first lookup to give it a chance for it to be
     # captured in background updater
     for _ in range(retries):
-        value = check_cache(variable_name)
+        value = get_cache_value(variable_name)
         if is_value_valid(value, default_value):
             return value
         time.sleep(retry_interval)
@@ -764,8 +764,7 @@ def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
     )
     return default_value
 
-# TODO: possibly should be get_cache_value?
-def check_cache(variable_name):
+def get_cache_value(variable_name):
     """Return cached value if available, otherwise None."""
     with cache_lock:
         lookup = sim_variables.get(variable_name)
