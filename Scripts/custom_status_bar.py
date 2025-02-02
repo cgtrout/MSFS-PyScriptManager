@@ -718,10 +718,24 @@ class SimVarLookup:
         """Update the last update timestamp."""
         self.last_update = time.time()
 
-    def set_value(self, v):
-        """Set internal value"""
-        # TODO: Validiate type
-        self._value = v
+    def set_value(self, v: Any):
+        """Set internal value based on type"""
+
+        # Note that SimConnect lib only returns floats or strings
+        if isinstance(v, bytes):
+            try:
+                decoded_string = v.decode("utf-8").strip("\x00")
+                self._value = decoded_string
+                self.mark_updated()
+            except UnicodeDecodeError as e:
+                print_error(f"set_value: Decode error on {self.name}")
+                raise ValueError(f"Failed to decode bytes for {self.name}: {e}") from e
+        elif isinstance(v, float):
+            self._value = v
+            self.mark_updated()
+        else:
+            print_error(f"set_value: Unexpected value type: {type(v)} for {self.name}")
+            raise TypeError(f"Unexpected value type: {type(v)} for {self.name}")
 
     def get_value(self, max_age=5.0):
         """Retrieve the value, marking it stale if too old."""
