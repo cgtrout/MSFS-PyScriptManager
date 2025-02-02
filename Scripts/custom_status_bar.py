@@ -914,7 +914,7 @@ class BackgroundUpdater:
                                 print_warning("'aq' is None or does not have a 'get' method.")
                                 lookup_failed = True
                         except OSError as e:
-                            print_debug(f"Error fetching '{variable_name}': {e}. "
+                            print_debug(f"Error fetching '{variable.name}': {e}. "
                                             "Will retry in the next cycle.")
                             lookup_failed = True
 
