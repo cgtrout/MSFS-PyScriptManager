@@ -887,14 +887,14 @@ class BackgroundUpdater:
                     with cache_lock:
                         vars_to_update = sorted( sim_variables.values(), key=lambda v: v.last_update )
 
-                    for variable_name in vars_to_update:
+                    for variable in vars_to_update:
                         try:
                             if self._is_aircraft_requests_defined():
-                                value = self.state.aircraft_requests.get(variable_name)
+                                value = self.state.aircraft_requests.get(variable.name)
                                 if value is not None:
                                     with cache_lock:
-                                        sim_variables[variable_name].value = value
-                                        sim_variables[variable_name].mark_updated()
+                                        sim_variables[variable.name].set_value(value)
+                                        sim_variables[variable.name].mark_updated()
                                 else:
                                     lookup_failed = True
                             else:
