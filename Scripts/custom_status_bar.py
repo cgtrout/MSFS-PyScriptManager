@@ -39,6 +39,7 @@ print("custom_status_bar: Close this window to close status bar")
 #
 # ALL template modification should be done from  /Settings/status_bar_templates.py
 DEFAULT_TEMPLATES = """
+from Scripts.custom_status_bar import * # Get typing IDE support
 #  TEMPLATE DOCUMENTATION
 # ====================================
 #  Template string below defines the content and format of the data shown in the application's window,
