@@ -32,6 +32,8 @@ LIGHTING_LVARS = {
     "L:S_CHART_LIGHT_TEMP_FO": 0,           # Switch for chart light (captain)
     "L:A_CHART_LIGHT_TEMP_CAPT": 0,         # Brightness knob on capt window
     "L:S_CHART_LIGHT_TEMP_CAPT": 0,         # Switch for chart light (captain)
+    "L:S_MIP_LIGHT_CONSOLEFLOOR_CAPT": 0,   # Console floor light (captain)
+    "L:S_MIP_LIGHT_CONSOLEFLOOR_FO": 0      # Console floor light (FO)
 }
 
 # List of LVARs to control
