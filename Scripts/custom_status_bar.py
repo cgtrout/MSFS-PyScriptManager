@@ -109,7 +109,6 @@ def user_init():
 # --- Globals  ----------------------------------------------------------------
 state: Optional["AppState"] = None                      # Main Script State
 countdown_state : Optional["CountdownState"] = None     # Countdown timer State
-simbrief_settings: Optional["SimBriefSettings"] = None  # Simbrief settings
 
 # --- CONFIG Global Variables  ------------------------------------------------
 
@@ -175,7 +174,6 @@ class SimBriefSettings:
             allow_negative_timer=data.get("allow_negative_timer", False),
             auto_update_enabled=data.get("auto_update_enabled", False),
         )
-simbrief_settings = SimBriefSettings()
 
 @dataclass
 class ApplicationSettings:
@@ -250,7 +248,7 @@ class AppState:
         self.user_update_function_defined = False
         self.user_slow_update_function_defined = False
 
-         # Initialize TickManager
+        # Initialize TickManager
         self.tick_manager = TickManager()
 
         # Subscribe to ticks for user functions
@@ -605,11 +603,7 @@ class CountdownState:
             raise TypeError("countdown_target_time must be a datetime object")
         self.countdown_target_time = new_time
 
-# Shared data structures for threading
-# TODO move these?
-simconnect_cache = {}
-variables_to_track = set()
-cache_lock = threading.Lock()
+
 
 # --- SimConnect Template Functions -------------------------------------------
 def get_sim_time():
@@ -691,7 +685,7 @@ def initialize_simconnect():
     """Initialize the connection to SimConnect."""
     try:
         state.sim_connect = SimConnect()  # Connect to SimConnect
-        state.aircraft_requests = AircraftRequests(state.sim_connect, _time=0)
+        state.aircraft_requests = AircraftRequests(state.sim_connect, _time=10, _attemps=2)
         state.sim_connected = True
     except Exception:
         state.sim_connected = False
@@ -706,23 +700,80 @@ def is_simconnect_available() -> bool:
     )
 
 # --- Cache Lookup Functions --------------------------------------------------
-# These will lookup values from cache values which are updated from Background-
-# Updater
+
+# These will lookup values from cache values which are updated from Background-Updater
+
+@dataclass
+class SimVarLookup:
+    """Tracks an individual SimConnect lookup - used by cache system"""
+    name: str
+    last_update: float = field(default_factory=lambda: 0.0)
+    _value: Any = "N/A"  # Default value before it's updated
+
+    def needs_update(self, update_frequency: float) -> bool:
+        """Check if the variable needs an update based on its last refresh time."""
+        return (time.time() - self.last_update) >= update_frequency
+
+    def mark_updated(self):
+        """Update the last update timestamp."""
+        self.last_update = time.time()
+
+    def set_value(self, v: Any):
+        """Set internal value based on type"""
+
+        # Note that SimConnect lib only returns floats or strings
+        if isinstance(v, bytes):
+            try:
+                decoded_string = v.decode("utf-8").strip("\x00")
+                self._value = decoded_string
+                self.mark_updated()
+            except UnicodeDecodeError as e:
+                print_error(f"set_value: Decode error on {self.name}")
+                raise ValueError(f"Failed to decode bytes for {self.name}: {e}") from e
+        elif isinstance(v, float):
+            self._value = v
+            self.mark_updated()
+        else:
+            print_error(f"set_value: Unexpected value type: {type(v)} for {self.name}")
+            raise TypeError(f"Unexpected value type: {type(v)} for {self.name}")
+
+    def get_value(self, max_age=5.0):
+        """Retrieve the value, marking it stale if too old."""
+        if self.needs_update(max_age):
+           self._value = None
+        return self._value
+
+sim_variables: dict[str, SimVarLookup] = {}     # Cache of looked up SimConnect variables
+cache_lock = threading.Lock()                   # Lock used by cache system
+
 def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
                          retries: int = 10, retry_interval: float = 0.2) -> Any:
-    """Fetch a SimConnect variable with caching and retry logic."""
-    # TODO: requires more detailed documentation on behavior
+    """
+    Fetch a SimConnect variable from the cache
+    Retries is intended to deal with first time calls - gives a chance for value to be loaded
+    by Simconnect module rather than returning None
+    Note: for faster lookups it may be preferable to call check_cache which will return value
+    from cache
+    """
     if not is_simconnect_available():
         return "Sim Not Running"
 
-    value = check_cache(variable_name)
-    if value and value != default_value:
-        return value
+    def is_value_valid(value: Any, default_value: Any) -> bool:
+        return value is not None and value != default_value
 
-    add_to_cache(variable_name, default_value)
+    # Check cache value
+    value = get_cache_value(variable_name)
+    if is_value_valid(value, default_value):
+        return value
+    else:
+        # Add/reset cache value since value isn't valid
+        add_to_cache(variable_name, default_value)
+
+    # Retry lookup loop - purpose is to handle first lookup to give it a chance for it to be
+    # captured in background updater
     for _ in range(retries):
-        value = check_cache(variable_name)
-        if value is not None and value != default_value:
+        value = get_cache_value(variable_name)
+        if is_value_valid(value, default_value):
             return value
         time.sleep(retry_interval)
 
@@ -732,24 +783,32 @@ def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
     )
     return default_value
 
-def check_cache(variable_name):
-    """Return SimConnect cached value for variable if available, otherwise None."""
+def get_cache_value(variable_name):
+    """Return cached value if available, otherwise None."""
     with cache_lock:
-        return simconnect_cache.get(variable_name)
+        lookup = sim_variables.get(variable_name)
+        return lookup.get_value() if lookup else None  # Get cached value from SimVarLookup
 
 def add_to_cache(variable_name, default_value="N/A"):
-    """Add SimConnect variable to cache with default value and track it."""
+    """Ensure a SimConnect variable is tracked and initialized in `sim_variables`."""
     with cache_lock:
-        simconnect_cache[variable_name] = default_value
-        variables_to_track.add(variable_name)
+        if variable_name not in sim_variables:
+            sim_variables[variable_name] = SimVarLookup(name=variable_name)
 
-def prefetch_variables(*variables, default_value="N/A"):
-    """Prefetch variables by initializing them in the cache and tracking list."""
+def prefetch_variables(*variables):
+    """Ensure SimConnect variables are tracked without fetching them yet."""
     with cache_lock:
         for variable_name in variables:
-            if variable_name not in simconnect_cache:  # Ensure each variable is only added once
-                simconnect_cache[variable_name] = default_value
-                variables_to_track.add(variable_name)
+            if variable_name not in sim_variables:
+                sim_variables[variable_name] = SimVarLookup(name=variable_name)
+
+def reset_cache():
+    """Reset all cached SimConnect variables."""
+    # TODO: possibly have flag to represent empty?
+    with cache_lock:
+        sim_variables.clear()
+    if state.sim_connected:
+        print_warning("SimConnect cache reset!")
 
 def get_formatted_value(variable_names, format_string=None):
     """
@@ -790,8 +849,8 @@ class BackgroundUpdater:
 
     def __init__(self, app_state, root):
         # TODO needs reference to root and app_state - determine best way to do this
-        self.state = app_state  # Store reference to global state
-        self.variable_sleep = 0.01  # Sleep time between variable lookups
+        self.state = state  # Store reference to global state
+        self.variable_sleep = 0.001  # Sleep time between variable lookups
 
         self.last_successful_update_time = time.time()
         self.running = False
@@ -827,25 +886,29 @@ class BackgroundUpdater:
             try:
                 if not self.state.sim_connected:
                     initialize_simconnect()
-                    continue
+                    # Allow execution to continue so we can detect if connection was successful or
+                    # not
 
                 if self.state.sim_connected:
-                    if self.state.sim_connect is None or not self.state.sim_connect.ok or self.state.sim_connect.quit == 1:
+                    # Detect if sim_connect lib is reporting issue or quit status
+                    if not self.state.sim_connect.ok or self.state.sim_connect.quit == 1:
                         print_warning("SimConnect state invalid. Disconnecting.")
                         self.state.sim_connected = False
                         continue
 
                     # Make a copy of the variables to avoid holding the lock during network calls
+                    # Prioritize by last_update
                     with cache_lock:
-                        vars_to_update = list(variables_to_track)
+                        vars_to_update = sorted( sim_variables.values(), key=lambda v: v.last_update )
 
-                    for variable_name in vars_to_update:
+                    for variable in vars_to_update:
                         try:
-                            if self.state.aircraft_requests is not None and hasattr(self.state.aircraft_requests, 'get'):
-                                value = self.state.aircraft_requests.get(variable_name)
+                            if self._is_aircraft_requests_defined():
+                                value = self.state.aircraft_requests.get(variable.name)
                                 if value is not None:
                                     with cache_lock:
-                                        simconnect_cache[variable_name] = value
+                                        sim_variables[variable.name].set_value(value)
+                                        sim_variables[variable.name].mark_updated()
                                 else:
                                     lookup_failed = True
                             else:
@@ -859,9 +922,9 @@ class BackgroundUpdater:
                         # Introduce a small sleep between variable updates
                         time.sleep(self.variable_sleep)
 
-                else:
-                    print_warning("SimConnect not connected. Retrying in 1 second.")
-                    time.sleep(1) # TODO - maybe this is excessive retry interval?
+                else: # sim_connected == False
+                    reset_cache()
+                    time.sleep(5)
 
                 # Adjust sleep interval dynamically
                 sleep_interval = self.MIN_UPDATE_INTERVAL \
@@ -874,6 +937,10 @@ class BackgroundUpdater:
             finally:
                 # Update the last successful update time - used for 'heartbeat' functionality
                 self.last_successful_update_time = time.time()
+
+    def _is_aircraft_requests_defined(self):
+        """Helper function to see if aircraft_requests is valid as an object"""
+        return self.state.aircraft_requests is not None and hasattr(self.state.aircraft_requests, 'get')
 
     def background_thread_watchdog_function(self):
         """Check background thread function to see if it has locked up"""
@@ -967,8 +1034,8 @@ def compute_countdown_timer(
         adjusted_seconds = remaining_time.total_seconds()
 
     # Enforce allow_negative_timer setting
-    if simbrief_settings is not None:
-        if not simbrief_settings.allow_negative_timer and adjusted_seconds < 0:
+    if state is not None and state.settings.simbrief_settings is not None:
+        if not state.settings.simbrief_settings.allow_negative_timer and adjusted_seconds < 0:
             adjusted_seconds = 0
 
     # Format the adjusted remaining time as HH:MM:SS
@@ -1033,7 +1100,8 @@ def set_future_time_internal(future_time_input, current_sim_time):
 
         if isinstance(future_time_input, datetime):
             # Validate that the future time is after the current simulator time
-            if future_time_input <= current_sim_time and not simbrief_settings.allow_negative_timer:
+            if future_time_input <= current_sim_time and \
+            not state.settings.simbrief_settings.allow_negative_timer:
                 raise ValueError("Future time must be later than the current simulator time.")
 
             # Log successful setting of the timer
@@ -1328,6 +1396,7 @@ class SimBriefFunctions:
         Automatically fetch SimBrief data and update the countdown timer if the generation time
         has changed.
         """
+        simbrief_settings = state.settings.simbrief_settings
         if not simbrief_settings.auto_update_enabled:
             return  # Exit if auto-update is disabled
 
