@@ -19,7 +19,8 @@ except ImportError:
     print("MSFS-PyScriptManager: Please ensure /Lib dir is present")
     sys.exit(1)
 
-# Lighting LVARs with default values - these values will be assigned by script
+# Initialization Lighting LVARs with default values - these values will be assigned by script
+# at start of script
 LIGHTING_LVARS = {
     "L:S_OH_INT_LT_DOME": 0,                # Default value for Dome Light (0,1,2)
     "L:A_OH_LIGHTING_OVD": 100,             # Overhead backlighting (0-100)
@@ -36,7 +37,9 @@ LIGHTING_LVARS = {
     "L:S_MIP_LIGHT_CONSOLEFLOOR_FO": 0      # Console floor light (FO)
 }
 
-# List of LVARs to control
+# List of screen LVARs to control
+# These will be linked to far left captain side screen control (PFD Brightness)
+# AND/OR joystick bind
 DISPLAY_LVARS = [
     "L:A_DISPLAY_BRIGHTNESS_CO",
     "L:A_DISPLAY_BRIGHTNESS_FO",
@@ -93,6 +96,8 @@ def setup():
 def set_cockpit_lights(mf_requests):
     """Iterate through cockpit lights and set them to values"""
     for lvar_name, default_value in LIGHTING_LVARS.items():
+        # Set to max value then default value
+        set_and_verify_lvar(mf_requests, lvar_name, 1.0)
         set_and_verify_lvar(mf_requests, lvar_name, default_value)
 
 def set_and_verify_lvar(mf_requests, lvar, value, tolerance=0.01, max_retries=MAX_RETRIES, retry_delay=RETRY_DELAY):
@@ -224,8 +229,6 @@ def main():
         print_info("Make sure MSFS is running and try again.")
     except Exception as e:
         print_error(f"An unexpected error occurred: {e}")
-
-
 
 if __name__ == "__main__":
     main()
