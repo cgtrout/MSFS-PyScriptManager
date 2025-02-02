@@ -3,6 +3,7 @@
 # https://kb.fenixsim.com/example-of-how-to-use-lvars
 # https://github.com/Koseng/MSFSPythonSimConnectMobiFlightExtension/
 
+import logging
 from time import sleep
 import os
 import json
@@ -18,6 +19,9 @@ try:
 except ImportError:
     print("MSFS-PyScriptManager: Please ensure /Lib dir is present")
     sys.exit(1)
+
+# Disable warnings - still shows errors
+logging.getLogger("SimConnect.SimConnect").setLevel(logging.ERROR)
 
 # Initialization Lighting LVARs with default values - these values will be assigned by script
 # at start of script

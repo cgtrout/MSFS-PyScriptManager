@@ -1,6 +1,8 @@
 # fenix_disable_efb.py: Shows an example of how you can disable the Fenix A32x EFBs using a script
 #  https://kb.fenixsim.com/example-of-how-to-use-lvars - use this tutorial to see how to find other lvars
 # - uses https://github.com/Koseng/MSFSPythonSimConnectMobiFlightExtension/ extension library for reading from Mobiflight
+import logging
+import os
 import sys
 from time import sleep
 from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
@@ -11,6 +13,9 @@ try:
 except ImportError:
     print("MSFS-PyScriptManager: Please ensure /Lib dir is present")
     sys.exit(1)
+
+# Disable warnings - still shows errors
+logging.getLogger("SimConnect.SimConnect").setLevel(logging.ERROR)
 
 # Constants for LVARs
 EFB_VISIBLE_CAPT = "L:S_EFB_VISIBLE_CAPT"

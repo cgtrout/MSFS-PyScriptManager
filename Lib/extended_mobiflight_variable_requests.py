@@ -144,7 +144,7 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         return False
 
     def initialize_client_data_areas(self, client):
-        print("Initializing client channels...")
+        print(f"Initializing client channels for {client.CLIENT_NAME}...")
         self.map_client_data_name_to_id(f"{client.CLIENT_NAME}.LVars", client.CLIENT_DATA_AREA_LVARS)
         self.create_client_data(client.CLIENT_DATA_AREA_LVARS, 4096, self.FLAG_DEFAULT)
 

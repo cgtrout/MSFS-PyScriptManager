@@ -6,6 +6,9 @@ from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
 from Lib.extended_mobiflight_variable_requests import ExtendedMobiFlightVariableRequests
 from time import sleep
 
+# Disable warnings - still shows errors
+logging.getLogger("SimConnect.SimConnect").setLevel(logging.ERROR)
+
 # Constants for LVARs (Logical Variables)
 LVAR_CHECKLIST_CONFIRM = "L:A32NX_BTN_CHECK_LH"  # Confirms checklist item
 LVAR_CHECKLIST_DOWN = "L:A32NX_BTN_DOWN"        # Moves down the checklist
