@@ -1,31 +1,31 @@
-# custom_status_bar.py: shows a draggable, customizable status bar using SimConnect to display real-time flight simulator metrics like time, altitude, and temperature in a compact GUI.
-#   - use instructions below to customize
-#   - Uses https://github.com/odwdinc/Python-SimConnect library to obtain values from SimConnect
-
+"""
+custom_status_bar.py: shows a draggable, customizable status bar using SimConnect to display
+real-time flight simulator metrics like time, altitude, and temperature in a compact GUI.
+   - use instructions below to customize
+   - Uses https://github.com/odwdinc/Python-SimConnect library to obtain values from SimConnect
+"""
 
 import faulthandler
-import tkinter as tk
-from tkinter import messagebox
-from SimConnect import SimConnect, AircraftRequests
-from datetime import datetime, timezone, timedelta
-import os
-import json
 import importlib
-import requests
+import json
+import os
+import sys
+import threading
 import time
+import tkinter as tk
+import traceback
+from tkinter import messagebox
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 from dataclasses import dataclass, field
+from typing import Any, ClassVar, Optional
 
-import threading
-import sys
-import traceback
-from typing import Any, Optional
-
-
+import requests
+from SimConnect import SimConnect, AircraftRequests
 
 try:
     # Import all color print functions
-    from Lib.color_print import *
+    from Lib.color_print import *  # pylint: disable=unused-wildcard-import, wildcard-import
 
 except ImportError:
     print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
@@ -45,7 +45,7 @@ DEFAULT_TEMPLATES = """
 #  including dynamic data elements such as:
 # ('VAR()' and 'VARIF()' 'functions') and static text.
 
-# Syntax:
+# Syntax:`
 # VAR(label, function_name, color)
 # - 'label': Static text prefix.
 # - 'function_name': Python function to fetch dynamic values.
@@ -99,54 +99,50 @@ def user_slow_update():
 def user_init():
     pass
 """
-# --- Configurable Variables  ---
-ALPHA_TRANSPARENCY_LEVEL = 0.95  # Set transparency (0.0 = fully transparent, 1.0 = fully opaque)
-WINDOW_TITLE = "Simulator Time"
-DARK_BG = "#000000"
-FONT = ("Helvetica", 16)
-UPDATE_INTERVAL = 33  # in milliseconds
 
-SIMBRIEF_AUTO_UPDATE_INTERVAL_MS = 5 * 60 * 1000  # 5 minutes in milliseconds
-USER_UPDATE_FUNCTION_DEFINED = False
-USER_SLOW_UPDATE_FUNCTION_DEFINED = False
+#### NOTE ####
+# This is a fairly large file, I recommend collapsing the headers when browsing this file.
+# I've left it as one large file to try it keep it self contained relative to others scripts.
 
-PADDING_X = 20  # Horizontal padding for each label
-PADDING_Y = 10  # Vertical padding for the window
+# pylint: disable=too-many-lines
 
-sim_connect = None
-aircraft_requests = None
-sim_connected = False
+# --- Globals  ----------------------------------------------------------------
+state: Optional["AppState"] = None                      # Main Script State
+countdown_state : Optional["CountdownState"] = None     # Countdown timer State
+simbrief_settings: Optional["SimBriefSettings"] = None  # Simbrief settings
 
-log_file_path = "traceback.log"
-traceback_log_file = open(log_file_path, "w")
-faulthandler.enable(file=traceback_log_file)
+# --- CONFIG Global Variables  ------------------------------------------------
 
-# --- Timer Variables  ---
-# Define epoch value to use as default value
-UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+@dataclass(frozen=True)
+class Config:
+    """Immutable configuration settings for the application."""
 
-@dataclass
-class CountdownState:
-    future_time_seconds: Optional[int] = None  # Time for countdown in seconds
-    is_future_time_manually_set: bool = False  # Flag for manual setting
-    last_simbrief_generated_time: Optional[datetime] = None  # Last SimBrief time
-    last_entered_time: Optional[str] = None  # Last entered time in HHMM format
-    gate_out_time: Optional[datetime] = None  # Store last game out time
-    countdown_target_time: datetime = field(default_factory=lambda: UNIX_EPOCH)
+    ALPHA_TRANSPARENCY: ClassVar[float] = 0.95
+    WINDOW_TITLE: ClassVar[str] = "Simulator Time"
+    DARK_BG: ClassVar[str] = "#000000"
+    FONT: ClassVar[tuple] = ("Helvetica", 16)
+    SIMBRIEF_AUTO_UPDATE_INTERVAL_MS: ClassVar[int] = 5 * 60 * 1000
+    PADDING_X: ClassVar[int] = 20
+    PADDING_Y: ClassVar[int] = 10
+    UNIX_EPOCH: ClassVar[datetime] = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
-    def set_target_time(self, new_time: datetime):
-        """Set a new countdown target time with type validation."""
-        if not isinstance(new_time, datetime):
-            raise TypeError("countdown_target_time must be a datetime object")
-        self.countdown_target_time = new_time
+    SCRIPT_DIR: ClassVar[str] = os.path.dirname(__file__)
+    ROOT_DIR: ClassVar[str] = os.path.dirname(SCRIPT_DIR)
+    SETTINGS_DIR: ClassVar[str] = os.path.join(ROOT_DIR, "Settings")
+    SETTINGS_FILE: ClassVar[str] = os.path.join(SETTINGS_DIR, "custom_status_bar.json")
+    TEMPLATE_FILE: ClassVar[str] = os.path.join(SETTINGS_DIR, "status_bar_templates.py")
+CONFIG = Config()       # Global configuration
 
-# --- SimBrief Data Structures  ---
+# --- SimBrief Data Structures  -----------------------------------------------
 class SimBriefTimeOption(Enum):
+    """Type of time to pull from SimBrief"""
     ESTIMATED_IN = "Estimated In"
     ESTIMATED_TOD = "Estimated TOD"
 
+# --- Settings Handling  ------------------------------------------------------
 @dataclass
 class SimBriefSettings:
+    """Contains settings related to Simbrief functionality"""
     username: str = ""
     use_adjusted_time: bool = False
     selected_time_option: Any = SimBriefTimeOption.ESTIMATED_IN
@@ -154,6 +150,7 @@ class SimBriefSettings:
     auto_update_enabled: bool = False
 
     def to_dict(self):
+        """Create dictionary from values"""
         return {
             "username": self.username,
             "use_adjusted_time": self.use_adjusted_time,
@@ -168,29 +165,458 @@ class SimBriefSettings:
 
     @staticmethod
     def from_dict(data):
+        """Take values from dictionary"""
         return SimBriefSettings(
             username=data.get("username", ""),
             use_adjusted_time=data.get("use_adjusted_time", False),
-            selected_time_option=SimBriefTimeOption(data.get("selected_time_option", SimBriefTimeOption.ESTIMATED_IN.value)),
+            selected_time_option=SimBriefTimeOption(
+                                    data.get("selected_time_option",
+                                    SimBriefTimeOption.ESTIMATED_IN.value)),
             allow_negative_timer=data.get("allow_negative_timer", False),
             auto_update_enabled=data.get("auto_update_enabled", False),
         )
-
-# --- Globals  ---
-countdown_state = CountdownState()
 simbrief_settings = SimBriefSettings()
 
+@dataclass
+class ApplicationSettings:
+    """Script settings definitions - used by SettingsManager"""
+    pos: dict = field(default_factory=lambda: {"x": 0, "y": 0})
+    simbrief_settings: "SimBriefSettings" = field(default_factory=SimBriefSettings)
+
+    def get_window_position(self):
+        """Get x, y window position returned as tuple"""
+        return self.pos["x"], self.pos["y"]
+
+    def to_dict(self):
+        """Create dictionary from values"""
+        return {
+            "pos": self.pos,
+            "simbrief_settings": self.simbrief_settings.to_dict(),
+        }
+
+    @staticmethod
+    def from_dict(data: dict):
+        """Take values from dictionary"""
+        return ApplicationSettings(
+            pos=data.get("pos", {"x": 0, "y": 0}),
+            simbrief_settings=SimBriefSettings.from_dict(data.get("simbrief_settings", {})),
+        )
+
+class SettingsManager:
+    """Handles loading, saving, and managing application settings."""
+
+    def __init__(self):
+        # Ensure the directory exists
+        os.makedirs(CONFIG.SETTINGS_DIR, exist_ok=True)
+
+    def load_settings(self) -> ApplicationSettings:
+        """Load settings from the JSON file."""
+        if os.path.exists(CONFIG.SETTINGS_FILE):
+            try:
+                with open(CONFIG.SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return ApplicationSettings.from_dict(data)
+            except json.JSONDecodeError:
+                print_error("Settings file is corrupted. Using defaults.")
+        # Return default settings if the file doesn't exist or is corrupted
+        return ApplicationSettings()
+
+    def save_settings(self, settings: ApplicationSettings):
+        """Save settings to the JSON file."""
+        try:
+            with open(CONFIG.SETTINGS_FILE, "w", encoding="utf-8") as f:
+                json.dump(settings.to_dict(), f, indent=4)
+        except Exception as e:
+            print_error(f"Error saving settings: {e}")
+
+# --- Main operational classes ------------------------------------------------
+class AppState:
+    """Manages core application state like SimConnect, logging, and settings."""
+    def __init__(self):
+        self.sim_connect = None
+        self.aircraft_requests = None
+        self.sim_connected = False
+
+        # Load Settings
+        self.settings_manager = SettingsManager()
+        self.settings = self.settings_manager.load_settings()
+
+        # Log File
+        self.log_file_path = "traceback.log"
+        self.traceback_log_file = open(self.log_file_path, "w", encoding="utf-8")
+        faulthandler.enable(file=self.traceback_log_file)
+
+        # User functions
+        self.user_update_function_defined = False
+        self.user_slow_update_function_defined = False
+
+         # Initialize TickManager
+        self.tick_manager = TickManager()
+
+        # Subscribe to ticks for user functions
+        self.tick_manager.subscribe_to_tick(self)
+        self.tick_manager.subscribe_to_slow_tick(self)
+
+        self.root = None
+
+    def start(self, root):
+        """
+        Start tick loop - this 'tick' is used to clock user functions
+        Based on a Tkinter .after scheduler so it needs root
+        """
+        # This calls user_init - do it here to ensure TemplateHandler has been initialized
+        self.check_user_functions()
+        self.tick_manager.start(root)
+
+    def check_user_functions(self):
+        """Check to see if user functions have been defined"""
+        try:
+            user_init()  # type: ignore  # pylint: disable=undefined-variable
+        except NameError:
+            print_warning("No user_init function defined in template file")
+        except Exception as e:  # pylint: disable=broad-except # Is valid case to catch all
+            print_error(f"Error calling user_init [{type(e).__name__}]: {e}")
+            traceback.print_exc(file=sys.stdout)
+            sys.exit(1)
+
+        # Check for user update function
+        function_name = "user_update"
+        if function_name in globals() and callable(globals()[function_name]):
+            self.user_update_function_defined = True
+        else:
+            self.user_update_function_defined = False
+            print_warning("No user_update function defined in template file")
+
+        function_name = "user_slow_update"
+        if function_name in globals() and callable(globals()[function_name]):
+            self.user_slow_update_function_defined = True
+        else:
+            self.user_slow_update_function_defined = False
+            print_warning("No user_slow_update function defined in template file")
+
+
+    def tick(self):
+        """Normal tick (tick manager)"""
+        self.call_user_update()
+
+    def slow_tick(self):
+        """Slow tick (tick manager)"""
+        self.call_user_slow_update()
+
+    def call_user_update(self):
+        """Invoke user-defined update function (if it exists)."""
+        if "user_update" in globals():
+            try:
+                user_update() # type: ignore  # pylint: disable=undefined-variable
+            except Exception as e:
+                print_error(f"Error in user_update [{type(e).__name__}]: {e}")
+
+    def call_user_slow_update(self):
+        """Invoke slow update function every 500ms."""
+        if "user_slow_update" in globals():
+            try:
+                user_slow_update() # type: ignore  # pylint: disable=undefined-variable
+            except Exception as e:
+                print_error(f"Error in user_slow_update [{type(e).__name__}]: {e}")
+
+class TickManager:
+    """
+    Handles scheduling and notifying tick subscribers.
+    Used to handle timing for user calls and display update
+    """
+    UPDATE_INTERVAL = 33
+    SLOW_UPDATE_INTERVAL = 500
+    SLOW_UPDATE_TICKS = SLOW_UPDATE_INTERVAL // UPDATE_INTERVAL
+
+    def __init__(self):
+        """Initialize tick tracking and subscriber lists."""
+        self.tick_count = 0
+        self.root = None  # Assigned when `start()` is called
+
+        # Crate tick subscriber sets
+        self.tick_subscribers = set()
+        self.slow_tick_subscribers = set()
+
+    def start(self, root):
+        """Start ticking using Tkinter's scheduler."""
+        self.root = root
+        self.tick()
+
+    def tick(self):
+        """Called every `update_interval` to notify subscribers."""
+        self.tick_count += 1
+
+        # Notify fast tick subscribers
+        for subscriber in self.tick_subscribers:
+            subscriber.tick()
+
+        # If slow tick interval is reached
+        if self.tick_count >= self.SLOW_UPDATE_TICKS:
+            for subscriber in self.slow_tick_subscribers:
+                subscriber.slow_tick()
+            self.tick_count = 0  # Reset tick count
+
+        # Schedule the next tick
+        self.root.after(self.UPDATE_INTERVAL, self.tick)
+
+    def subscribe_to_tick(self, subscriber):
+        """Register a component for fast tick updates."""
+        self._validate_subscriber(subscriber, "tick")
+        self.tick_subscribers.add(subscriber)
+
+    def subscribe_to_slow_tick(self, subscriber):
+        """Register a component for slow tick updates."""
+        self._validate_subscriber(subscriber, "slow_tick")
+        self.slow_tick_subscribers.add(subscriber)
+
+    @staticmethod
+    def _validate_subscriber(subscriber, method_name):
+        """Ensure the subscriber implements the required method."""
+        if not hasattr(subscriber, method_name) or not callable(getattr(subscriber, method_name)):
+            raise TypeError(f"Subscriber {subscriber.__class__.__name__} "
+                            f"must implement '{method_name}()'")
+
+class UIManager:
+    """Manages UI-specific state, such as dragging and widget updates."""
+    def __init__(self, app_state: AppState):
+        self.root = tk.Tk()
+        self.app_state = app_state
+        self.settings = app_state.settings
+        self.drag_handler = DragHandler(self.root)
+        self.template_handler = TemplateHandler()
+        self.display_updater = DisplayUpdater( self.root, self.app_state,
+                                               self.template_handler, self.drag_handler )
+
+        # These define if user functions are defined or not
+        self.user_update_function_defined = False
+        self.user_slow_update_function_defined = False
+
+        # Last known UI position (loaded from settings)
+        self.window_x, self.window_y = 0, 0
+
+        self.tkinter_setup()
+
+    def get_root(self):
+        """Provide access to the Tk root window for other components."""
+        return self.root
+
+    def tkinter_setup(self):
+        """Setup Tkinter related functionality"""
+        self.root.title(CONFIG.WINDOW_TITLE)
+        self.root.overrideredirect(True)
+        self.root.attributes("-topmost", True)
+        self.root.attributes("-alpha", CONFIG.ALPHA_TRANSPARENCY)
+        self.root.configure(bg=CONFIG.DARK_BG)
+
+        # Load window position
+        initial_x, initial_y = self.settings.get_window_position()
+        self.root.geometry(f"+{initial_x}+{initial_y}")
+
+        # --- Double click functionality for setting timer ---
+        self.root.bind("<Double-1>", lambda event: self.open_timer_dialog())
+
+        # Bind the right-click menu
+        self.root.bind("<Button-3>", self.show_template_menu)
+
+    def open_timer_dialog(self):
+        """
+        Open the CountdownTimerDialog to prompt the user to set a future countdown time and
+        SimBrief settings.
+        """
+        # Open the dialog with current SimBrief settings and last entered time
+        dialog = CountdownTimerDialog(self.root, self.app_state)
+        self.root.wait_window(dialog)  # Wait for dialog to close
+
+    def show_template_menu(self, event):
+        """
+        Display a context menu to allow the user to select a template.
+        """
+        menu = tk.Menu(self.root, tearoff=0)
+
+        # Add all templates to the menu
+        for template_name in self.template_handler.templates.keys():
+            menu.add_command(
+                label=template_name,
+                command=lambda name=template_name: self.switch_template(name)
+            )
+
+        # Show the menu at the cursor position
+        menu.post(event.x_root, event.y_root)
+
+    def switch_template(self, new_template_name):
+        """
+        Switch to a new template and mark it for re-rendering in the next update cycle.
+        """
+        try:
+            # Update the selected template
+            self.template_handler.selected_template_name = new_template_name
+            self.template_handler.mark_template_change()  # Mark the change
+
+            print(f"Switched to template: {new_template_name}")
+
+        except Exception as e:
+            print_error(f"Error switching template: {e}")
+
+    def start(self):
+        """Start any UI related functions"""
+        # Start display update
+        self.display_updater.update_display()
+
+class ServiceManager:
+    """Handles background services like SimConnect updates and SimBrief auto-update."""
+    def __init__(self, app_state, settings: "ApplicationSettings", root):
+        self.app_state = app_state
+        self.background_updater = BackgroundUpdater(self.app_state, root)
+
+        self.settings = settings
+        self.root = root
+
+    def start(self):
+        """Start service manager tasks"""
+        self.background_updater.start()
+
+        # Start SimBrief auto-update if enabled
+        if self.app_state.settings.simbrief_settings.auto_update_enabled:
+            print_info("Auto-update enabled. Scheduling SimBrief updates...")
+            self.root.after(5000, lambda: SimBriefFunctions.auto_update_simbrief(self.root))
+
+        self.start_debugging_utils()
+
+    def start_debugging_utils(self):
+        """Start debug related utilites"""
+        def reset_traceback_timer():
+            """Reset the faulthandler timer to prevent a dump."""
+            faulthandler.dump_traceback_later(30, file=state.traceback_log_file, exit=True)
+            self.root.after(10000, reset_traceback_timer)
+        if not self.is_debugging():
+            print_info("Traceback fault timer started")
+            reset_traceback_timer()
+        else:
+            print_info("Traceback fault timer NOT started (debugging detected)")
+
+        # Bind log that can be executed during runtime
+        try:
+            import keyboard # pylint: disable=import-outside-toplevel
+            keyboard.add_hotkey("ctrl+alt+shift+l", self.log_global_state)
+            print_info("Global hotkey 'Ctrl+Alt+Shift+L' registered for logging state.")
+        except ImportError:
+            print_warning("Please 'pip install keyboard' for dynamic logging")
+
+    def is_debugging(self):
+        """Check if the script is running in a debugging environment."""
+        try:
+            if sys.monitoring.get_tool(sys.monitoring.DEBUGGER_ID) is not None:
+                return True
+        except Exception: # pylint: disable=broad-exception-caught
+            return False
+
+    def log_global_state(self, event=None, log_path="detailed_state_log.log", max_depth=2):
+        """
+        Log the global state and nested attributes to a file, prioritizing user-defined globals.
+
+        Args:
+            event: Tkinter event (passed automatically when bound to a shortcut).
+            log_path (str): Path to save the log file.
+            max_depth (int): Maximum recursion depth for nested attributes.
+        """
+        import inspect # pylint: disable=import-outside-toplevel # Deliberate lazy load
+
+        def is_user_defined(var_name, var_value):
+            """
+            Determine if a global variable is user-defined.
+            A variable is considered user-defined if:
+            - It is not a module.
+            - It is not a built-in function or object.
+            - It is not imported (i.e., it was declared in the current script).
+            """
+            if var_name.startswith("__"):  # Skip dunder (magic) variables
+                return False
+            # Check if the variable is a module or built-in
+            if inspect.ismodule(var_value):
+                return False
+            if inspect.isbuiltin(var_value):
+                return False
+            # Check if the variable's module is the current script
+            if hasattr(var_value, "__module__") and var_value.__module__ == "__main__":
+                return True
+            # Fallback for non-callable objects
+            return not callable(var_value)
+
+        def log_variable(var_name, var_value, depth=0):
+            """Recursively log a variable and its attributes up to max_depth."""
+            indent = "  " * depth
+            if depth > max_depth:
+                return  # Stop recursion if max depth is exceeded
+
+            try:
+                log_file.write(f"{indent}{var_name}: {repr(var_value)}\n")
+
+                # Recurse into attributes if the variable is a custom object or dict
+                if hasattr(var_value, "__dict__"):
+                    for attr_name, attr_value in vars(var_value).items():
+                        log_variable(f"{var_name}.{attr_name}", attr_value, depth + 1)
+                elif isinstance(var_value, dict):
+                    for key, value in var_value.items():
+                        log_variable(f"{var_name}[{repr(key)}]", value, depth + 1)
+                elif isinstance(var_value, (list, set, tuple)):
+                    for idx, value in enumerate(var_value):
+                        log_variable(f"{var_name}[{idx}]", value, depth + 1)
+            except Exception as e:
+                log_file.write(f"{indent}{var_name}: [ERROR: {str(e)}]\n")
+
+        # Separate user-defined and external globals
+        user_globals = {k: v for k, v in globals().items() if is_user_defined(k, v)}
+        external_globals = {k: v for k, v in globals().items() if k not in user_globals}
+
+        # Start logging
+        with open(log_path, "w", encoding="utf-8") as log_file:
+            log_file.write(f"--- Global State Log: {datetime.now()} ---\n\n")
+
+            # Tkinter state
+            log_file.write("winfo_geometry="
+                           f"{self.root.winfo_geometry()}, state={self.root.state()}\n")
+
+            # Log user-defined globals first
+            log_file.write("### User-Defined Globals ###\n")
+            for name, value in user_globals.items():
+                log_variable(name, value)
+
+            # Log external globals next
+            log_file.write("\n### External Globals ###\n")
+            for name, value in external_globals.items():
+                log_variable(name, value)
+
+        print(f"Global state logged to {log_path}")
+
+# --- Timer Variables  --------------------------------------------------------
+@dataclass
+class CountdownState:
+    """Countdown timer state"""
+    future_time_seconds: Optional[int] = None  # Time for countdown in seconds
+    is_future_time_manually_set: bool = False  # Flag for manual setting
+    last_simbrief_generated_time: Optional[datetime] = None  # Last SimBrief time
+    last_entered_time: Optional[str] = None  # Last entered time in HHMM format
+    gate_out_time: Optional[datetime] = None  # Store last game out time
+    countdown_target_time: datetime = field(default_factory=lambda: CONFIG.UNIX_EPOCH)
+
+    def set_target_time(self, new_time: datetime):
+        """Set a new countdown target time with type validation."""
+        if not isinstance(new_time, datetime):
+            raise TypeError("countdown_target_time must be a datetime object")
+        self.countdown_target_time = new_time
+
 # Shared data structures for threading
+# TODO move these?
 simconnect_cache = {}
 variables_to_track = set()
 cache_lock = threading.Lock()
 
-# --- SimConnect Lookup  ---
+# --- SimConnect Template Functions -------------------------------------------
 def get_sim_time():
     """Fetch the simulator time from SimConnect, formatted as HH:MM:SS."""
     try:
 
-        if not sim_connected:
+        if not state.sim_connected:
             return "Sim Not Running"
 
         sim_time_seconds = get_simconnect_value("ZULU_TIME")
@@ -208,9 +634,8 @@ def get_simulator_datetime() -> datetime:
     """
     Fetches the absolute time from the simulator and converts it to a datetime object.
     """
-    global sim_connected
     try:
-        if not sim_connected:
+        if state is None or not state.sim_connected:
             raise ValueError("SimConnect is not connected.")
 
         absolute_time = get_simconnect_value("ABSOLUTE_TIME")
@@ -227,7 +652,7 @@ def get_simulator_datetime() -> datetime:
         print(f"get_simulator_datetime: Failed to retrieve simulator datetime: {e}")
 
     # Return the Unix epoch if simulator time is unavailable
-    return UNIX_EPOCH
+    return CONFIG.UNIX_EPOCH
 
 def get_real_world_time():
     """Fetch the real-world Zulu time."""
@@ -249,7 +674,8 @@ def is_sim_rate_accelerated():
 
 def get_temp():
     """Fetch both TAT and SAT temperatures from SimConnect, formatted with labels."""
-    return get_formatted_value(["AMBIENT_TEMPERATURE", "TOTAL_AIR_TEMPERATURE"], "TAT {1:.0f}°C  SAT {0:.0f}°C")
+    return get_formatted_value(["AMBIENT_TEMPERATURE", "TOTAL_AIR_TEMPERATURE"],
+                               "TAT {1:.0f}°C  SAT {0:.0f}°C")
 
 def remain_label():
     """
@@ -260,20 +686,33 @@ def remain_label():
         return "Rem(adj):"
     return "Remaining:"
 
+# --- SimConnect Lookup Functions ---------------------------------------------
 def initialize_simconnect():
     """Initialize the connection to SimConnect."""
-    global sim_connect, aircraft_requests, sim_connected
     try:
-        sim_connect = SimConnect()  # Connect to SimConnect
-        aircraft_requests = AircraftRequests(sim_connect, _time=0)
-        sim_connected = True
+        state.sim_connect = SimConnect()  # Connect to SimConnect
+        state.aircraft_requests = AircraftRequests(state.sim_connect, _time=0)
+        state.sim_connected = True
     except Exception:
-        sim_connected = False
+        state.sim_connected = False
 
+def is_simconnect_available() -> bool:
+    """Check if SimConnect is available and running."""
+    return (
+        state is not None and
+        state.sim_connected and
+        state.sim_connect is not None and
+        state.sim_connect.ok
+    )
+
+# --- Cache Lookup Functions --------------------------------------------------
+# These will lookup values from cache values which are updated from Background-
+# Updater
 def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
                          retries: int = 10, retry_interval: float = 0.2) -> Any:
     """Fetch a SimConnect variable with caching and retry logic."""
-    if not sim_connected or sim_connect is None or not sim_connect.ok:
+    # TODO: requires more detailed documentation on behavior
+    if not is_simconnect_available():
         return "Sim Not Running"
 
     value = check_cache(variable_name)
@@ -324,7 +763,7 @@ def get_formatted_value(variable_names, format_string=None):
     - The formatted string, or an error message if retrieval fails.
     """
 
-    if not sim_connected or sim_connect is None or not sim_connect.ok:
+    if not state.sim_connected or state.sim_connect is None or not state.sim_connect.ok:
         return "Sim Not Running"
 
     if isinstance(variable_names, str):
@@ -342,81 +781,114 @@ def get_formatted_value(variable_names, format_string=None):
     result = values[0] if len(values) == 1 else values
     return result
 
-# --- Background Updater ---
-VARIABLE_SLEEP = 0.01  # Sleep for 10ms between each variable looku
-MIN_UPDATE_INTERVAL = UPDATE_INTERVAL / 2  # Reduced interval for retry cycles (in milliseconds
-STANDARD_UPDATE_INTERVAL = UPDATE_INTERVAL  # Normal interval for successful cycles
+# --- Background Updater ------------------------------------------------------
+class BackgroundUpdater:
+    """Continously updates cached values from Simconnect"""
 
-last_successful_update_time = time.time()
-def simconnect_background_updater():
-    """Background thread to update SimConnect variables with small sleep between updates."""
-    global sim_connected, last_successful_update_time
+    MIN_UPDATE_INTERVAL = 33 / 2  # Retry interval
+    STANDARD_UPDATE_INTERVAL = 33  # Normal interval
 
-    while True:
-        lookup_failed = False  # Track if any variable lookup failed
+    def __init__(self, app_state, root):
+        # TODO needs reference to root and app_state - determine best way to do this
+        self.state = app_state  # Store reference to global state
+        self.variable_sleep = 0.01  # Sleep time between variable lookups
 
-        try:
-            if not sim_connected:
-                initialize_simconnect()
-                continue
+        self.last_successful_update_time = time.time()
+        self.running = False
+        self.thread = None
 
-            if sim_connected:
-                if sim_connect is None or not sim_connect.ok or sim_connect.quit == 1:
-                    print_warning("SimConnect state invalid. Disconnecting.")
-                    sim_connected = False
+        self.root = root
+
+    def start(self):
+        """Start the background update thread."""
+        if self.running:
+            print_warning("BackgroundUpdater Already running.")
+            return
+
+        self.running = True
+        self.thread = threading.Thread(target=self.run, daemon=True)
+        self.thread.start()
+        print_info("BackgroundUpdater Started.")
+
+        self.background_thread_watchdog_function()
+
+    def stop(self):
+        """Stop the background update thread cleanly."""
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=1)
+            print_info("BackgroundUpdater Stopped.")
+
+    def run(self):
+        """Main background update loop."""
+        while self.running:
+            lookup_failed = False  # Track if any variable lookup failed
+
+            try:
+                if not self.state.sim_connected:
+                    initialize_simconnect()
                     continue
 
-                # Make a copy of the variables to avoid holding the lock during network calls
-                with cache_lock:
-                    vars_to_update = list(variables_to_track)
+                if self.state.sim_connected:
+                    if self.state.sim_connect is None or not self.state.sim_connect.ok or self.state.sim_connect.quit == 1:
+                        print_warning("SimConnect state invalid. Disconnecting.")
+                        self.state.sim_connected = False
+                        continue
 
-                for variable_name in vars_to_update:
-                    try:
-                        if aircraft_requests is not None and hasattr(aircraft_requests, 'get'):
-                            value = aircraft_requests.get(variable_name)
-                            if value is not None:
-                                with cache_lock:
-                                    simconnect_cache[variable_name] = value
+                    # Make a copy of the variables to avoid holding the lock during network calls
+                    with cache_lock:
+                        vars_to_update = list(variables_to_track)
+
+                    for variable_name in vars_to_update:
+                        try:
+                            if self.state.aircraft_requests is not None and hasattr(self.state.aircraft_requests, 'get'):
+                                value = self.state.aircraft_requests.get(variable_name)
+                                if value is not None:
+                                    with cache_lock:
+                                        simconnect_cache[variable_name] = value
+                                else:
+                                    lookup_failed = True
                             else:
+                                print_warning("'aq' is None or does not have a 'get' method.")
                                 lookup_failed = True
-                        else:
-                            print_warning("'aq' is None or does not have a 'get' method.")
+                        except OSError as e:
+                            print_debug(f"Error fetching '{variable_name}': {e}. "
+                                            "Will retry in the next cycle.")
                             lookup_failed = True
-                    except OSError as e:
-                        print_debug(f"Error fetching '{variable_name}': {e}. "
-                                     "Will retry in the next cycle.")
-                        lookup_failed = True
 
-                    # Introduce a small sleep between variable updates
-                    time.sleep(VARIABLE_SLEEP)
+                        # Introduce a small sleep between variable updates
+                        time.sleep(self.variable_sleep)
 
-            else:
-                print_warning("SimConnect not connected. Retrying in 1 second.")
-                time.sleep(1)
+                else:
+                    print_warning("SimConnect not connected. Retrying in 1 second.")
+                    time.sleep(1) # TODO - maybe this is excessive retry interval?
 
-            # Adjust sleep interval dynamically
-            sleep_interval = MIN_UPDATE_INTERVAL if lookup_failed else STANDARD_UPDATE_INTERVAL
-            time.sleep(sleep_interval / 1000.0)
+                # Adjust sleep interval dynamically
+                sleep_interval = self.MIN_UPDATE_INTERVAL \
+                                    if lookup_failed else self.STANDARD_UPDATE_INTERVAL
+                time.sleep(sleep_interval / 1000.0)
 
-        except Exception as e:
-            print_error(f"Unexpected error in background updater: {e}")
-            print(f"Exception type: {type(e).__name__}")
-        finally:
-            # Update the last successful update time - used for 'heartbeat' functionality
-            last_successful_update_time = time.time()
+            except Exception as e:
+                print_error(f"Unexpected error in background updater: {e}")
+                print(f"Exception type: {type(e).__name__}")
+            finally:
+                # Update the last successful update time - used for 'heartbeat' functionality
+                self.last_successful_update_time = time.time()
 
-def background_thread_watchdog_function():
-    """Check background thread function to see if it has locked up"""
-    now = time.time()
-    threshold = 30  # seconds before we consider the updater "stuck"
+    def background_thread_watchdog_function(self):
+        """Check background thread function to see if it has locked up"""
+        now = time.time()
+        threshold = 30  # seconds before we consider the updater "stuck"
 
-    if now - last_successful_update_time > threshold:
-        print_error(f"Watchdog: Background updater has not completed a cycle in {int(now - last_successful_update_time)} seconds. Possible stall detected.")
+        if now - self.last_successful_update_time > threshold:
+            print_error(f"Watchdog: Background updater has not completed a cycle in"
+                        f"{int(now - self.last_successful_update_time)} seconds. "
+                        "Possible stall detected.")
 
-    # Reschedule the watchdog to run again after 10 seconds
-    root.after(10_000, background_thread_watchdog_function)
+        # Reschedule the watchdog to run again after 10 seconds
+        self.root.after(10_000, self.background_thread_watchdog_function)
 
-# --- Timer Calcuation  ---
+# --- Timer Calcuation Functions-----------------------------------------------
 def get_time_to_future_adjusted():
     """
     Calculate and return the countdown timer string.
@@ -433,9 +905,7 @@ def get_time_to_future(adjusted_for_sim_rate: bool) -> str:
     """
     Calculate and return the countdown timer string.
     """
-    global countdown_state
-
-    if countdown_state.countdown_target_time == UNIX_EPOCH:  # Default unset state
+    if countdown_state is None or countdown_state.countdown_target_time == CONFIG.UNIX_EPOCH:
         return "N/A"
 
     try:
@@ -445,7 +915,8 @@ def get_time_to_future(adjusted_for_sim_rate: bool) -> str:
             raise ValueError("Target time or simulator time is offset-naive. "
                              "Ensure all times are offset-aware.")
 
-        # Fetch sim rate if we want to adjust for it, otherwise default to 1.0 (normal time progression)
+        # Fetch sim rate if we want to adjust for it,
+        # otherwise default to 1.0 (normal time progression)
         sim_rate = 1.0
         if adjusted_for_sim_rate:
             sim_rate_str = get_sim_rate()
@@ -483,7 +954,7 @@ def compute_countdown_timer(
     - countdown_str (str): Formatted countdown string "HH:MM:SS".
     """
     # Early out if we have no current sim time
-    if current_sim_time == UNIX_EPOCH:
+    if current_sim_time == CONFIG.UNIX_EPOCH:
         return "N/A"
 
     # Calculate remaining time
@@ -496,8 +967,9 @@ def compute_countdown_timer(
         adjusted_seconds = remaining_time.total_seconds()
 
     # Enforce allow_negative_timer setting
-    if not simbrief_settings.allow_negative_timer and adjusted_seconds < 0:
-        adjusted_seconds = 0
+    if simbrief_settings is not None:
+        if not simbrief_settings.allow_negative_timer and adjusted_seconds < 0:
+            adjusted_seconds = 0
 
     # Format the adjusted remaining time as HH:MM:SS
     total_seconds = int(adjusted_seconds)
@@ -519,7 +991,7 @@ def get_simulator_time_offset():
         threshold = timedelta(seconds=5)
         simulator_time = get_simulator_datetime()
 
-        if simulator_time == UNIX_EPOCH:
+        if simulator_time == CONFIG.UNIX_EPOCH:
             print_debug("get_simulator_time_offset: skipping since time is == UNIX_EPOCH")
             return timedelta()
 
@@ -575,142 +1047,7 @@ def set_future_time_internal(future_time_input, current_sim_time):
     except Exception as e:
         print_error(f"Unexpected error in set_future_time_internal: {str(e)}")
 
-def open_timer_dialog():
-    """
-    Open the CountdownTimerDialog to prompt the user to set a future countdown time and SimBrief settings.
-    """
-    try:
-        # Open the dialog with current SimBrief settings and last entered time
-        dialog = CountdownTimerDialog(
-            root,
-            simbrief_settings=simbrief_settings,
-            initial_time=countdown_state.last_entered_time,
-        )
-        root.wait_window(dialog)  # Wait for the dialog to close
-        # The dialog now handles all time and settings updates
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to open timer dialog: {str(e)}")
-
-# --- Template handling  ---
-@dataclass
-class TemplateHandler:
-    """Class to manage the template file and selected template."""
-    templates: dict[str, str] = field(init=False, default_factory=dict)
-    selected_template_name: Optional[str] = None
-    cached_parsed_blocks: list = field(init=False, default_factory=list)
-    pending_template_change: bool = field(init=False, default=False)
-    parser: "TemplateParser" = field(init=False)
-
-    def __post_init__(self):
-        """Initialize templates and set the default selection."""
-        self.parser = TemplateParser()  # Initialize the parser
-        self.templates = self.load_templates()
-        self.load_template_functions()
-        self.selected_template_name = next(iter(self.templates), None)
-        if not self.selected_template_name:
-            raise ValueError("No templates available to select.")
-
-        # Initially cache the parsed blocks for the first template
-        self.cache_parsed_blocks()
-
-    def load_templates(self) -> dict[str, str]:
-        """Load templates from the template file, creating the file if necessary."""
-        os.makedirs(SETTINGS_DIR, exist_ok=True)
-
-        if not os.path.exists(TEMPLATE_FILE):
-            with open(TEMPLATE_FILE, "w") as f:
-                f.write(DEFAULT_TEMPLATES.strip())
-            print(f"Created default template file at {TEMPLATE_FILE}")
-
-        try:
-            spec = importlib.util.spec_from_file_location("status_bar_templates", TEMPLATE_FILE)
-            templates_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(templates_module)
-            return templates_module.TEMPLATES if hasattr(templates_module, "TEMPLATES") else {}
-        except Exception as e:
-            print(f"Error loading templates: {e}")
-            return {}
-
-    def load_template_functions(self):
-        """
-        Dynamically import functions from the template file and inject only relevant globals.
-        """
-        try:
-            spec = importlib.util.spec_from_file_location("status_bar_templates", TEMPLATE_FILE)
-            templates_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(templates_module)
-
-            # First, filter globals to exclude built-ins and modules
-            relevant_globals = {
-                k: v for k, v in globals().items()
-                if not k.startswith("__") and not isinstance(v, type(importlib))  # Exclude built-ins and modules
-            }
-
-            # Debug: Log the filtered globals being injected, grouping functions properly
-            self._print_sorted_globals(relevant_globals)
-
-            # Inject filtered globals into the template module
-            templates_module.__dict__.update(relevant_globals)
-
-            # Add callable objects to this global namespace
-            for name, obj in vars(templates_module).items():
-                if callable(obj):
-                    globals()[name] = obj
-
-            print_debug("load_template_functions: DONE\n")
-
-        except Exception as e: # pylint: disable=broad-except
-            print_error(f"Error loading template functions: {e}")
-
-    def _print_sorted_globals(self, globals_dict):
-        """Sorts and prints the provided globals dictionary in two columns with colors."""
-        def sort_by_type_and_name(item):
-            obj_type = type(item[1]).__name__ if item[1] is not None else "NoneType"
-            priority = {"function": 0, "type": 1}.get(obj_type, 2)
-            return priority, item[0]
-
-        sorted_globals = sorted(globals_dict.items(), key=sort_by_type_and_name)
-
-        max_name_length = max(len(name) for name, _ in sorted_globals) + 1
-        max_type_length = min(8, max(len(type(obj).__name__) for _, obj in sorted_globals))
-
-        mid_index = (len(sorted_globals) + 1) // 2
-        left_column = sorted_globals[:mid_index]
-        right_column = sorted_globals[mid_index:]
-
-        print_debug("Filtered Globals to Inject:")
-
-        # Helper to format a single column
-        def format_column(name, obj):
-            obj_type = type(obj).__name__ if obj is not None else "NoneType"
-            return f"[green(]{name.ljust(max_name_length)}:[)] {obj_type.ljust(max_type_length)}"
-
-        # Loop and print each row
-        for i in range(max(len(left_column), len(right_column))):
-            left = left_column[i] if i < len(left_column) else ("", None)
-            right = right_column[i] if i < len(right_column) else ("", None)
-
-            left_col = format_column(*left)
-            right_col = format_column(*right)
-
-            print_color(f" {left_col} {right_col}")
-
-    def get_current_template(self) -> str:
-        """Return the content of the currently selected template."""
-        if not self.selected_template_name or self.selected_template_name not in self.templates:
-            raise ValueError("No valid template selected.")
-        return self.templates[self.selected_template_name]
-
-    def cache_parsed_blocks(self):
-        """Cache the parsed blocks for the currently selected template."""
-        template_content = self.get_current_template()
-        self.cached_parsed_blocks = self.parser.parse_template(template_content)
-
-    def mark_template_change(self):
-        """Mark that a template change is pending."""
-        self.pending_template_change = True
-
-# --- Display Update  ---
+# --- Display Update  ---------------------------------------------------------
 def get_dynamic_value(function_name):
     """ Get a value dynamically from the function name. """
     try:
@@ -724,190 +1061,137 @@ def get_dynamic_value(function_name):
     except Exception as e:
         print_debug(f"get_dynamic_value exception [{type(e).__name__ }]: {e}")
         return "Err"
-class WidgetPool:
-    """Manages widgets and their order"""
-    def __init__(self):
-        self.pool = {}
 
-    def add_widget(self, block_id, widget):
-        if block_id not in self.pool:
-            self.pool[block_id] = widget
+class DisplayUpdater:
+    """Handles the rendering and updating of the status bar display."""
 
-    def remove_widget(self, block_id):
-        if block_id in self.pool:
-            self.pool[block_id].destroy()
-            del self.pool[block_id]
+    # Do slow update every 15 normal updates (approx 500ms)
+    SLOW_UPDATE_INTERVAL = 15
 
-    def get_widget(self, block_id):
-        return self.pool.get(block_id)
+    def __init__(self, root, app_state, template_handler, drag_handler):
+        self.root = root
+        self.state = app_state
+        self.template_handler = template_handler
+        self.drag_handler = drag_handler
+        self.display_frame = tk.Frame(root, bg=CONFIG.DARK_BG)
+        self.display_frame.pack(padx=10, pady=5)
 
-    def has_widget(self, block_id):
-        return block_id in self.pool
+        self.widget_pool = WidgetPool()
+        self.update_display_frame_count = 0
 
-    def get_widgets_in_order(self, parsed_block_ids):
-        return [self.pool[block_id] for block_id in parsed_block_ids if block_id in self.pool]
+        # Subscribe to tick manager
+        self.state.tick_manager.subscribe_to_tick(self)
+        self.state.tick_manager.subscribe_to_slow_tick(self)
 
-    def clear(self):
-        for widget in self.pool.values():
-            if widget and hasattr(widget, "destroy"):
-                widget.destroy()
-        self.pool.clear()
+    def tick(self):
+        """Handles fast tick updates."""
+        self.update_display()
 
-widget_pool = WidgetPool()
+    def slow_tick(self):
+        """Handles slow tick updates."""
+        if self.update_display_frame_count == 0:
+            self.root.attributes("-topmost", False)
+            self.root.attributes("-topmost", True)
+            if self.root.state() != "normal":
+                print_warning("Restoring minimized window!")
+                self.root.deiconify()
 
-# Frame counters used for slow update frequency
-UPDATE_DISPLAY_FRAME_COUNT = 0
-SLOW_UPDATE_INTERVAL = 15 # Approx every 500ms
+    def update_display(self):
+        """Render and update the display based on the parsed template."""
 
-def update_display(template_handler:TemplateHandler):
-    """Render the parsed blocks onto the display frame"""
-    # Call user update function
-    call_user_functions()
-
-    # Update frame counters - used for determining 'slow' updates
-    update_frame_counter()
-
-    # Toggle -topmost only during slow updates
-    if UPDATE_DISPLAY_FRAME_COUNT == 0:
-        root.attributes("-topmost", False)
-        root.attributes("-topmost", True)
-        if root.state() != "normal":
-            print_warning("Restoring minimized window!")
-            root.deiconify()
-
-    try:
-        # Do not update if drag move is occuring
-        if is_moving:
-            root.after(UPDATE_INTERVAL, lambda: update_display(template_handler))
+        # Prevent updates while dragging
+        if self.drag_handler.is_moving:
             return
 
-        # Re-parse the template if a change is pending
-        if template_handler.pending_template_change:
-            template_handler.cache_parsed_blocks()
-            template_handler.pending_template_change = False
+        # Handle template updates
+        if self.template_handler.pending_template_change:
+            self.template_handler.cache_parsed_blocks()
+            self.template_handler.pending_template_change = False
 
-        # Use cached parsed blocks
-        parsed_blocks = template_handler.cached_parsed_blocks
-
-        # Track whether a full refresh is needed
+        parsed_blocks = self.template_handler.cached_parsed_blocks
         full_refresh_needed = False
 
-        # Process each block and render the widgets
+        # Process each block
         for block in parsed_blocks:
-            needs_refresh = process_block(block, template_handler)
-            if needs_refresh:
+            if self.process_block(block):
                 full_refresh_needed = True
 
-        # Repack widgets in the correct order
-        # This is to avoid a dynamically added VARIF block from being placed at the end
-
-        # Repack widgets only if a full refresh is needed
+        # Only repack widgets if necessary
         if full_refresh_needed:
-            parsed_block_ids = [block.get("label", f"block_{id(block)}") for block in parsed_blocks]
-            for widget in display_frame.winfo_children():
-                widget.pack_forget()
-            for widget in widget_pool.get_widgets_in_order(parsed_block_ids):
-                widget.pack(side=tk.LEFT, padx=0, pady=0)
+            self.repack_widgets(parsed_blocks)
 
-            # Force Tkinter to update the display to avoid flickering on VARIF changes
-            display_frame.update_idletasks()
+        # Adjust window size dynamically
+        self.adjust_window_size()
 
-        # Dynamically adjust the window size
-        new_width = display_frame.winfo_reqwidth() + PADDING_X
-        new_height = display_frame.winfo_reqheight() + PADDING_Y
+    def repack_widgets(self, parsed_blocks):
+        """Repack widgets (for order preservation)"""
+        parsed_block_ids = [block.get("label", f"block_{id(block)}") for block in parsed_blocks]
+        for widget in self.display_frame.winfo_children():
+            widget.pack_forget()
+        for widget in self.widget_pool.get_widgets_in_order(parsed_block_ids):
+            widget.pack(side=tk.LEFT, padx=0, pady=0)
 
-        min_dim = 10
-        if new_width < min_dim or new_height < min_dim:
-            print_warning(f"Detected an unusually small window size "
-                          f"({new_width}x{new_height})")
+    def process_block(self, block):
+        """Process one block from the parsed template."""
+        block_type = block["type"]
+        block_id = block.get("label", f"block_{id(block)}")
+        block_metadata = self.template_handler.parser.block_registry.get(block_type, {})
 
-        # Set to calculated geometry
-        root.geometry(f"{new_width}x{new_height}")
+        # Dynamically handle blocks with conditions
+        if "condition" in block_metadata["keys"]:
+            condition_function = block.get("condition")
+            if condition_function:
+                condition = get_dynamic_value(condition_function)
+                if not condition:
+                    # Remove the widget from the pool if the condition fails
+                    if self.widget_pool.has_widget(block_id):
+                        widget = self.widget_pool.get_widget(block_id)
+                        self.widget_pool.remove_widget(block_id)
+                        return True # Need refresh
+                    return False
 
-    except Exception as e:
-        print_error(f"Error in update_display: {e}")
+        # Attempt to retrieve an existing widget
+        widget = self.widget_pool.get_widget(block_id)
+        render_function = block_metadata.get("render")
 
-    # Schedule the next update
-    root.after(UPDATE_INTERVAL, lambda: update_display(template_handler))
+        if widget:
+            # Use render function to get new configuration
+            if render_function:
+                render_config = render_function(block)
 
-def process_block(block, template_handler):
-    """Process one block from the parsed template."""
-    block_type = block["type"]
-    block_id = block.get("label", f"block_{id(block)}")
-    block_metadata = template_handler.parser.block_registry.get(block_type, {})
+                # Check if the render function returned valid data
+                if render_config:
+                    # Update the existing widget if needed
+                    if widget.cget("text") != render_config["text"] \
+                    or widget.cget("fg") != render_config["color"]:
+                        widget.config(text=render_config["text"], fg=render_config["color"])
+                else:
+                    # Remove the widget if the config is invalid (e.g., condition failed)
+                    self.widget_pool.remove_widget(block_id)
+        else:
+            # Create and register a new widget
+            if render_function:
+                render_config = render_function(block)
+                if render_config:
+                    # Create a new widget based on the render function's config
+                    widget = tk.Label( self.display_frame, text=render_config["text"],
+                                    fg=render_config["color"], bg=CONFIG.DARK_BG, font=CONFIG.FONT )
+                    self.widget_pool.add_widget(block_id, widget)
+                    widget.pack(side=tk.LEFT, padx=5, pady=5)
+                    return True # Full refresh
+            return False
 
-    # Dynamically handle blocks with conditions
-    if "condition" in block_metadata["keys"]:
-        condition_function = block.get("condition")
-        if condition_function:
-            condition = get_dynamic_value(condition_function)
-            if not condition:
-                # Remove the widget from the pool if the condition fails
-                if widget_pool.has_widget(block_id):
-                    widget = widget_pool.get_widget(block_id)
-                    widget_pool.remove_widget(block_id)
-                    return True # Need refresh
-                return False
+    def adjust_window_size(self):
+        """Adjust the window size dynamically based on content."""
+        new_width = self.display_frame.winfo_reqwidth() + CONFIG.PADDING_X
+        new_height = self.display_frame.winfo_reqheight() + CONFIG.PADDING_Y
 
-    # Attempt to retrieve an existing widget
-    widget = widget_pool.get_widget(block_id)
-    render_function = block_metadata.get("render")
+        if new_width < 10 or new_height < 10:
+            print_warning(f"Detected unusually small window size ({new_width}x{new_height})")
 
-    if widget:
-        # Use render function to get new configuration
-        if render_function:
-            config = render_function(block)
+        self.root.geometry(f"{new_width}x{new_height}")
 
-            # Check if the render function returned valid data
-            if config:
-                # Update the existing widget if needed
-                if widget.cget("text") != config["text"] or widget.cget("fg") != config["color"]:
-                    widget.config(text=config["text"], fg=config["color"])
-            else:
-                # Remove the widget if the config is invalid (e.g., condition failed)
-                widget_pool.remove_widget(block_id)
-    else:
-        # Create and register a new widget
-        if render_function:
-            config = render_function(block)
-            if config:
-                # Create a new widget based on the render function's config
-                widget = tk.Label(
-                    display_frame,
-                    text=config["text"],
-                    fg=config["color"],
-                    bg=DARK_BG,
-                    font=FONT
-                )
-                widget_pool.add_widget(block_id, widget)
-                widget.pack(side=tk.LEFT, padx=5, pady=5)
-                return True # Full refresh
-        return False
-
-def call_user_functions():
-    """Invoke user-defined update functions with exception handling."""
-    if USER_UPDATE_FUNCTION_DEFINED:
-        try:
-            user_update()
-        except Exception as e:
-            print_error(f"Error in user_update [{type(e).__name__}]: {e}")
-
-    if USER_SLOW_UPDATE_FUNCTION_DEFINED:
-        try:
-            # Only call this every UPDATE_DISPLAY_FRAME_COUNT cycles
-            if UPDATE_DISPLAY_FRAME_COUNT == 0:
-                user_slow_update()
-        except Exception as e:
-            print_error(f"Error in user_slow_update [{type(e).__name__}]: {e}")
-
-def update_frame_counter():
-    """Increment and reset the frame counter based on the slow update interval."""
-    global UPDATE_DISPLAY_FRAME_COUNT
-    UPDATE_DISPLAY_FRAME_COUNT += 1
-    if UPDATE_DISPLAY_FRAME_COUNT == SLOW_UPDATE_INTERVAL:
-        UPDATE_DISPLAY_FRAME_COUNT = 0
-
-# --- Simbrief functionality ---
+# --- Simbrief functionality --------------------------------------------------
 class SimBriefFunctions:
     """Contains grouping of static Simbrief Functions mainly for organizational purposes"""
     last_simbrief_generated_time = None
@@ -961,7 +1245,9 @@ class SimBriefFunctions:
     def get_simbrief_ofp_tod_datetime(simbrief_json):
         """Fetch the Top of Descent (TOD) time from SimBrief JSON data."""
         try:
-            if "times" not in simbrief_json or "navlog" not in simbrief_json or "fix" not in simbrief_json["navlog"]:
+            if "times" not in simbrief_json \
+                or "navlog" not in simbrief_json \
+                or "fix" not in simbrief_json["navlog"]:
                 print_warning("Invalid SimBrief JSON format.")
                 return None
 
@@ -1039,21 +1325,24 @@ class SimBriefFunctions:
     @staticmethod
     def auto_update_simbrief(root):
         """
-        Automatically fetch SimBrief data and update the countdown timer if the generation time has changed.
+        Automatically fetch SimBrief data and update the countdown timer if the generation time
+        has changed.
         """
         if not simbrief_settings.auto_update_enabled:
             return  # Exit if auto-update is disabled
 
         try:
             # Fetch the latest SimBrief data
-            simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(simbrief_settings.username)
+            simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(
+                                                                        simbrief_settings.username)
             if simbrief_json:
                 # Extract the generation time
                 current_generated_time = simbrief_json.get("params", {}).get("time_generated")
                 if not current_generated_time:
                     print_warning("Unable to determine SimBrief flight plan generation time.")
                 elif current_generated_time != SimBriefFunctions.last_simbrief_generated_time:
-                    print_info(f"New SimBrief flight plan detected. Generation Time: {current_generated_time}")
+                    print_info( "New SimBrief flight plan detected. "
+                                f"Generation Time: {current_generated_time}")
 
                     # Try to reload SimBrief future time
                     success = SimBriefFunctions.update_countdown_from_simbrief(
@@ -1075,7 +1364,8 @@ class SimBriefFunctions:
             print_error(f"DEBUG: Exception during auto-update: {e}")
 
         # Schedule the next auto-update
-        root.after(SIMBRIEF_AUTO_UPDATE_INTERVAL_MS, lambda: SimBriefFunctions.auto_update_simbrief(root))
+        root.after(CONFIG.SIMBRIEF_AUTO_UPDATE_INTERVAL_MS,
+                    lambda: SimBriefFunctions.auto_update_simbrief(root))
 
     @staticmethod
     def adjust_gate_out_delta(
@@ -1085,6 +1375,10 @@ class SimBriefFunctions:
         Adjust the gate-out time based on SimBrief data and user-provided input.
         Returns the calculated gate time offset as a timedelta.
         """
+        # Return zero if count_down state not yet set
+        if countdown_state is None:
+            return timedelta(0)
+
         # Fetch SimBrief gate-out time
         simbrief_gate_time = SimBriefFunctions.get_simbrief_ofp_gate_out_datetime(simbrief_json)
         if not simbrief_gate_time:
@@ -1106,7 +1400,8 @@ class SimBriefFunctions:
         if gate_out_entry_value:
             hours, minutes = int(gate_out_entry_value[:2]), int(gate_out_entry_value[2:])
             current_sim_time = get_simulator_datetime()
-            user_gate_time_dt = current_sim_time.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+            user_gate_time_dt = current_sim_time.replace(hour=hours, minute=minutes,
+                                                         second=0, microsecond=0)
 
             # Handle next-day adjustment
             if user_gate_time_dt.time() < current_sim_time.time():
@@ -1134,325 +1429,119 @@ SIMBRIEF_TIME_OPTION_FUNCTIONS = {
     SimBriefTimeOption.ESTIMATED_TOD: SimBriefFunctions.get_simbrief_ofp_tod_datetime,
 }
 
-# --- Drag functionality ---
-is_moving = False
+# --- Drag functionality ------------------------------------------------------
+class DragHandler:
+    """Handles window dragging."""
 
-def start_move(event):
-    """Start moving the window."""
-    global is_moving, offset_x, offset_y
-    is_moving = True
-    offset_x = event.x
-    offset_y = event.y
+    def __init__(self, root):
+        self.root = root
+        self.is_moving = False
+        self.offset_x = 0
+        self.offset_y = 0
 
-def do_move(event):
-    """Handle window movement."""
-    if is_moving:
-        deltax = event.x - offset_x
-        deltay = event.y - offset_y
-        new_x = root.winfo_x() + deltax
-        new_y = root.winfo_y() + deltay
-        root.geometry(f"+{new_x}+{new_y}")
+        # Bind events
+        self.root.bind("<Button-1>", self.start_move)
+        self.root.bind("<B1-Motion>", self.do_move)
+        self.root.bind("<ButtonRelease-1>", self.stop_move)
 
-def stop_move(event):
-    """Stop moving the window."""
-    global is_moving
-    is_moving = False
-    save_settings({"x": root.winfo_x(), "y": root.winfo_y()}, simbrief_settings)
+    def start_move(self, event):
+        """Start moving the window."""
+        self.is_moving = True
+        self.offset_x = event.x
+        self.offset_y = event.y
 
-# --- Template Menu ---
-def show_template_menu(event, template_handler):
-    """
-    Display a context menu to allow the user to select a template.
-    """
-    menu = tk.Menu(root, tearoff=0)
+    def do_move(self, event):
+        """Handle window movement."""
+        if self.is_moving:
+            deltax = event.x - self.offset_x
+            deltay = event.y - self.offset_y
+            new_x = self.root.winfo_x() + deltax
+            new_y = self.root.winfo_y() + deltay
+            self.root.geometry(f"+{new_x}+{new_y}")
 
-    # Add all templates to the menu
-    for template_name in template_handler.templates.keys():
-        menu.add_command(
-            label=template_name,
-            command=lambda name=template_name: switch_template(name, template_handler)
-        )
+    def stop_move(self, event):
+        """Stop moving the window."""
+        self.is_moving = False
 
-    # Show the menu at the cursor position
-    menu.post(event.x_root, event.y_root)
-
-def switch_template(new_template_name, template_handler):
-    """
-    Switch to a new template and mark it for re-rendering in the next update cycle.
-    """
-    try:
-        # Update the selected template
-        template_handler.selected_template_name = new_template_name
-        template_handler.mark_template_change()  # Mark the change
-
-        print(f"Switched to template: {new_template_name}")
-
-    except Exception as e:
-        print_error(f"Error switching template: {e}")
-
-# --- Settings  ---
-SCRIPT_DIR = os.path.dirname(__file__)
-SETTINGS_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "Settings")
-SETTINGS_FILE = os.path.join(SETTINGS_DIR, "custom_status_bar.json")
-TEMPLATE_FILE = os.path.join(SETTINGS_DIR, "status_bar_templates.py")
-
-# Ensure the Settings directory exists
-os.makedirs(SETTINGS_DIR, exist_ok=True)
-
-def load_settings():
-    """Load settings from the JSON file."""
-    if os.path.exists(SETTINGS_FILE):
-        try:
-            with open(SETTINGS_FILE, "r") as f:
-                data = json.load(f)
-                # Load SimBrief settings
-                if "simbrief_settings" in data:
-                    simbrief_settings = SimBriefSettings.from_dict(data["simbrief_settings"])
-                else:
-                    simbrief_settings = SimBriefSettings()
-                return data, simbrief_settings
-        except json.JSONDecodeError:
-            print_error("Settings file is corrupted. Using defaults.")
-    return {"x": 0, "y": 0}, SimBriefSettings()  # Default position and settings
-
-def save_settings(settings, simbrief_settings):
-    """Save settings to the JSON file."""
-    try:
-        settings["simbrief_settings"] = simbrief_settings.to_dict()
-        with open(SETTINGS_FILE, "w") as f:
-            json.dump(settings, f, indent=4)
-    except Exception as e:
-        print_error(f"Error saving settings: {e}")
-
-def is_debugging():
-    """Check if the script is running in a debugging environment."""
-    try:
-        if sys.monitoring.get_tool(sys.monitoring.DEBUGGER_ID) is not None:
-            return True
-    except Exception:
-        return False
-
-def log_global_state(event=None, log_path="detailed_state_log.txt", max_depth=2):
-    """
-    Log the global state and nested attributes to a file, prioritizing user-defined globals.
-
-    Args:
-        event: Tkinter event (passed automatically when bound to a shortcut).
-        log_path (str): Path to save the log file.
-        max_depth (int): Maximum recursion depth for nested attributes.
-    """
-    import inspect
-
-    def is_user_defined(var_name, var_value):
-        """
-        Determine if a global variable is user-defined.
-        A variable is considered user-defined if:
-        - It is not a module.
-        - It is not a built-in function or object.
-        - It is not imported (i.e., it was declared in the current script).
-        """
-        if var_name.startswith("__"):  # Skip dunder (magic) variables
-            return False
-        # Check if the variable is a module or built-in
-        if inspect.ismodule(var_value):
-            return False
-        if inspect.isbuiltin(var_value):
-            return False
-        # Check if the variable's module is the current script
-        if hasattr(var_value, "__module__") and var_value.__module__ == "__main__":
-            return True
-        # Fallback for non-callable objects
-        return not callable(var_value)
-
-    def log_variable(var_name, var_value, depth=0):
-        """Recursively log a variable and its attributes up to max_depth."""
-        indent = "  " * depth
-        if depth > max_depth:
-            return  # Stop recursion if max depth is exceeded
-
-        try:
-            log_file.write(f"{indent}{var_name}: {repr(var_value)}\n")
-
-            # Recurse into attributes if the variable is a custom object or dict
-            if hasattr(var_value, "__dict__"):
-                for attr_name, attr_value in vars(var_value).items():
-                    log_variable(f"{var_name}.{attr_name}", attr_value, depth + 1)
-            elif isinstance(var_value, dict):
-                for key, value in var_value.items():
-                    log_variable(f"{var_name}[{repr(key)}]", value, depth + 1)
-            elif isinstance(var_value, (list, set, tuple)):
-                for idx, value in enumerate(var_value):
-                    log_variable(f"{var_name}[{idx}]", value, depth + 1)
-        except Exception as e:
-            log_file.write(f"{indent}{var_name}: [ERROR: {str(e)}]\n")
-
-    # Separate user-defined and external globals
-    user_globals = {k: v for k, v in globals().items() if is_user_defined(k, v)}
-    external_globals = {k: v for k, v in globals().items() if k not in user_globals}
-
-    # Start logging
-    with open(log_path, "w") as log_file:
-        log_file.write(f"--- Global State Log: {datetime.now()} ---\n\n")
-
-        # Tkinter state
-        log_file.write(f"winfo_geometry={root.winfo_geometry()}, state={root.state()}\n")
-
-        # Log user-defined globals first
-        log_file.write("### User-Defined Globals ###\n")
-        for name, value in user_globals.items():
-            log_variable(name, value)
-
-        # Log external globals next
-        log_file.write("\n### External Globals ###\n")
-        for name, value in external_globals.items():
-            log_variable(name, value)
-
-    print(f"Global state logged to {log_path}")
-
-def check_user_functions():
-    global USER_UPDATE_FUNCTION_DEFINED, USER_SLOW_UPDATE_FUNCTION_DEFINED
-
-    try:
-        user_init()
-    except NameError:
-        print_warning("No user_init function defined in template file")
-    except Exception as e:
-        print_error(f"Error calling user_init [{type(e).__name__}]: {e}")
-        traceback.print_exc(file=sys.stdout)
-        sys.exit(1)
-
-    # Check for user update function
-    function_name = "user_update"
-    if function_name in globals() and callable(globals()[function_name]):
-        USER_UPDATE_FUNCTION_DEFINED = True
-    else:
-        USER_UPDATE_FUNCTION_DEFINED = False
-        print_warning("No user_update function defined in template file")
-
-    function_name = "user_slow_update"
-    if function_name in globals() and callable(globals()[function_name]):
-        USER_SLOW_UPDATE_FUNCTION_DEFINED = True
-    else:
-        USER_SLOW_UPDATE_FUNCTION_DEFINED = False
-        print_warning("No user_slow_update function defined in template file")
-
+# --- MAIN Function -----------------------------------------------------------
 def main():
-    global root, display_frame, simbrief_settings
-
+    """Main entry point to script"""
+    # Globals here necessary for template support
+    global state, simbrief_settings, countdown_state  # pylint: disable=global-statement
     print_info("Starting custom status bar...")
 
-    # --- Load initial settings ---
-    settings, simbrief_settings_loaded = load_settings()
-    simbrief_settings = simbrief_settings_loaded
-    initial_x = settings.get("x", 0)
-    initial_y = settings.get("y", 0)
-    print_debug(f"Loaded window position - x: {initial_x}, y: {initial_y}")
-
-    # --- GUI Setup ---
-    root = tk.Tk()
-    root.title(WINDOW_TITLE)
-    root.overrideredirect(True)
-    root.attributes("-topmost", True)
-    root.attributes("-alpha", ALPHA_TRANSPARENCY_LEVEL)
-    root.configure(bg=DARK_BG)
-
-     # Start auto-update if enabled
-    if simbrief_settings.auto_update_enabled:
-        print_info("\nAuto-update is enabled. Starting periodic updates...\n")
-        root.after(1000, lambda: SimBriefFunctions.auto_update_simbrief(root))  # Initial delay of 1 second
-
-    # Apply initial geometry after creating the root window
     try:
-        # Set initial position
-        root.geometry(f"+{initial_x}+{initial_y}")
-    except Exception as e:
-        print_error(f"Failed to apply geometry - {e}")
+        countdown_state = CountdownState()
 
-    # Bind mouse events to enable dragging of the window
-    root.bind("<Button-1>", start_move)
-    root.bind("<B1-Motion>", do_move)
-    root.bind("<ButtonRelease-1>", stop_move)
+        state = AppState()
+        ui_manager = UIManager(state)
+        root = ui_manager.get_root()
+        service_manager = ServiceManager(state, state.settings, root)
 
-    # Frame to hold the labels
-    display_frame = tk.Frame(root, bg=DARK_BG)
-    display_frame.pack(padx=10, pady=5)
+        # Load template once all globals are initialize to ensure template file has proper scope
+        ui_manager.template_handler.load_template_file()
 
-    # --- Double click functionality for setting timer ---
-    root.bind("<Double-1>", lambda event: open_timer_dialog())
+        state.start(root)           # Clocks user updates
+        ui_manager.start()          # Clocks display updates
+        service_manager.start()     # Starts service tasks (background updater)
 
-    # Start the background thread
-    background_thread = threading.Thread(target=simconnect_background_updater, daemon=True)
-    background_thread.start()
-
-    # Start the watchdog function to monitor the background thread
-    root.after(10_000, background_thread_watchdog_function)
-
-    try:
-        # Initialize TemplateHandler
-        template_handler = TemplateHandler()
-
-        # Check if user functions are defined
-        check_user_functions()
-
-        # Render the initial display
-        update_display(template_handler)
-
-        # Bind the right-click menu
-        root.bind("<Button-3>", lambda event: show_template_menu(event, template_handler))
-
-        #### FAULT DETECTION ###########
-        def reset_traceback_timer():
-            """Reset the faulthandler timer to prevent a dump."""
-            faulthandler.dump_traceback_later(30, file=traceback_log_file, exit=True)
-            root.after(10000, reset_traceback_timer)
-        if not is_debugging():
-            print_info("Traceback fault timer started")
-            reset_traceback_timer()
-        else:
-            print_info("Traceback fault timer NOT started (debugging detected)")
-        #### FAULT DETECTION ########### - END
-
-        # Bind log that can be executed during runtime
-        try:
-            import keyboard
-            keyboard.add_hotkey("ctrl+alt+shift+l", log_global_state)
-            print_info("Global hotkey 'Ctrl+Alt+Shift+L' registered for logging state.")
-        except ImportError:
-            print_warning("Please 'pip install keyboard' for dynamic logging")
-
-        # Uncomment to test out traceback timer
-        #while True:
-        #    pass
-        # Run the GUI event loop
         root.mainloop()
     except ValueError as e:
         print_error(f"Error: {e}")
         print("Please check your DISPLAY_TEMPLATE and try again.")
 
-# --- Utility Classes  ---
+# --- Utility Classes  --------------------------------------------------------
 class CountdownTimerDialog(tk.Toplevel):
     """A dialog to set the countdown timer and SimBrief settings"""
-    def __init__(self, parent, simbrief_settings: SimBriefSettings, initial_time=None, gate_out_time=None):
+    def __init__(self, parent, app_state: AppState):
         super().__init__(parent)
 
-        self.simbrief_settings = simbrief_settings
+        self.app_state = app_state
+        self.simbrief_settings = app_state.settings.simbrief_settings
 
-        # Remove the native title bar
+        # Fetch times from global count_down_state
+        if countdown_state is not None:
+            self.initial_time = countdown_state.last_entered_time
+            self.gate_out_time = countdown_state.gate_out_time
+        else:
+            raise ValueError("CountdownTimerDialog: countdown_state not set!")
+
+        # Forward declarations of UI components
+        self.title_bar: Optional[tk.Frame] = None
+        self.title_label: Optional[tk.Label] = None
+        self.close_button: Optional[tk.Button] = None
+        self.simbrief_entry: Optional[tk.Entry] = None
+        self.gate_out_entry: Optional[tk.Entry] = None
+        self.simbrief_checkbox_var: Optional[tk.BooleanVar] = None
+        self.simbrief_checkbox: Optional[tk.Checkbutton] = None
+        self.negative_timer_checkbox_var: Optional[tk.BooleanVar] = None
+        self.negative_timer_checkbox: Optional[tk.Checkbutton] = None
+        self.auto_update_var: Optional[tk.BooleanVar] = None
+        self.auto_update_checkbox: Optional[tk.Checkbutton] = None
+        self.selected_time_option: Optional[tk.StringVar] = None
+        self.time_dropdown: Optional[tk.OptionMenu] = None
+        self._drag_start_x: int = 0
+        self._drag_start_y: int = 0
+
+        self._setup_window(parent)
+
+    def _setup_window(self, parent: tk.Tk):
+        """Configure window properties (positioning, colors, focus, etc.)"""
+        # Remove native title bar
         self.overrideredirect(True)
 
-        # Ensure the window is visible before further actions
+        # Ensure visibility before further actions
         self.wait_visibility()
 
         # Fix focus and interaction issues
         self.transient(parent)  # Keep the dialog on top of the parent
         self.grab_set()  # Prevent interaction with other windows
 
-        # Window size and positioning
-        parent_x = parent.winfo_rootx()
-        parent_y = parent.winfo_rooty()
+        # Window positioning
+        parent_x, parent_y = parent.winfo_rootx(), parent.winfo_rooty()
         self.geometry(f"+{parent_x}+{parent_y}")
 
-        # Dark mode colors
+        # Define color themes
         self.bg_color = "#2E2E2E"  # Dark background
         self.fg_color = "#FFFFFF"  # Light text
         self.entry_bg_color = "#3A3A3A"  # Slightly lighter background for entries
@@ -1472,12 +1561,12 @@ class CountdownTimerDialog(tk.Toplevel):
         # Countdown Time Input
         countdown_frame = tk.Frame(self, bg=self.bg_color)
         countdown_frame.pack(pady=10, anchor="w")
-        tk.Label(countdown_frame, text="Enter Countdown Time (HHMM):", bg=self.bg_color, fg=self.fg_color,
-                font=large_font).pack(side="left", padx=5)
-        self.time_entry = tk.Entry(countdown_frame, justify="center", bg=self.entry_bg_color, fg=self.entry_fg_color,
-                                    font=("Helvetica", 16), width=10)  # Larger font for the entry
-        if initial_time:
-            self.time_entry.insert(0, initial_time)
+        tk.Label(countdown_frame, text="Enter Countdown Time (HHMM):",
+                 bg=self.bg_color, fg=self.fg_color, font=large_font).pack(side="left", padx=5)
+        self.time_entry = tk.Entry(countdown_frame, justify="center", bg=self.entry_bg_color,
+                                    fg=self.entry_fg_color, font=("Helvetica", 16), width=10)
+        if self.initial_time:
+            self.time_entry.insert(0, self.initial_time)
         self.time_entry.pack(side="left", padx=5)
 
         # Add simbrief section (with collapsable section)
@@ -1486,12 +1575,14 @@ class CountdownTimerDialog(tk.Toplevel):
         # OK and Cancel Buttons
         button_frame = tk.Frame(self, bg=self.bg_color)
         button_frame.pack(pady=20)
-        tk.Button(button_frame, text="OK", command=self.on_ok, bg=self.button_bg_color, fg=self.button_fg_color,
-                activebackground=self.entry_bg_color, activeforeground=self.fg_color, font=small_font, width=10
+        tk.Button(  button_frame, text="OK", command=self.on_ok, bg=self.button_bg_color,
+                    fg=self.button_fg_color, activebackground=self.entry_bg_color,
+                    activeforeground=self.fg_color, font=small_font, width=10
                 ).pack(side="left", padx=5)
 
-        tk.Button(button_frame, text="Cancel", command=self.on_cancel, bg=self.button_bg_color, fg=self.button_fg_color,
-                activebackground=self.entry_bg_color, activeforeground=self.fg_color, font=small_font, width=10
+        tk.Button(  button_frame, text="Cancel", command=self.on_cancel, bg=self.button_bg_color,
+                    fg=self.button_fg_color, activebackground=self.entry_bg_color,
+                    activeforeground=self.fg_color, font=small_font, width=10
                 ).pack(side="right", padx=5)
 
         # Bind Enter to OK button
@@ -1520,14 +1611,17 @@ class CountdownTimerDialog(tk.Toplevel):
         self.title_bar.pack(side="top", fill="x")
 
         # Title Label
-        self.title_label = tk.Label(self.title_bar, text="Set Countdown Timer and SimBrief Settings",
-                                    bg=self.title_bar_bg, fg=self.fg_color, font=("Helvetica", 10, "bold"))
+        self.title_label = tk.Label(self.title_bar,
+                                    text="Set Countdown Timer and SimBrief Settings",
+                                    bg=self.title_bar_bg, fg=self.fg_color,
+                                    font=("Helvetica", 10, "bold"))
         self.title_label.pack(side="left", padx=10)
 
         # Close Button
-        self.close_button = tk.Button(self.title_bar, text="✕", command=self.on_cancel, bg=self.title_bar_bg,
-                                    fg=self.fg_color, relief="flat", font=("Helvetica", 10, "bold"),
-                                    activebackground="#FF0000", activeforeground=self.fg_color)
+        self.close_button = tk.Button(self.title_bar, text="✕", command=self.on_cancel,
+                                      bg=self.title_bar_bg, fg=self.fg_color, relief="flat",
+                                      font=("Helvetica", 10, "bold"), activebackground="#FF0000",
+                                      activeforeground=self.fg_color)
         self.close_button.pack(side="right", padx=5)
 
         # Bind dragging to the title bar
@@ -1559,9 +1653,9 @@ class CountdownTimerDialog(tk.Toplevel):
         if self.simbrief_settings.username.strip():
             simbrief_section.expand()
 
-    def simbrief_content(self, frame, small_font, simbrief_username, use_simbrief_adjusted_time, gate_out_time):
+    def simbrief_content(self, frame, small_font, simbrief_username,
+                         use_simbrief_adjusted_time, gate_out_time):
         """Build the SimBrief components inside the collapsible section."""
-
         # Outer Frame for Padding
         outer_frame = tk.Frame(frame, bg=self.bg_color)
         outer_frame.pack(fill="x", padx=10, pady=0)
@@ -1572,11 +1666,12 @@ class CountdownTimerDialog(tk.Toplevel):
 
         # SimBrief Username
         tk.Label(
-            input_frame, text="SimBrief Username:", bg=self.bg_color, fg=self.fg_color, font=small_font
-        ).grid(row=0, column=0, sticky="w", padx=5, pady=2)
+            input_frame, text="SimBrief Username:", bg=self.bg_color,
+            fg=self.fg_color, font=small_font).grid(row=0, column=0, sticky="w", padx=5, pady=2)
 
         self.simbrief_entry = tk.Entry(
-            input_frame, justify="left", bg=self.entry_bg_color, fg=self.entry_fg_color, font=small_font, width=25
+            input_frame, justify="left", bg=self.entry_bg_color, fg=self.entry_fg_color,
+            font=small_font, width=25
         )
         if simbrief_username:
             self.simbrief_entry.insert(0, simbrief_username)
@@ -1584,12 +1679,12 @@ class CountdownTimerDialog(tk.Toplevel):
 
         # Gate Out Time
         tk.Label(
-            input_frame, text="Gate Out Time (HHMM):", bg=self.bg_color, fg=self.fg_color, font=small_font
-        ).grid(row=1, column=0, sticky="w", padx=5, pady=2)
+            input_frame, text="Gate Out Time (HHMM):", bg=self.bg_color, fg=self.fg_color,
+              font=small_font).grid(row=1, column=0, sticky="w", padx=5, pady=2)
 
         self.gate_out_entry = tk.Entry(
-            input_frame, justify="left", bg=self.entry_bg_color, fg=self.entry_fg_color, font=small_font, width=25
-        )
+            input_frame, justify="left", bg=self.entry_bg_color, fg=self.entry_fg_color,
+            font=small_font, width=25 )
         if gate_out_time:
             self.gate_out_entry.insert(0, gate_out_time.strftime("%H%M"))
         self.gate_out_entry.grid(row=1, column=1, sticky="w", padx=5, pady=2)
@@ -1608,7 +1703,8 @@ class CountdownTimerDialog(tk.Toplevel):
         self.simbrief_checkbox.grid(row=2, column=0, columnspan=2, sticky="w", padx=5, pady=2)
 
         # Checkbox for allowing negative timer
-        self.negative_timer_checkbox_var = tk.BooleanVar(value=simbrief_settings.allow_negative_timer)
+        self.negative_timer_checkbox_var = tk.BooleanVar(
+            value=self.simbrief_settings.allow_negative_timer)
         self.negative_timer_checkbox = tk.Checkbutton(
             input_frame,
             text="Allow Negative Timer",
@@ -1621,7 +1717,7 @@ class CountdownTimerDialog(tk.Toplevel):
         self.negative_timer_checkbox.grid(row=3, column=0, columnspan=2, sticky="w", padx=5, pady=2)
 
         # Add checkbox for enabling/disabling auto updates
-        self.auto_update_var = tk.BooleanVar(value=simbrief_settings.auto_update_enabled)
+        self.auto_update_var = tk.BooleanVar(value=self.simbrief_settings.auto_update_enabled)
         self.auto_update_checkbox = tk.Checkbutton(
             input_frame,
             text="Enable Auto SimBrief Updates",
@@ -1642,15 +1738,18 @@ class CountdownTimerDialog(tk.Toplevel):
         time_selection_frame.pack(fill="x", pady=2, anchor="w")
 
         tk.Label(
-            time_selection_frame, text="Select SimBrief Time:", bg=self.bg_color, fg=self.fg_color, font=small_font
+            time_selection_frame, text="Select SimBrief Time:", bg=self.bg_color,
+            fg=self.fg_color, font=small_font
         ).grid(row=0, column=0, sticky="w", padx=5, pady=2)
 
         if isinstance(self.simbrief_settings.selected_time_option, str):
             # If it's already a string, assign it directly
-            self.selected_time_option = tk.StringVar(value=self.simbrief_settings.selected_time_option)
+            self.selected_time_option = tk.StringVar(
+                                            value=self.simbrief_settings.selected_time_option )
         elif isinstance(self.simbrief_settings.selected_time_option, Enum):
             # If it's an Enum, use its value
-            self.selected_time_option = tk.StringVar(value=self.simbrief_settings.selected_time_option.value)
+            self.selected_time_option = tk.StringVar(
+                value=self.simbrief_settings.selected_time_option.value )
         else:
             # Handle unexpected types
             print_warning("Invalid type for selected_time_option")
@@ -1661,7 +1760,8 @@ class CountdownTimerDialog(tk.Toplevel):
             self.selected_time_option,
             *[option.value for option in SimBriefTimeOption],  # Use the enum values for options
         )
-        self.time_dropdown.configure(bg=self.entry_bg_color, fg=self.entry_fg_color, highlightthickness=0, font=small_font)
+        self.time_dropdown.configure(bg=self.entry_bg_color, fg=self.entry_fg_color,
+                                     highlightthickness=0, font=small_font)
         self.time_dropdown["menu"].configure(bg=self.entry_bg_color, fg=self.fg_color)
         self.time_dropdown.grid(row=0, column=1, sticky="w", padx=5, pady=2)
 
@@ -1677,56 +1777,38 @@ class CountdownTimerDialog(tk.Toplevel):
         )
         pull_time_button.grid(row=0, column=2, sticky="w", padx=5, pady=2)
 
-    def get_default_gate_out_time(self):
-        """
-        Fetch the default gate-out time (sched_out) from SimBrief JSON.
-        """
-        try:
-            simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(self.simbrief_settings.username)
-            if not simbrief_json:
-                print("DEBUG: Failed to fetch SimBrief JSON.")
-                return None
-            return SimBriefFunctions.get_simbrief_ofp_gate_out_datetime(simbrief_json)
-        except Exception as e:
-            print(f"Error fetching default gate-out time: {e}")
-            return None
-
     def on_cancel(self):
         """Cancel the dialog."""
-        self.result = None
         self.destroy()
 
     def on_ok(self):
         """
-        Validate user input, update SimBrief settings, and set the countdown timer if time is provided.
+        Validate user input, update SimBrief settings, and set the countdown timer if time
+        is provided.
         """
-        try:
-            print_debug("on_ok---------------------------")
+        print_debug("on_ok---------------------------")
 
-            # Update SimBrief settings from dialog inputs
-            self.update_simbrief_settings()
+        # Update SimBrief settings from dialog inputs
+        self.update_simbrief_settings()
 
-            # Save SimBrief settings regardless of whether a username is provided
-            save_settings(load_settings()[0], simbrief_settings)
+        # Save SimBrief settings regardless of whether a username is provided
+        settings = self.app_state.settings
+        self.app_state.settings_manager.save_settings(settings)
 
-            # Handle the time input
-            time_text = self.time_entry.get().strip()
-            if time_text:
-                if not self.validate_time_format(time_text):
-                    messagebox.showerror("Invalid Input", "Please enter time in HHMM format.")
-                    return
+        # Handle the time input
+        time_text = self.time_entry.get().strip()
+        if time_text:
+            if not self.validate_time_format(time_text):
+                messagebox.showerror("Invalid Input", "Please enter time in HHMM format.")
+                return
 
-                future_time = self.calculate_future_time(time_text)
-                if not self.set_countdown_timer(future_time):
-                    messagebox.showerror("Error", "Failed to set the countdown timer.")
-                    return
+            future_time = self.calculate_future_time(time_text)
+            if not self.set_countdown_timer(future_time):
+                messagebox.showerror("Error", "Failed to set the countdown timer.")
+                return
 
-            # Close the dialog
-            self.result = {"time": time_text}
-            self.destroy()
-
-        except Exception as e:
-            messagebox.showerror("Error", f"An unexpected error occurred: {str(e)}")
+        # Close the dialog
+        self.destroy()
 
     def pull_time(self):
         """
@@ -1738,8 +1820,9 @@ class CountdownTimerDialog(tk.Toplevel):
             # Update SimBrief settings from the dialog inputs
             self.update_simbrief_settings()
 
-            # Persist the updated SimBrief settings
-            save_settings(load_settings()[0], simbrief_settings)
+            # Save the updated SimBrief settings
+            settings = self.app_state.settings
+            self.app_state.settings_manager.save_settings(settings)
 
             # Validate the SimBrief username
             if not self.validate_simbrief_username():
@@ -1747,19 +1830,23 @@ class CountdownTimerDialog(tk.Toplevel):
                 return
 
             # Fetch SimBrief data
-            simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(simbrief_settings.username)
+            simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(
+                self.simbrief_settings.username)
             if not simbrief_json:
-                messagebox.showerror("Error", "Failed to fetch SimBrief data. Please check your username.")
+                messagebox.showerror("Error", "Failed to fetch SimBrief data. "
+                                     "Please check your username.")
                 print_debug("DEBUG: SimBrief data fetch failed.")
                 return
 
             # Get manual gate-out time entry, if provided
-            gate_out_entry_value = self.gate_out_entry.get().strip() if self.gate_out_entry else None
+            gate_out_entry_value = (
+                self.gate_out_entry.get().strip() if self.gate_out_entry else None
+            )
 
             # Update countdown timer using the shared method
             success = SimBriefFunctions.update_countdown_from_simbrief(
                 simbrief_json=simbrief_json,
-                simbrief_settings=simbrief_settings,
+                simbrief_settings=self.simbrief_settings,
                 gate_out_entry_value=gate_out_entry_value
             )
 
@@ -1777,29 +1864,31 @@ class CountdownTimerDialog(tk.Toplevel):
 
     def update_simbrief_settings(self):
         """Update SimBrief settings from dialog inputs."""
-        simbrief_settings.username = self.simbrief_entry.get().strip()
-        simbrief_settings.use_adjusted_time = self.simbrief_checkbox_var.get()
+        self.simbrief_settings.username = self.simbrief_entry.get().strip()
+        self.simbrief_settings.use_adjusted_time = self.simbrief_checkbox_var.get()
 
         # Validate selected_time_option - ignore custom values
         selected_time = self.selected_time_option.get()
         if selected_time in [option.value for option in SimBriefTimeOption]:
-            simbrief_settings.selected_time_option = SimBriefTimeOption(selected_time)
+            self.simbrief_settings.selected_time_option = SimBriefTimeOption(selected_time)
 
-        simbrief_settings.allow_negative_timer = self.negative_timer_checkbox_var.get()
-        simbrief_settings.auto_update_enabled = self.auto_update_var.get()
+        self.simbrief_settings.allow_negative_timer = self.negative_timer_checkbox_var.get()
+        self.simbrief_settings.auto_update_enabled = self.auto_update_var.get()
 
     def validate_simbrief_username(self):
         """Validate SimBrief username and show an error if invalid."""
-        if not simbrief_settings.username:
+        if not self.simbrief_settings.username:
             messagebox.showerror("Error", "Please enter a SimBrief username.")
             return False
         return True
 
     def fetch_simbrief_data(self):
         """Fetch and return SimBrief JSON data."""
-        simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(simbrief_settings.username)
+        simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(
+                                                                self.simbrief_settings.username)
         if not simbrief_json:
-            messagebox.showerror("Error", "Failed to fetch SimBrief data. Please check the username or try again.")
+            messagebox.showerror("Error", "Failed to fetch SimBrief data. "
+                                 "Please check the username or try again.")
             return None
         return simbrief_json
 
@@ -1866,7 +1955,8 @@ class CollapsibleSection(tk.Frame):
         self.border_color = "#444444"
 
         # Frame styling to reduce white padding
-        self.configure(bg=self.bg_color, highlightbackground=self.border_color, highlightthickness=1)
+        self.configure( bg=self.bg_color, highlightbackground=self.border_color,
+                        highlightthickness=1)
 
         # Toggle button (with an arrow)
         self.toggle_button = tk.Button(
@@ -1904,6 +1994,157 @@ class CollapsibleSection(tk.Frame):
         """Expand the section."""
         self.content_frame.pack(fill="x", padx=2, pady=2)
         self.toggle_button.config(text="▲ " + self.toggle_button.cget("text")[2:])
+
+class WidgetPool:  # pylint: disable=missing-function-docstring
+    """Manages Tkinter widgets and their order - used by DisplayUpdater"""
+    def __init__(self):
+        self.pool = {}
+
+    def add_widget(self, block_id, widget):
+        if block_id not in self.pool:
+            self.pool[block_id] = widget
+
+    def remove_widget(self, block_id):
+        if block_id in self.pool:
+            self.pool[block_id].destroy()
+            del self.pool[block_id]
+
+    def get_widget(self, block_id):
+        return self.pool.get(block_id)
+
+    def has_widget(self, block_id):
+        return block_id in self.pool
+
+    def get_widgets_in_order(self, parsed_block_ids):
+        return [self.pool[block_id] for block_id in parsed_block_ids if block_id in self.pool]
+
+    def clear(self):
+        for widget in self.pool.values():
+            if widget and hasattr(widget, "destroy"):
+                widget.destroy()
+        self.pool.clear()
+
+# --- Template handling  ------------------------------------------------------
+class TemplateHandler:
+    """Class to manage the template file and selected template."""
+    def __init__(self):
+        """
+        Initialize the TemplateHandler with the given settings.
+        """
+        self.parser = TemplateParser()  # Initialize the parser
+
+        self.templates = self.load_templates()  # Load templates from file
+        self.selected_template_name = next(iter(self.templates), None)
+
+        self.cached_parsed_blocks = []  # Cache parsed blocks for the selected template
+        self.pending_template_change = False  # Track if the template was changed
+
+    def load_template_file(self):
+        """Initialization - separated so we can carefully determine injection point of template"""
+        if not self.selected_template_name:
+            raise ValueError("No templates available to select.")
+
+        self.load_template_functions()
+        self.cache_parsed_blocks()
+
+    def load_templates(self) -> dict[str, str]:
+        """Load templates from the template file, creating the file if necessary."""
+        os.makedirs(CONFIG.SETTINGS_DIR, exist_ok=True)
+
+        if not os.path.exists(CONFIG.TEMPLATE_FILE):
+            with open(CONFIG.TEMPLATE_FILE, "w", encoding="utf-8") as f:
+                f.write(DEFAULT_TEMPLATES.strip())
+            print(f"Created default template file at {CONFIG.TEMPLATE_FILE}")
+
+        try:
+            spec = importlib.util.spec_from_file_location("status_bar_templates",
+                                                          CONFIG.TEMPLATE_FILE)
+            templates_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(templates_module)
+            return templates_module.TEMPLATES if hasattr(templates_module, "TEMPLATES") else {}
+        except Exception as e:
+            print(f"Error loading templates: {e}")
+            return {}
+
+    def load_template_functions(self):
+        """
+        Dynamically import functions from the template file and inject only relevant globals.
+        """
+        try:
+            spec = importlib.util.spec_from_file_location("status_bar_templates",
+                                                          CONFIG.TEMPLATE_FILE)
+            templates_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(templates_module)
+
+            # First, filter globals to exclude built-ins and modules
+            relevant_globals = {
+                k: v for k, v in globals().items()
+                if not k.startswith("__") and not isinstance(v, type(importlib))  # Exclude built-ins and modules
+            }
+
+            # Debug: Log the filtered globals being injected, grouping functions properly
+            self._print_sorted_globals(relevant_globals)
+
+            # Inject filtered globals into the template module
+            templates_module.__dict__.update(relevant_globals)
+
+            # Add callable objects to this global namespace
+            for name, obj in vars(templates_module).items():
+                if callable(obj):
+                    globals()[name] = obj
+
+            print_debug("load_template_functions: DONE\n")
+
+        except Exception as e: # pylint: disable=broad-except
+            print_error(f"Error loading template functions: {e}")
+
+    def _print_sorted_globals(self, globals_dict):
+        """Sorts and prints the provided globals dictionary in two columns with colors."""
+        def sort_by_type_and_name(item):
+            obj_type = type(item[1]).__name__ if item[1] is not None else "NoneType"
+            priority = {"function": 0, "type": 1}.get(obj_type, 2)
+            return priority, item[0]
+
+        sorted_globals = sorted(globals_dict.items(), key=sort_by_type_and_name)
+
+        max_name_length = max(len(name) for name, _ in sorted_globals) + 1
+        max_type_length = min(8, max(len(type(obj).__name__) for _, obj in sorted_globals))
+
+        mid_index = (len(sorted_globals) + 1) // 2
+        left_column = sorted_globals[:mid_index]
+        right_column = sorted_globals[mid_index:]
+
+        print_debug("Filtered Globals to Inject:")
+
+        # Helper to format a single column
+        def format_column(name, obj):
+            obj_type = type(obj).__name__ if obj is not None else "NoneType"
+            return f"[green(]{name.ljust(max_name_length)}:[)] {obj_type.ljust(max_type_length)}"
+
+        # Loop and print each row
+        for i in range(max(len(left_column), len(right_column))):
+            left = left_column[i] if i < len(left_column) else ("", None)
+            right = right_column[i] if i < len(right_column) else ("", None)
+
+            left_col = format_column(*left)
+            right_col = format_column(*right)
+
+            print_color(f" {left_col} {right_col}")
+
+    def get_current_template(self) -> str:
+        """Return the content of the currently selected template."""
+        if not self.selected_template_name or self.selected_template_name not in self.templates:
+            raise ValueError("No valid template selected.")
+        return self.templates[self.selected_template_name]
+
+    def cache_parsed_blocks(self):
+        """Cache the parsed blocks for the currently selected template."""
+        template_content = self.get_current_template()
+        self.cached_parsed_blocks = self.parser.parse_template(template_content)
+
+    def mark_template_change(self):
+        """Mark that a template change is pending."""
+        self.pending_template_change = True
 
 class TemplateParser:
     """
@@ -2084,7 +2325,8 @@ class TemplateParser:
                 # Handle an opening parenthesis
                 # Look backward to find the block name before '('
                 name_start = i - 1
-                while name_start >= 0 and (template_string[name_start].isalnum() or template_string[name_start] == "_"):
+                while name_start >= 0 and (template_string[name_start].isalnum()
+                or template_string[name_start] == "_"):
                     name_start -= 1
                 block_name = template_string[name_start + 1:i].strip()
 
