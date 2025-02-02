@@ -7,7 +7,7 @@ from time import sleep
 import os
 import json
 from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
-from Lib.extended_mobiflight_variable_requests import ExtendedMobiFlightVariableRequests
+from Lib.extended_mobiflight_variable_requests import ExtendedMobiFlightVariableRequests, set_and_verify_lvar
 import sys
 from queue import Queue
 import threading
@@ -56,9 +56,6 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SETTINGS_DIR = os.path.join(BASE_DIR, "Settings")
 SETTINGS_FILE = os.path.join(SETTINGS_DIR, "fenix_lights.json")
 
-MAX_RETRIES = 5  # Maximum number of retries if a value doesn't set correctly
-RETRY_DELAY = 0.1  # Delay in seconds between retries
-
 def load_settings():
     """Load user settings from the settings file."""
     if os.path.exists(SETTINGS_FILE):
@@ -99,38 +96,6 @@ def set_cockpit_lights(mf_requests):
         # Set to max value then default value
         set_and_verify_lvar(mf_requests, lvar_name, 1.0)
         set_and_verify_lvar(mf_requests, lvar_name, default_value)
-
-def set_and_verify_lvar(mf_requests, lvar, value, tolerance=0.01, max_retries=MAX_RETRIES, retry_delay=RETRY_DELAY):
-    """
-    Sets an LVAR to a specified value and verifies it within a tolerance. Retries if necessary.
-    If tolerance is None, disables the verification step entirely.
-    """
-    for attempt in range(1, max_retries + 1):
-        # Attempt to set the LVAR
-        req_str = f"{value} (> {lvar})"
-        mf_requests.set(req_str)
-
-        # Skip verification if tolerance is None
-        if tolerance is None:
-            #print_info(f"[INFO] {lvar} set to {value} (verification disabled).")
-            return True
-
-        sleep(retry_delay)  # Allow time for the simulator to apply the value
-
-        # Check if the value was successfully applied within the tolerance
-        current_value = mf_requests.get(f"({lvar})")
-        if abs(current_value - value) <= tolerance:
-            #print_info(f"[SUCCESS] {lvar} set to {value} on attempt {attempt}. Current value: {current_value}")
-            return True
-
-        #print_warning(f"[RETRY] {lvar} not set to {value}. Current value: {current_value}. Retrying ({attempt}/{max_retries})...")
-
-    # Enhanced error message with actual vs expected values
-    print_error(
-        f"[FAILURE] Could not set {lvar} to {value} (current value: {current_value}) "
-        f"within tolerance {tolerance} after {max_retries} attempts."
-    )
-    return False
 
 def propagate_lvars(mf_requests, co_value):
     """
