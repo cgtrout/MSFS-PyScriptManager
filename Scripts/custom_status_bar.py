@@ -718,6 +718,11 @@ class SimVarLookup:
         """Update the last update timestamp."""
         self.last_update = time.time()
 
+    def set_value(self, v):
+        """Set internal value"""
+        # TODO: Validiate type
+        self._value = v
+
     def get_value(self, max_age=5.0):
         """Retrieve the value, marking it stale if too old."""
         if self.needs_update(max_age):
