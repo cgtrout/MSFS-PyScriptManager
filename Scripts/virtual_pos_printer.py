@@ -413,10 +413,12 @@ def ensure_port_available(port, host='127.0.0.1'):
             print("\nPossible causes:")
             print("- Another instance of this script is already running.")
             print("- Improper shutdown of a previous instance has left the port occupied.")
+            print("- Finally: possibly other software is using this port?")
             print("\nTo resolve:")
             print("1. Close MSFS-PyScriptManager.")
             print("2. Check for running Python processes and terminate them:")
             print("   - Open Task Manager and close any running 'python.exe' instances.")
+            print("3. Check if other apps, drivers, etc are using the port")
             sys.exit(1)
 
 def print_instructions():
