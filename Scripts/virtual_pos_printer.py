@@ -216,15 +216,15 @@ def process_print_queue(default_font, printer_message_queue):
     root.after(100, process_print_queue, default_font)
 
 # Initialize the virtual printer server
-def initialize_virtual_printer_server(PRINTER_SERVER_ADDRESS, PRINTER_SERVER_PORT):
+def initialize_virtual_printer_server(printer_server_address, printer_server_port):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_address = (PRINTER_SERVER_ADDRESS, PRINTER_SERVER_PORT)
+    server_address = (printer_server_address, printer_server_port)
     server_socket.bind(server_address)
     server_socket.listen(5)
 
     # Print after the server is actually listening
-    print_info(f"Printer server is listening on {PRINTER_SERVER_ADDRESS}:{PRINTER_SERVER_PORT}")
+    print_info(f"Printer server is listening on {printer_server_address}:{printer_server_port}")
 
     return server_socket
 
