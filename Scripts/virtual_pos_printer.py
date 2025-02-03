@@ -126,8 +126,8 @@ OFFSET_STEP = 10
 # Queue to store messages sequentially for server out (community module)
 http_message_queue = queue.Queue()
 
-# Function to capture mouse position for setting spawn position
 def capture_mouse_position():
+    """Capture mouse position for setting spawn position"""
     global spawn_position
     x = root.winfo_pointerx()
     y = root.winfo_pointery()
@@ -139,8 +139,8 @@ def capture_mouse_position():
     messagebox.showinfo("Position Set", f"Spawn position set to: {spawn_position}")
     print_info(f"Spawn position set to: {spawn_position}")
 
-# Function to create a new window with the given data
 def create_window(data, default_font):
+    """Create a new pop up window"""
     global active_windows
 
     window = tk.Toplevel()
@@ -199,8 +199,8 @@ def create_window(data, default_font):
     window.bind("<Enter>", lambda event: window.bind("<MouseWheel>", scale_font))
     window.bind("<Leave>", lambda event: window.unbind("<MouseWheel>"))
 
-# Function to process messages from the queue
 def process_print_queue(default_font, printer_message_queue):
+    """Process messages from the queue"""
     try:
         message = printer_message_queue.get_nowait()
 
@@ -218,8 +218,9 @@ def process_print_queue(default_font, printer_message_queue):
 
     root.after(100, process_print_queue, default_font, printer_message_queue)
 
-# Initialize the virtual printer server
+
 def initialize_virtual_printer_server(printer_server_address, printer_server_port):
+    """Initialize the virtual printer server"""
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_address = (printer_server_address, printer_server_port)
@@ -231,8 +232,8 @@ def initialize_virtual_printer_server(printer_server_address, printer_server_por
 
     return server_socket
 
-# Server code (a virtual printer server to intercept print jobs)
 def run_virtual_printer_server(server_socket, printer_message_queue, http_message_queue):
+    """Server code (a virtual printer server to intercept print jobs)"""
     while True:
         connection, client_address = server_socket.accept()
         print_info(f'Printer connection from {client_address}')
@@ -273,14 +274,16 @@ def run_virtual_printer_server(server_socket, printer_message_queue, http_messag
         finally:
             connection.close()
 
+
 def extract_acars_message(data):
+    """Extract ACARS message from text"""
     match = re.search(r'ACARS BEGIN\s*(.*?)\s*ACARS END', data, re.DOTALL)
     if match:
         return match.group(1).strip()
     return data
 
-# HTTP Server to serve the next message from the queue
 class HttpRequestHandler(http.server.SimpleHTTPRequestHandler):
+    """HTTP Server to serve the next message from the queue"""
     def do_GET(self):
         if self.path == "/latest":
             try:
@@ -310,6 +313,7 @@ class HttpRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
 
 def initialize_http_server(HTTP_SERVER_PORT):
+    """Initialize HTTP Server - sends print data to external subscribers"""
     httpd = socketserver.TCPServer(("", HTTP_SERVER_PORT), HttpRequestHandler, bind_and_activate=False)
     httpd.allow_reuse_address = True
     httpd.server_bind()
@@ -320,9 +324,11 @@ def initialize_http_server(HTTP_SERVER_PORT):
     return httpd
 
 def run_http_server(httpd):
+    """Start HTTP Server"""
     httpd.serve_forever()
 
 def setup_printer():
+    """Setup printer in Windows"""
     printer_name = "VirtualTextPrinter"
     driver_name = "Generic / Text Only"
 
@@ -403,8 +409,8 @@ def setup_printer():
 
     print_color("----------------------------------------------------------------", color="yellow", bold=False)
 
-# Ensures the specified port is available. Exits with an error message if the port is in use.
 def ensure_port_available(port, host='127.0.0.1'):
+    """Ensures the specified port is available. Exits with an error message if the port is in use."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
             s.bind((host, port))
@@ -422,6 +428,7 @@ def ensure_port_available(port, host='127.0.0.1'):
             sys.exit(1)
 
 def print_instructions():
+    """Print user instructions to screen"""
     print()
     print_color("=== Instructions ===", color="green")
     print_color("- Use [yellow(]Ctrl+Alt+Shift+P[)] to change the print location of pop-ups.")
@@ -430,6 +437,7 @@ def print_instructions():
     print("- For more information, visit the project Github page for MSFS-PyScriptManager.")
 
 def main():
+    """Main entry point to script"""
     global root
 
     # Initialize Tkinter
