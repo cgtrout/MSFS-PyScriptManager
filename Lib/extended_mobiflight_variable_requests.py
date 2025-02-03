@@ -76,7 +76,7 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         self.sim_var_name_to_id = {}
         self.FLAG_DEFAULT = 0
         self.FLAG_CHANGED = 1
-        self.DATA_STRING_SIZE = 256
+        self.DATA_STRING_SIZE = 1024
         self.DATA_STRING_OFFSET = 0
         self.definition_counter = 0
 
@@ -102,12 +102,6 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         while not self.init_ready:
            time.sleep(0.05)
 
-    def register_client(self):
-        print(f"register_client: Registering client '{self.client_name}'")
-        self.send_command("Do Nothing")
-        self.send_command(f"MF.Clients.Add.{self.client_name}")
-        time.sleep(0.1)
-
     def get(self, variableString):
         client = self.my_client
         if variableString not in self.sim_var_name_to_id:
@@ -129,19 +123,6 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
     def set(self, variableString):
         #print("set: %s", variableString)
         self.send_command(("MF.SimVars.Set." + variableString), self.my_client)
-
-    def subscribe_to_mobiflight_response(self):
-        definition_id = self.new_definition_id()
-        print(f"Subscribing to 'MobiFlight.Response' with Definition ID {definition_id}")
-        self.add_to_client_data_definition(definition_id, self.DATA_STRING_OFFSET, self.DATA_STRING_SIZE)
-        self.subscribe_to_data_change(2, definition_id, definition_id)
-
-    def client_registration_confirmed(self):
-        """Check for confirmation of client registration."""
-        for sim_var in self.sim_vars.values():
-            if f"MF.Clients.Add.{self.client_name}.Finished" in sim_var.name:
-                return True
-        return False
 
     def initialize_client_data_areas(self, client):
         print(f"Initializing client channels for {client.CLIENT_NAME}...")
@@ -217,7 +198,9 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
 
     def add_to_client_data_definition(self, definition_id, offset, size):
         #print(f"AddToClientDataDefinition: {definition_id}")
-        self.sm.dll.AddToClientDataDefinition(self.sm.hSimConnect, definition_id, offset, size, 0, SIMCONNECT_UNUSED)
+        result = self.sm.dll.AddToClientDataDefinition(self.sm.hSimConnect, definition_id, offset, size, 0, SIMCONNECT_UNUSED)
+        if result != 0:
+            raise RuntimeError(f"Failed add_to_client_data_definition for def ID {definition_id}. HRESULT: {result}")
 
     def subscribe_to_data_change(self, data_area_id, request_id, definition_id):
         #print(f"RequestClientData: data_area_id={data_area_id}, request_id={request_id}, definition_id={definition_id}")
