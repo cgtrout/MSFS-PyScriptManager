@@ -110,7 +110,8 @@ atexit.register(pygame.mixer.quit)
 
 # Check if the MP3 file exists
 if not os.path.isfile(play_sound_path):
-    print_error(f"Error: The sound file '{play_sound_path}' does not exist.  Sound playback will not work. Please check the path in settings.json.")
+    print_error(f"Error: The sound file '{play_sound_path}' does not exist.  "
+                 "Sound playback will not work. Please check the path in settings.json.")
 else:
     print_info("MP3 sound file found.")
 
