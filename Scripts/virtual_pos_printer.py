@@ -28,7 +28,7 @@ except ImportError:
     sys.exit(1)
 
 # Default font for print-out popups
-DEFAULT_FONT = font.Font(family="Consolas", size=12)
+DEFAULT_FONT = ("Consolas", 12)
 
 # Define constants for server address and port
 PRINTER_SERVER_ADDRESS = '127.0.0.1'
@@ -445,7 +445,7 @@ def main():
     root.withdraw()
 
     # Default font for pop-up windows
-    default_font = DEFAULT_FONT
+    font.Font(family=DEFAULT_FONT[0], size=DEFAULT_FONT[1])
 
     # Create a queue for communication
     printer_message_queue = queue.Queue()
