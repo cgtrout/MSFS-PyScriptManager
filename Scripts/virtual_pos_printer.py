@@ -197,7 +197,7 @@ def create_window(data, default_font):
     window.bind("<Leave>", lambda event: window.unbind("<MouseWheel>"))
 
 # Function to process messages from the queue
-def process_print_queue(default_font):
+def process_print_queue(default_font, printer_message_queue):
     try:
         message = printer_message_queue.get_nowait()
 
@@ -424,43 +424,49 @@ def print_instructions():
     print("- Right-click on a note to close it.")
     print("- For more information, visit the project Github page for MSFS-PyScriptManager.")
 
-# Initialize Tkinter
-root = tk.Tk()
-root.withdraw()
+def main():
+    global root
 
-# Default font for pop-up windows
-default_font = font.Font(family="Consolas", size=12)
+    # Initialize Tkinter
+    root = tk.Tk()
+    root.withdraw()
 
-# Create a queue for communication
-printer_message_queue = queue.Queue()
+    # Default font for pop-up windows
+    default_font = font.Font(family="Consolas", size=12)
 
-# Ensure port is available
-ensure_port_available(PRINTER_SERVER_PORT)
+    # Create a queue for communication
+    printer_message_queue = queue.Queue()
 
-# Setup printer
-setup_printer()
+    # Ensure port is available
+    ensure_port_available(PRINTER_SERVER_PORT)
 
-# Initialize and start the virtual printer server in a thread
-printer_socket = initialize_virtual_printer_server(PRINTER_SERVER_ADDRESS, PRINTER_SERVER_PORT)
-printer_thread = threading.Thread( target=run_virtual_printer_server,
-    args=(printer_socket, printer_message_queue, http_message_queue)
-)
-printer_thread.daemon = True
-printer_thread.start()
+    # Setup printer
+    setup_printer()
 
-# Initialize and start the server in a thread
-httpd = initialize_http_server(HTTP_SERVER_PORT)
-http_server_thread = threading.Thread(target=run_http_server, args=(httpd,))
-http_server_thread.daemon = True
-http_server_thread.start()
+    # Initialize and start the virtual printer server in a thread
+    printer_socket = initialize_virtual_printer_server(PRINTER_SERVER_ADDRESS, PRINTER_SERVER_PORT)
+    printer_thread = threading.Thread( target=run_virtual_printer_server,
+        args=(printer_socket, printer_message_queue, http_message_queue)
+    )
+    printer_thread.daemon = True
+    printer_thread.start()
 
-print_instructions()
+    # Initialize and start the server in a thread
+    httpd = initialize_http_server(HTTP_SERVER_PORT)
+    http_server_thread = threading.Thread(target=run_http_server, args=(httpd,))
+    http_server_thread.daemon = True
+    http_server_thread.start()
 
-# Start processing queue
-root.after(100, process_print_queue, default_font)
+    print_instructions()
 
-# Global keyboard shortcut for setting spawn position
-keyboard.add_hotkey('ctrl+shift+alt+p', capture_mouse_position)
+    # Start processing queue
+    root.after(100, process_print_queue, default_font)
 
-# Start Tkinter main loop
-root.mainloop()
+    # Global keyboard shortcut for setting spawn position
+    keyboard.add_hotkey('ctrl+shift+alt+p', capture_mouse_position)
+
+    # Start Tkinter main loop
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
