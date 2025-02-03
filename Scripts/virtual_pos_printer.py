@@ -27,6 +27,9 @@ except ImportError:
     print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
     sys.exit(1)
 
+# Default font for print-out popups
+DEFAULT_FONT = font.Font(family="Consolas", size=12)
+
 # Define constants for server address and port
 PRINTER_SERVER_ADDRESS = '127.0.0.1'
 PRINTER_SERVER_PORT = 9102
@@ -213,7 +216,7 @@ def process_print_queue(default_font, printer_message_queue):
     except Exception as e:
         print_error(f"Error in process_queue: {e}")
 
-    root.after(100, process_print_queue, default_font)
+    root.after(100, process_print_queue, default_font, printer_message_queue)
 
 # Initialize the virtual printer server
 def initialize_virtual_printer_server(printer_server_address, printer_server_port):
@@ -432,7 +435,7 @@ def main():
     root.withdraw()
 
     # Default font for pop-up windows
-    default_font = font.Font(family="Consolas", size=12)
+    default_font = DEFAULT_FONT
 
     # Create a queue for communication
     printer_message_queue = queue.Queue()
@@ -460,7 +463,7 @@ def main():
     print_instructions()
 
     # Start processing queue
-    root.after(100, process_print_queue, default_font)
+    process_print_queue( default_font, printer_message_queue)
 
     # Global keyboard shortcut for setting spawn position
     keyboard.add_hotkey('ctrl+shift+alt+p', capture_mouse_position)
