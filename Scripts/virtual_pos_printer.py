@@ -198,6 +198,9 @@ class VirtualPosPrinter:
         self.play_sound_path = os.path.abspath(os.path.join(SETTINGS_DIR, self.settings.get("play_sound", "")))
         self.play_volume = self.settings.get("play_volume", 0.5)
 
+        # Ensure port is available
+        self.ensure_port_available(PRINTER_SERVER_PORT)
+
         # Setup printer
         self.setup_printer()
 
@@ -419,6 +422,22 @@ class VirtualPosPrinter:
     def run(self):
         """Start the Tkinter main loop"""
         self.root.mainloop()
+
+    def ensure_port_available(self, port, host='127.0.0.1'):
+        """Validate that port is open"""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((host, port))
+            except OSError:
+                print_error(f"\nERROR: Port {port} is already in use!")
+                print("\nPossible causes:")
+                print("- Another instance of this script is already running.")
+                print("- Improper shutdown of a previous instance has left the port occupied.")
+                print("\nTo resolve:")
+                print("1. Close MSFS-PyScriptManager.")
+                print("2. Check for running Python processes and terminate them:")
+                print("   - Open Task Manager and close any running 'python.exe' instances.")
+                sys.exit(1)
 
 if __name__ == "__main__":
     app = VirtualPosPrinter()
