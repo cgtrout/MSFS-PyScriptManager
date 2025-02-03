@@ -305,7 +305,6 @@ class HttpRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
             self.end_headers()
 
-
 def initialize_http_server(HTTP_SERVER_PORT):
     httpd = socketserver.TCPServer(("", HTTP_SERVER_PORT), HttpRequestHandler, bind_and_activate=False)
     httpd.allow_reuse_address = True
@@ -423,7 +422,6 @@ def print_instructions():
     print_color("- In the Fenix A32x EFB, set the printer to [yellow(]'VirtualTextPrinter'[)] to enable printing.")
     print("- Right-click on a note to close it.")
     print("- For more information, visit the project Github page for MSFS-PyScriptManager.")
-
 
 # Initialize Tkinter
 root = tk.Tk()
