@@ -242,6 +242,13 @@ def run_virtual_printer_server(server_socket, printer_message_queue, http_messag
                 data += part
 
             decoded_data = data.decode('utf-8')
+
+            # Ignore any request that starts with an HTTP method. This is to deal with random
+            # software such as Logitech GHub that for some reason probe this port
+            if decoded_data.startswith(("GET ", "POST ", "PUT ", "DELETE ", "HEAD ", "OPTIONS ")):
+                print_info("Not a print request: skipping...")
+                continue
+
             print_debug("decoded_data------------")
             print(decoded_data)
             print_debug("decoded_data------------  END \n\n")
