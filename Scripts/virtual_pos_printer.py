@@ -67,6 +67,11 @@ class PrinterServer:
         self.printer_queue = printer_queue
         self.http_queue = http_queue
         self.socket = self.initialize_server()
+        self.http_request_pattern = re.compile(
+            r'^\s*(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|CONNECT|TRACE)\s+'
+            r'.*\s+HTTP/\d',
+            re.IGNORECASE
+        )
 
     def initialize_server(self):
         """Initialize the TCP printer server"""
@@ -95,7 +100,8 @@ class PrinterServer:
 
                 # Ignore any request that starts with an HTTP method. This is to deal with random
                 # software such as Logitech GHub that for some reason probe this port
-                if decoded_data.startswith(("GET ", "POST ", "PUT ", "DELETE ", "HEAD ", "OPTIONS ")):
+                first_line = decoded_data.partition("\n")[0].strip()
+                if self.http_request_pattern.match(first_line):
                     print_info("Not a print request: skipping...")
                     continue
 
