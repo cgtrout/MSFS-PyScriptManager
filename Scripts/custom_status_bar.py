@@ -1,7 +1,7 @@
 """
 custom_status_bar.py: shows a draggable, customizable status bar using SimConnect to display
 real-time flight simulator metrics like time, altitude, and temperature in a compact GUI.
-   - use instructions below to customize
+   - Please consult the github documentation (MSFS-PyScriptManager) for more information.
    - Uses https://github.com/odwdinc/Python-SimConnect library to obtain values from SimConnect
 """
 
@@ -103,7 +103,7 @@ def user_init():
 
 #### NOTE ####
 # This is a fairly large file, I recommend collapsing the headers when browsing this file.
-# I've left it as one large file to try it keep it self contained relative to others scripts.
+# I've left it as one large file to try to keep it self contained relative to the other scripts.
 
 # pylint: disable=too-many-lines
 
@@ -847,8 +847,7 @@ class BackgroundUpdater:
     STANDARD_UPDATE_INTERVAL = 33  # Normal interval
 
     def __init__(self, app_state, root):
-        # TODO needs reference to root and app_state - determine best way to do this
-        self.state = state  # Store reference to global state
+        self.state = state
         self.variable_sleep = 0.001  # Sleep time between variable lookups
 
         self.last_successful_update_time = time.time()
@@ -878,7 +877,7 @@ class BackgroundUpdater:
             print_info("BackgroundUpdater Stopped.")
 
     def run(self):
-        """Main background update loop."""
+        """Main background update loop - pulls data from SimConnect and saves it to cache"""
         while self.running:
             lookup_failed = False  # Track if any variable lookup failed
 
@@ -1493,8 +1492,8 @@ class SimBriefFunctions:
 
 # MAP SimBriefTimeOption to corresponding functions
 SIMBRIEF_TIME_OPTION_FUNCTIONS = {
-    SimBriefTimeOption.ESTIMATED_IN: SimBriefFunctions.get_simbrief_ofp_arrival_datetime,
-    SimBriefTimeOption.ESTIMATED_TOD: SimBriefFunctions.get_simbrief_ofp_tod_datetime,
+    SimBriefTimeOption.ESTIMATED_IN:    SimBriefFunctions.get_simbrief_ofp_arrival_datetime,
+    SimBriefTimeOption.ESTIMATED_TOD:   SimBriefFunctions.get_simbrief_ofp_tod_datetime,
 }
 
 # --- Drag functionality ------------------------------------------------------------------------
