@@ -485,7 +485,7 @@ class ServiceManager:
         """Start debug related utilites"""
         def reset_traceback_timer():
             """Reset the faulthandler timer to prevent a dump."""
-            faulthandler.dump_traceback_later(30, file=state.traceback_log_file, exit=True)
+            faulthandler.dump_traceback_later(60, file=state.traceback_log_file)
             self.root.after(10000, reset_traceback_timer)
         if not self.is_debugging():
             print_info("Traceback fault timer started")
