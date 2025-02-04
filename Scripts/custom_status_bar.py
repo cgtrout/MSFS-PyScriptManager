@@ -683,10 +683,14 @@ def remain_label():
 def initialize_simconnect():
     """Initialize the connection to SimConnect."""
     try:
+        print_info("Connecting to SimConnect...")
         state.sim_connect = SimConnect()  # Connect to SimConnect
+        print_info("Connecting to SimConnect... DONE")
         state.aircraft_requests = AircraftRequests(state.sim_connect, _time=10, _attemps=2)
         state.sim_connected = True
+        print_debug("Sim is Connected")
     except Exception:
+        print_debug("Sim could not connect")
         state.sim_connected = False
 
 def is_simconnect_available() -> bool:
