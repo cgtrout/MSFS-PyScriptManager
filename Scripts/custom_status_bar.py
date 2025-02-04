@@ -353,7 +353,7 @@ class AppState:
                 # Five minutes has passed- update simbrief
                 self.last_simbrief_load = datetime.now(timezone.utc)
                 print_debug("auto_update_simbrief: Checking SimBrief (elapsed time has passed)")
-                self.update_simbrief()
+                self.update_simbrief_json()
                 simbrief_updated = True
 
             # Only update countdown counter if we need to
@@ -378,6 +378,7 @@ class AppState:
             print_error(f"auto_update_simbrief: Exception during auto-update: {e}")
 
     def update_simbrief(self):
+    def update_simbrief_json(self):
         try:
             simbrief_settings = state.settings.simbrief_settings
 
