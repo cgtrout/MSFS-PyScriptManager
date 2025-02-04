@@ -7,6 +7,9 @@ __all__ = [
 ]
 
 import re
+import threading
+
+_print_lock = threading.Lock()
 
 def print_color(text, color=None, bold=False):
     """
@@ -47,14 +50,17 @@ def print_color(text, color=None, bold=False):
     if not parsed_segments:
         parsed_segments.append((text, {"color": color, "bold": bold}))
 
-    # Print each segment with formatting
+    # Build the entire formatted output as a single string
+    output = []
     for segment, style in parsed_segments:
         color_code = style["color"]
         bold_code = '1' if style["bold"] else '0'
         ansi_start = f"\033[{bold_code};{30 + {'red': 1, 'green': 2, 'yellow': 3, 'blue': 4, 'magenta': 5, 'cyan': 6, 'white': 7}.get(color_code, 0)}m" if color_code else f"\033[{bold_code}m"
         ansi_reset = "\033[0m"
-        print(f"{ansi_start}{segment}{ansi_reset}", end="")
-    print()  # End the line after printing all segments
+        output.append(f"{ansi_start}{segment}{ansi_reset}")
+
+    with _print_lock:
+        print("".join(output))
 
 
 def print_warning(message):
