@@ -333,8 +333,7 @@ class AppState:
 
     def auto_update_simbrief(self):
         """
-        Automatically fetch SimBrief data and update the countdown timer if the generation time
-        has changed.
+        Update countdown timer based on Simbrief settings (along with user function if provided)
         """
         user_setting = None
         simbrief_updated = False
@@ -344,10 +343,11 @@ class AppState:
             return  # Exit if auto-update is disabled
         try:
             # Call user simbrief handler function
+            # User can set a SimBriefTimeOption to force that to be used as timer setting
             if self.user_simbrief_function_defined:
-                user_setting = user_simbrief()     # type: ignore  # pylint: disable=undefined-variable
+                user_setting = user_simbrief()  # type: ignore  # pylint: disable=undefined-variable
 
-            # If its been less than five minutes don't check Simbrief
+            # Check simbrief for updates every five minutes
             elapsed_time = datetime.now(timezone.utc) - self.last_simbrief_load
             if elapsed_time.total_seconds() > CONFIG.SIMBRIEF_AUTO_UPDATE_INTERVAL_SECONDS:
                 # Five minutes has passed- update simbrief
@@ -371,14 +371,13 @@ class AppState:
                 self.last_user_setting = user_setting
                 if success:
                     print_info("Countdown timer updated successfully.")
-
                 else:
                     print_warning("Failed to update countdown timer from SimBrief data.")
         except Exception as e:
             print_error(f"auto_update_simbrief: Exception during auto-update: {e}")
 
-    def update_simbrief(self):
     def update_simbrief_json(self):
+        """Check if simbrief has been updated"""
         try:
             simbrief_settings = state.settings.simbrief_settings
 
