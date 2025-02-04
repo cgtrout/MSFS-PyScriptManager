@@ -138,6 +138,7 @@ class SimBriefTimeOption(Enum):
     """Type of time to pull from SimBrief"""
     ESTIMATED_IN = "Estimated In"
     ESTIMATED_TOD = "Estimated TOD"
+    EOBT = "Gate out time (EOBT)"
 
 # --- Settings Handling  -------------------------------------------------------------------------
 @dataclass
@@ -1498,6 +1499,7 @@ class SimBriefFunctions:
 SIMBRIEF_TIME_OPTION_FUNCTIONS = {
     SimBriefTimeOption.ESTIMATED_IN:    SimBriefFunctions.get_simbrief_ofp_arrival_datetime,
     SimBriefTimeOption.ESTIMATED_TOD:   SimBriefFunctions.get_simbrief_ofp_tod_datetime,
+    SimBriefTimeOption.EOBT:            SimBriefFunctions.get_simbrief_ofp_gate_out_datetime
 }
 
 # --- Drag functionality ------------------------------------------------------------------------
