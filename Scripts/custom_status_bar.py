@@ -99,6 +99,33 @@ def user_slow_update():
 # Runs once during startup for initialization tasks.
 def user_init():
     pass
+
+# Runs once every 500ms. If this returns a SimBriefTimeOption, this will set the count down timer
+# to a preset.
+def user_simbrief():
+    # Uncomment next line (and remove 'pass') to use @Leftos idea - this will set countdown timer
+    # to EOBT (gate out time) if engine is not running
+
+    #return leftos_engineoff_sets_EOBT()
+    pass
+
+# This will return None / SimBriefTimeOption.EOBT to automate setting the timer according to engine
+# state. Original idea/implementation by @leftos
+def leftos_engineoff_sets_EOBT():
+    is_engine_on = [ None, None, None, None ]
+
+    for eng_idx in range(4):
+        eng_value = get_simconnect_value(f"GENERAL_ENG_COMBUSTION:{eng_idx+1}")
+        if eng_value is not None:
+            try:
+                is_engine_on[eng_idx] = int(eng_value) == 1
+            except ValueError:
+                pass
+    is_any_engine_on = any(is_engine_on)
+    if is_any_engine_on:
+        return None # This will cause saved timer setting to be used (SimBriefTimeOption)
+    else:
+        return SimBriefTimeOption.EOBT
 """
 
 #### NOTE ####
