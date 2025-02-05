@@ -1,6 +1,8 @@
 # metar_load.py: looks up a list of historical metars for a given airport code
 import tkinter as tk
 from tkinter import ttk, messagebox
+import os
+import json
 import requests
 import re
 from datetime import datetime, timedelta, timezone
@@ -17,6 +19,8 @@ try:
 except ImportError:
     print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
     sys.exit(1)
+
+SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "..", "Settings", "metar_load.json")
 
 printer_name = "VirtualTextPrinter"  # Replace with your specific printer name
 
@@ -388,9 +392,23 @@ def main():
     root = tk.Tk()
     root.withdraw()
 
+    settings = load_settings()
+    use_simulator_time = settings.get("use_simulator_time", True)
+
+    print("=" * 80)
+    print_color(" METAR Lookup Tool ", color="green")
+    print("=" * 80)
+
+    print_color(f"NOTE: [green(]use_simulator_time[)] is currently set to [yellow(]{use_simulator_time}[)]\n")
+    print_color(
+        "This setting determines whether METAR data is matched to:\n"
+        "- The [cyan(]real-world time[)] (if [red(]False[)]), OR\n"
+        "- The [cyan(]simulator's in-game time[)] (if [green(]True[)])\n"
+    )
+
+    print_color("Change [green(]use_simulator_time[)] in [green(]/Settings/metar_load.json[)] to change this setting.\n")
+
     while True:
-        # Prompt the user for ICAO code input
-        print_color("\nWelcome to the METAR Lookup Tool!", color="green")
         print("Enter an Airport ICAO Code (or type 'quit' to exit):")
         airport_code = input("> ").strip().lower()
 
@@ -420,32 +438,50 @@ def on_close():
 
     root.destroy()
 
-def get_simulator_datetime() -> datetime:
-    """
-    Fetch the current simulator date and time dynamically using ABSOLUTE_TIME (in ZULU/UTC format).
-    Ensures the result is timezone-aware and valid. Defaults to the current system date/time if unavailable.
-    """
-    global sim_connected
+def load_settings():
+    """Load settings from the JSON file or create a default one if missing."""
+    default_settings = {"use_simulator_time": False}
+
+    # Ensure settings directory exists
+    settings_dir = os.path.dirname(SETTINGS_FILE)
+    os.makedirs(settings_dir, exist_ok=True)
+
+    if not os.path.exists(SETTINGS_FILE):
+        with open(SETTINGS_FILE, "w") as f:
+            json.dump(default_settings, f, indent=4)
+        return default_settings
+
     try:
-        if not sim_connected:
-            raise ValueError("SimConnect is not connected.")
+        with open(SETTINGS_FILE, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        print("Error: Invalid settings file. Using default settings.")
+        return default_settings
 
-        # Fetch ABSOLUTE_TIME from the simulator
-        absolute_time = aq.get("ABSOLUTE_TIME")
-        if absolute_time is None:
-            raise ValueError("ABSOLUTE_TIME is unavailable.")
+def get_simulator_datetime():
+    """
+    Fetch the date/time from either the simulator or real-world time based on settings.
+    """
+    settings = load_settings()
 
-        # Base datetime is 1 January, year 1 (Zulu/UTC)
-        base_datetime = datetime(1, 1, 1, tzinfo=timezone.utc)
+    if settings.get("use_simulator_time", True):
+        global sim_connected
+        try:
+            if not sim_connected:
+                raise ValueError("SimConnect is not connected.")
 
-        # Compute the simulator's current datetime by adding ABSOLUTE_TIME in seconds
-        return base_datetime + timedelta(seconds=float(absolute_time))
+            absolute_time = aq.get("ABSOLUTE_TIME")
+            if absolute_time is None:
+                raise ValueError("ABSOLUTE_TIME is unavailable.")
 
-    except Exception as e:
-        print(f"get_simulator_datetime: Failed to retrieve simulator datetime: {e}")
+            base_datetime = datetime(1, 1, 1, tzinfo=timezone.utc)
+            return base_datetime + timedelta(seconds=float(absolute_time))
 
-        # Fallback to current system date and time in UTC
-        return datetime.now(timezone.utc)
+        except Exception as e:
+            print(f"Failed to retrieve simulator time: {e}")
+
+    # Default to real-world UTC time if simulator time is disabled or unavailable
+    return datetime.now(timezone.utc)
 
 def initialize_simconnect():
     """
