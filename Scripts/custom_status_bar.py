@@ -1026,8 +1026,13 @@ class BackgroundUpdater:
         now = time.time()
         threshold = 30  # seconds before we consider the updater "stuck"
 
+        # Increase threshold if sim not connected.  Waiting for connection to occur during sim load
+        # can cause warnings to appear otherwise
+        if not state.sim_connected:
+            threshold = 240
+
         if now - self.last_successful_update_time > threshold:
-            print_error(f"Watchdog: Background updater has not completed a cycle in"
+            print_error(f"Watchdog: Background updater has not completed a cycle in "
                         f"{int(now - self.last_successful_update_time)} seconds. "
                         "Possible stall detected.")
 
