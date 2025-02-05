@@ -459,7 +459,8 @@ class SimBriefAutoTimer:
                 simbrief_updated = True
 
             # Update countdown timer only if necessary
-            if user_setting != self.last_user_setting or simbrief_updated:
+            if ( user_setting != self.last_user_setting or simbrief_updated ) \
+              and not countdown_state.is_future_time_manually_set:
                 print_debug("SimBriefAutoTimer: updating timer user_setting:"
                             f" {user_setting} simbrief_updated: {simbrief_updated}")
 
@@ -1522,7 +1523,6 @@ class SimBriefFunctions:
             # Set countdown timer
             current_sim_time = get_simulator_datetime()
             if set_future_time_internal(future_time, current_sim_time):
-                countdown_state.is_future_time_manually_set = gate_out_entry_value is not None
                 countdown_state.set_target_time(future_time)
                 return True
 
@@ -2021,6 +2021,8 @@ class CountdownTimerDialog(tk.Toplevel):
                 return
 
             print_debug("Countdown timer updated successfully from SimBrief.")
+            countdown_state.is_future_time_manually_set = False
+
             self.destroy()
 
         except Exception as e:
