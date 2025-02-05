@@ -121,7 +121,7 @@ class Config:
     WINDOW_TITLE: ClassVar[str] = "Simulator Time"
     DARK_BG: ClassVar[str] = "#000000"
     FONT: ClassVar[tuple] = ("Helvetica", 16)
-    SIMBRIEF_AUTO_UPDATE_INTERVAL_MS: ClassVar[int] = 5 * 60 * 1000
+    SIMBRIEF_AUTO_UPDATE_INTERVAL_SECONDS: ClassVar[int] = 5 * 60
     PADDING_X: ClassVar[int] = 20
     PADDING_Y: ClassVar[int] = 10
     UNIX_EPOCH: ClassVar[datetime] = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -138,6 +138,7 @@ class SimBriefTimeOption(Enum):
     """Type of time to pull from SimBrief"""
     ESTIMATED_IN = "Estimated In"
     ESTIMATED_TOD = "Estimated TOD"
+    EOBT = "Gate out time (EOBT)"
 
 # --- Settings Handling  -------------------------------------------------------------------------
 @dataclass
@@ -248,6 +249,7 @@ class AppState:
         # User functions
         self.user_update_function_defined = False
         self.user_slow_update_function_defined = False
+        self.user_simbrief_function_defined = False
 
         # Initialize TickManager
         self.tick_manager = TickManager()
@@ -255,6 +257,9 @@ class AppState:
         # Subscribe to ticks for user functions
         self.tick_manager.subscribe_to_tick(self)
         self.tick_manager.subscribe_to_slow_tick(self)
+
+        # Initialize SimBrief Auto Timer Manager
+        self.simbrief_timer = SimBriefAutoTimer(self)
 
         self.root = None
 
@@ -293,6 +298,12 @@ class AppState:
             self.user_slow_update_function_defined = False
             print_warning("No user_slow_update function defined in template file")
 
+        function_name = "user_simbrief"
+        if function_name in globals() and callable(globals()[function_name]):
+            self.user_simbrief_function_defined = True
+        else:
+            self.user_simbrief_function_defined = False
+            print_warning("No user_simbrief function defined in template file")
 
     def tick(self):
         """Normal tick (tick manager)"""
@@ -301,6 +312,7 @@ class AppState:
     def slow_tick(self):
         """Slow tick (tick manager)"""
         self.call_user_slow_update()
+        self.auto_update_simbrief()
 
     def call_user_update(self):
         """Invoke user-defined update function (if it exists)."""
@@ -317,6 +329,21 @@ class AppState:
                 user_slow_update() # type: ignore  # pylint: disable=undefined-variable
             except Exception as e:
                 print_error(f"Error in user_slow_update [{type(e).__name__}]: {e}")
+
+    def auto_update_simbrief(self):
+        """Update timer based on SimBrief settings (along with user function if provided)."""
+        user_setting = None
+
+        # Call user simbrief handler function
+        # User can set a SimBriefTimeOption to force that to be used as timer setting
+        if self.user_simbrief_function_defined:
+            try:
+                user_setting = user_simbrief()  # type: ignore  # pylint: disable=undefined-variable
+            except Exception as e:
+                print_error(f"Error calling user_simbrief(): {e}")
+
+        # Pass user_setting to SimBriefAutoTimer
+        self.simbrief_timer.update_countdown(user_setting)
 
 class TickManager:
     """
@@ -374,6 +401,62 @@ class TickManager:
         if not hasattr(subscriber, method_name) or not callable(getattr(subscriber, method_name)):
             raise TypeError(f"Subscriber {subscriber.__class__.__name__} "
                             f"must implement '{method_name}()'")
+
+class SimBriefAutoTimer:
+    """Handles automatic countdown timer updates based on SimBrief data."""
+
+    def __init__(self, app_state):
+        self.app_state = app_state
+        self.last_simbrief_json = None
+        self.last_simbrief_load = CONFIG.UNIX_EPOCH
+        self.last_user_setting = None
+
+    def update_countdown(self, user_setting):
+        """
+        Update countdown timer based on SimBrief settings.
+        """
+        simbrief_updated = False
+
+        simbrief_settings = self.app_state.settings.simbrief_settings
+        if not simbrief_settings.auto_update_enabled:
+            return  # Exit if auto-update is disabled
+
+        try:
+            # Check if SimBrief needs to be updated (every 5 minutes)
+            elapsed_time = datetime.now(timezone.utc) - self.last_simbrief_load
+            if elapsed_time.total_seconds() > CONFIG.SIMBRIEF_AUTO_UPDATE_INTERVAL_SECONDS:
+                self.last_simbrief_load = datetime.now(timezone.utc)
+                print_debug("SimBriefAutoTimer: Checking SimBrief (elapsed time has passed)")
+                self.update_simbrief_json()
+                simbrief_updated = True
+
+            # Update countdown timer only if necessary
+            if user_setting != self.last_user_setting or simbrief_updated:
+                print_debug("SimBriefAutoTimer: updating timer user_setting:"
+                            f" {user_setting} simbrief_updated: {simbrief_updated}")
+
+                success = SimBriefFunctions.update_countdown_from_simbrief(
+                    simbrief_json=self.last_simbrief_json,
+                    simbrief_settings=simbrief_settings,
+                    gate_out_entry_value=None,  # TODO: should this take pre-entered gate
+                    custom_time_option=user_setting
+                )
+                self.last_user_setting = user_setting
+
+                if success:
+                    print_info("Countdown timer updated successfully.")
+                else:
+                    print_warning("Failed to update countdown timer from SimBrief data.")
+
+        except Exception as e:
+            print_error(f"SimBriefAutoTimer: Exception during auto-update: {e}")
+
+    def update_simbrief_json(self):
+        """Fetch and store the latest SimBrief JSON data."""
+        simbrief_settings = self.app_state.settings.simbrief_settings
+        self.last_simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(
+            simbrief_settings.username
+        )
 
 class UIManager:
     """Manages UI-specific state, such as dragging and widget updates."""
@@ -473,12 +556,6 @@ class ServiceManager:
     def start(self):
         """Start service manager tasks"""
         self.background_updater.start()
-
-        # Start SimBrief auto-update if enabled
-        if self.app_state.settings.simbrief_settings.auto_update_enabled:
-            print_info("Auto-update enabled. Scheduling SimBrief updates...")
-            self.root.after(5000, lambda: SimBriefFunctions.auto_update_simbrief(self.root))
-
         self.start_debugging_utils()
 
     def start_debugging_utils(self):
@@ -949,8 +1026,13 @@ class BackgroundUpdater:
         now = time.time()
         threshold = 30  # seconds before we consider the updater "stuck"
 
+        # Increase threshold if sim not connected.  Waiting for connection to occur during sim load
+        # can cause warnings to appear otherwise
+        if not state.sim_connected:
+            threshold = 240
+
         if now - self.last_successful_update_time > threshold:
-            print_error(f"Watchdog: Background updater has not completed a cycle in"
+            print_error(f"Watchdog: Background updater has not completed a cycle in "
                         f"{int(now - self.last_successful_update_time)} seconds. "
                         "Possible stall detected.")
 
@@ -1346,7 +1428,8 @@ class SimBriefFunctions:
             return None
 
     @staticmethod
-    def update_countdown_from_simbrief(simbrief_json, simbrief_settings, gate_out_entry_value=None):
+    def update_countdown_from_simbrief(simbrief_json, simbrief_settings,
+                                       gate_out_entry_value=None, custom_time_option=None):
         """
         Update the countdown timer based on SimBrief data and optional manual gate-out time.
         """
@@ -1359,7 +1442,11 @@ class SimBriefFunctions:
             )
 
             # Fetch selected SimBrief time
-            selected_time = simbrief_settings.selected_time_option
+            # If custom_time_option is provided use that, otherwise use saved simbrief setting
+            if custom_time_option is not None:
+                selected_time = custom_time_option
+            else:
+                selected_time = simbrief_settings.selected_time_option
 
             # Use mapping to fetch the corresponding function
             function_to_call = SIMBRIEF_TIME_OPTION_FUNCTIONS.get(selected_time)
@@ -1392,51 +1479,6 @@ class SimBriefFunctions:
             print_error(f"Exception in update_countdown_from_simbrief: {e}")
         return False
 
-    @staticmethod
-    def auto_update_simbrief(root):
-        """
-        Automatically fetch SimBrief data and update the countdown timer if the generation time
-        has changed.
-        """
-        simbrief_settings = state.settings.simbrief_settings
-        if not simbrief_settings.auto_update_enabled:
-            return  # Exit if auto-update is disabled
-
-        try:
-            # Fetch the latest SimBrief data
-            simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(
-                                                                        simbrief_settings.username)
-            if simbrief_json:
-                # Extract the generation time
-                current_generated_time = simbrief_json.get("params", {}).get("time_generated")
-                if not current_generated_time:
-                    print_warning("Unable to determine SimBrief flight plan generation time.")
-                elif current_generated_time != SimBriefFunctions.last_simbrief_generated_time:
-                    print_info( "New SimBrief flight plan detected. "
-                                f"Generation Time: {current_generated_time}")
-
-                    # Try to reload SimBrief future time
-                    success = SimBriefFunctions.update_countdown_from_simbrief(
-                        simbrief_json=simbrief_json,
-                        simbrief_settings=simbrief_settings,
-                        gate_out_entry_value=None  # No manual entry for auto-update
-                    )
-                    if success:
-                        print_info("Countdown timer updated successfully.")
-                        # Update the stored generation time only on successful update
-                        SimBriefFunctions.last_simbrief_generated_time = current_generated_time
-                    else:
-                        print_warning("Failed to update countdown timer from SimBrief data.")
-                else:
-                    print_info("SimBrief flight plan has not changed. Skipping update.")
-            else:
-                print_error("Failed to fetch SimBrief data during auto-update.")
-        except Exception as e:
-            print_error(f"DEBUG: Exception during auto-update: {e}")
-
-        # Schedule the next auto-update
-        root.after(CONFIG.SIMBRIEF_AUTO_UPDATE_INTERVAL_MS,
-                    lambda: SimBriefFunctions.auto_update_simbrief(root))
 
     @staticmethod
     def adjust_gate_out_delta(
@@ -1498,6 +1540,7 @@ class SimBriefFunctions:
 SIMBRIEF_TIME_OPTION_FUNCTIONS = {
     SimBriefTimeOption.ESTIMATED_IN:    SimBriefFunctions.get_simbrief_ofp_arrival_datetime,
     SimBriefTimeOption.ESTIMATED_TOD:   SimBriefFunctions.get_simbrief_ofp_tod_datetime,
+    SimBriefTimeOption.EOBT:            SimBriefFunctions.get_simbrief_ofp_gate_out_datetime
 }
 
 # --- Drag functionality ------------------------------------------------------------------------
