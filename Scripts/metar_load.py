@@ -342,6 +342,8 @@ def find_best_metar(metar_dict):
     #simulator_time = datetime(2025, 1, 15, 1, 0, tzinfo=timezone.utc)
     print(f"Simulator Time: {simulator_time}")
 
+    grace_period = timedelta(minutes=15)  # Allow a 15-minute delay in METAR updates
+
     if not metar_dict:
         raise ValueError("No METAR data available.")
 
@@ -354,7 +356,7 @@ def find_best_metar(metar_dict):
 
     # Get the earliest and latest timestamps
     earliest_time = sorted_metars[0][0] - timedelta(hours=1)
-    latest_time = sorted_metars[-1][0] + timedelta(hours=1)
+    latest_time = sorted_metars[-1][0] + timedelta(hours=2)
 
     # Check if the simulator time is outside the range
     if simulator_time < earliest_time or simulator_time > latest_time:
@@ -365,7 +367,9 @@ def find_best_metar(metar_dict):
         return [metar for _, metar in sorted_metars]
 
     # Filter only METARs with timestamps <= simulator_time
-    valid_metars = {time: metar for time, metar in metar_dict.items() if time <= simulator_time}
+    valid_metars = {
+        time: metar for time, metar in metar_dict.items() if time <= simulator_time + grace_period
+    }
 
     print_color("Valid METAR List (Filtered):", color="cyan")
     for metar_time, metar in valid_metars.items():
