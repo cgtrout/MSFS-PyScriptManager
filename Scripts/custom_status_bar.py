@@ -20,6 +20,7 @@ from enum import Enum
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Optional
 
+import psutil
 import requests
 from SimConnect import SimConnect, AircraftRequests
 
@@ -784,11 +785,34 @@ def remain_label():
     return "Remaining:"
 
 # --- SimConnect Lookup Functions ----------------------------------------------------------------
+def is_sim_running(min_runtime=120):
+    """Check if Microsoft Flight Simulator is running"""
+    now = time.time()  # Get current time
+
+    for process in psutil.process_iter(['name', 'create_time']):
+        process_name = process.info['name']
+        start_time = process.info.get('create_time', 0)
+
+        if process_name and process_name.lower().startswith("flightsimulator") \
+          and process_name.lower().endswith(".exe"):
+            runtime = now - start_time  # Calculate how long the process has been running
+
+            if runtime >= min_runtime:
+                print_debug(f"Found MSFS process: {process_name} (Running for {runtime:.1f} sec)")
+                return True
+            else:
+                print_debug(f"Found MSFS process: {process_name}, "
+                            f"but only running for {runtime:.1f} sec (Waiting...)")
+
+    return False
+
 def initialize_simconnect():
     """Initialize the connection to SimConnect."""
     try:
+        if not is_sim_running():
+            return
         print_info("Connecting to SimConnect...")
-        state.sim_connect = SimConnect()  # Connect to SimConnect
+        state.sim_connect = SimConnect()
         print_info("Connecting to SimConnect... DONE")
         state.aircraft_requests = AircraftRequests(state.sim_connect, _time=10, _attemps=2)
         state.sim_connected = True
