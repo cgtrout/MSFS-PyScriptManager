@@ -343,7 +343,7 @@ class AppState:
 
     def call_user_update(self):
         """Invoke user-defined update function (if it exists)."""
-        if "user_update" in globals():
+        if self.user_update_function_defined:
             try:
                 user_update() # type: ignore  # pylint: disable=undefined-variable
             except Exception as e:
@@ -351,7 +351,7 @@ class AppState:
 
     def call_user_slow_update(self):
         """Invoke slow update function every 500ms."""
-        if "user_slow_update" in globals():
+        if self.user_slow_update_function_defined:
             try:
                 user_slow_update() # type: ignore  # pylint: disable=undefined-variable
             except Exception as e:
