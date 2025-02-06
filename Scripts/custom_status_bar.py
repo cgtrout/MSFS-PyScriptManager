@@ -1059,7 +1059,7 @@ def get_formatted_value(variable_names, format_string=None):
     - The formatted string, or an error message if retrieval fails.
     """
 
-    if is_simconnect_available():
+    if not is_simconnect_available():
         return "Sim Not Running"
 
     if isinstance(variable_names, str):
