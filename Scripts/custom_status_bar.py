@@ -811,6 +811,142 @@ def remain_label():
         return "Rem(adj):"
     return "Remaining:"
 
+# --- Timer Calculation Functions------------------------------------------------------------------
+def get_time_to_future_adjusted():
+    """
+    Calculate and return the countdown timer string.
+    """
+    return get_time_to_future(adjusted_for_sim_rate=True)
+
+def get_time_to_future_unadjusted():
+    """
+    Calculate and return the countdown timer string without adjusting for sim rate.
+    """
+    return get_time_to_future(adjusted_for_sim_rate=False)
+
+def get_time_to_future(adjusted_for_sim_rate: bool) -> str:
+    """
+    Calculate and return the countdown timer string.
+    """
+    if countdown_state is None or countdown_state.countdown_target_time == CONFIG.UNIX_EPOCH:
+        return "N/A"
+
+    try:
+        current_sim_time = get_simulator_datetime()
+
+        if countdown_state.countdown_target_time.tzinfo is None or current_sim_time.tzinfo is None:
+            raise ValueError("Target time or simulator time is offset-naive. "
+                             "Ensure all times are offset-aware.")
+
+        # Fetch sim rate if we want to adjust for it,
+        # otherwise default to 1.0 (normal time progression)
+        sim_rate = 1.0
+        if adjusted_for_sim_rate:
+            sim_rate_str = get_sim_rate()
+            sim_rate = float(sim_rate_str) if sim_rate_str.replace('.', '', 1).isdigit() else 1.0
+
+        # Compute the count-down time
+        countdown_str = compute_countdown_timer(
+            current_sim_time=current_sim_time,
+            target_time=countdown_state.countdown_target_time,
+            sim_rate=sim_rate,
+        )
+
+        return countdown_str
+
+    except Exception as e:
+        # TODO: investigate if we can handle errors better here
+        exception_type = type(e).__name__  # Get the exception type
+        print(f"Exception occurred: {e} (Type: {exception_type})")
+        return "N/A"
+
+def compute_countdown_timer(
+    current_sim_time: datetime,
+    target_time: datetime,
+    sim_rate: float
+) -> str:
+    """
+    Compute the countdown timer string and update its state.
+
+    Parameters:
+    - current_sim_time (datetime): Current simulator time.
+    - target_time (datetime): Target countdown time.
+    - sim_rate (float): Simulation rate.
+
+    Returns:
+    - countdown_str (str): Formatted countdown string "HH:MM:SS".
+    """
+    # Early out if we have no current sim time
+    if current_sim_time == CONFIG.UNIX_EPOCH:
+        return "N/A"
+
+    # Calculate remaining time
+    remaining_time = target_time - current_sim_time
+
+    # Adjust for simulation rate
+    if sim_rate and sim_rate > 0:
+        adjusted_seconds = remaining_time.total_seconds() / sim_rate
+    else:
+        adjusted_seconds = remaining_time.total_seconds()
+
+    # Enforce allow_negative_timer setting
+    if state is not None and state.settings.simbrief_settings is not None:
+        if not state.settings.simbrief_settings.allow_negative_timer and adjusted_seconds < 0:
+            adjusted_seconds = 0
+
+    # Format the adjusted remaining time as HH:MM:SS
+    total_seconds = int(adjusted_seconds)
+    sign = "-" if total_seconds < 0 else ""
+    total_seconds = abs(total_seconds)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    countdown_str = f"{sign}{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
+
+    return countdown_str
+
+def get_simulator_time_offset():
+    """
+    Calculate the offset between simulator time and real-world UTC time.
+    Returns a timedelta representing the difference (simulator time - real-world time).
+    """
+    try:
+        # Use a threshold for considering the offset as zero
+        threshold = timedelta(seconds=5)
+        simulator_time = get_simulator_datetime()
+
+        if simulator_time == CONFIG.UNIX_EPOCH:
+            print_debug("get_simulator_time_offset: skipping since time is == UNIX_EPOCH")
+            return timedelta()
+
+        real_world_time = datetime.now(timezone.utc)
+        offset = simulator_time - real_world_time
+
+        # Check if the offset is within the threshold
+        if abs(offset) <= threshold:
+            print_debug(f"Offset {offset} is within threshold, assuming zero offset.")
+            return timedelta(0)
+        print_debug(f"Simulator Time Offset: {offset}")
+        return offset
+    except Exception as e:
+        print_error(f"Error calculating simulator time offset: {e}")
+        return timedelta(0)  # Default to no offset if error occurs
+
+def convert_real_world_time_to_sim_time(real_world_time):
+    """
+    Convert a real-world datetime (UTC) to simulator time using the calculated offset.
+    """
+    try:
+        # Get the simulator time offset
+        offset = get_simulator_time_offset()
+
+        # Adjust the real-world time to simulator time
+        sim_time = real_world_time + offset
+        print_debug(f"Converted Real-World Time {real_world_time} to Sim Time {sim_time}")
+        return sim_time
+    except Exception as e:
+        print_error(f"Error converting real-world time to sim time: {e}")
+        return real_world_time  # Return the original time as fallback
+
 # --- SimConnect Lookup Functions ----------------------------------------------------------------
 def is_sim_running(min_runtime=120):
     """Check if Microsoft Flight Simulator is running"""
@@ -1116,142 +1252,6 @@ class BackgroundUpdater:
 
         # Reschedule the watchdog to run again after 10 seconds
         self.root.after(10_000, self.background_thread_watchdog_function)
-
-# --- Timer Calculation Functions------------------------------------------------------------------
-def get_time_to_future_adjusted():
-    """
-    Calculate and return the countdown timer string.
-    """
-    return get_time_to_future(adjusted_for_sim_rate=True)
-
-def get_time_to_future_unadjusted():
-    """
-    Calculate and return the countdown timer string without adjusting for sim rate.
-    """
-    return get_time_to_future(adjusted_for_sim_rate=False)
-
-def get_time_to_future(adjusted_for_sim_rate: bool) -> str:
-    """
-    Calculate and return the countdown timer string.
-    """
-    if countdown_state is None or countdown_state.countdown_target_time == CONFIG.UNIX_EPOCH:
-        return "N/A"
-
-    try:
-        current_sim_time = get_simulator_datetime()
-
-        if countdown_state.countdown_target_time.tzinfo is None or current_sim_time.tzinfo is None:
-            raise ValueError("Target time or simulator time is offset-naive. "
-                             "Ensure all times are offset-aware.")
-
-        # Fetch sim rate if we want to adjust for it,
-        # otherwise default to 1.0 (normal time progression)
-        sim_rate = 1.0
-        if adjusted_for_sim_rate:
-            sim_rate_str = get_sim_rate()
-            sim_rate = float(sim_rate_str) if sim_rate_str.replace('.', '', 1).isdigit() else 1.0
-
-        # Compute the count-down time
-        countdown_str = compute_countdown_timer(
-            current_sim_time=current_sim_time,
-            target_time=countdown_state.countdown_target_time,
-            sim_rate=sim_rate,
-        )
-
-        return countdown_str
-
-    except Exception as e:
-        # TODO: investigate if we can handle errors better here
-        exception_type = type(e).__name__  # Get the exception type
-        print(f"Exception occurred: {e} (Type: {exception_type})")
-        return "N/A"
-
-def compute_countdown_timer(
-    current_sim_time: datetime,
-    target_time: datetime,
-    sim_rate: float
-) -> str:
-    """
-    Compute the countdown timer string and update its state.
-
-    Parameters:
-    - current_sim_time (datetime): Current simulator time.
-    - target_time (datetime): Target countdown time.
-    - sim_rate (float): Simulation rate.
-
-    Returns:
-    - countdown_str (str): Formatted countdown string "HH:MM:SS".
-    """
-    # Early out if we have no current sim time
-    if current_sim_time == CONFIG.UNIX_EPOCH:
-        return "N/A"
-
-    # Calculate remaining time
-    remaining_time = target_time - current_sim_time
-
-    # Adjust for simulation rate
-    if sim_rate and sim_rate > 0:
-        adjusted_seconds = remaining_time.total_seconds() / sim_rate
-    else:
-        adjusted_seconds = remaining_time.total_seconds()
-
-    # Enforce allow_negative_timer setting
-    if state is not None and state.settings.simbrief_settings is not None:
-        if not state.settings.simbrief_settings.allow_negative_timer and adjusted_seconds < 0:
-            adjusted_seconds = 0
-
-    # Format the adjusted remaining time as HH:MM:SS
-    total_seconds = int(adjusted_seconds)
-    sign = "-" if total_seconds < 0 else ""
-    total_seconds = abs(total_seconds)
-    hours, remainder = divmod(total_seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    countdown_str = f"{sign}{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
-
-    return countdown_str
-
-def get_simulator_time_offset():
-    """
-    Calculate the offset between simulator time and real-world UTC time.
-    Returns a timedelta representing the difference (simulator time - real-world time).
-    """
-    try:
-        # Use a threshold for considering the offset as zero
-        threshold = timedelta(seconds=5)
-        simulator_time = get_simulator_datetime()
-
-        if simulator_time == CONFIG.UNIX_EPOCH:
-            print_debug("get_simulator_time_offset: skipping since time is == UNIX_EPOCH")
-            return timedelta()
-
-        real_world_time = datetime.now(timezone.utc)
-        offset = simulator_time - real_world_time
-
-        # Check if the offset is within the threshold
-        if abs(offset) <= threshold:
-            print_debug(f"Offset {offset} is within threshold, assuming zero offset.")
-            return timedelta(0)
-        print_debug(f"Simulator Time Offset: {offset}")
-        return offset
-    except Exception as e:
-        print_error(f"Error calculating simulator time offset: {e}")
-        return timedelta(0)  # Default to no offset if error occurs
-
-def convert_real_world_time_to_sim_time(real_world_time):
-    """
-    Convert a real-world datetime (UTC) to simulator time using the calculated offset.
-    """
-    try:
-        # Get the simulator time offset
-        offset = get_simulator_time_offset()
-
-        # Adjust the real-world time to simulator time
-        sim_time = real_world_time + offset
-        print_debug(f"Converted Real-World Time {real_world_time} to Sim Time {sim_time}")
-        return sim_time
-    except Exception as e:
-        print_error(f"Error converting real-world time to sim time: {e}")
-        return real_world_time  # Return the original time as fallback
 
 # --- Display Update  ----------------------------------------------------------------------------
 def get_dynamic_value(function_name):
