@@ -1225,8 +1225,8 @@ def convert_real_world_time_to_sim_time(real_world_time):
         print_error(f"Error converting real-world time to sim time: {e}")
         return real_world_time  # Return the original time as fallback
 
-def set_future_time_internal(future_time_input, current_sim_time):
-    """Validates and sets a future time."""
+def validate_future_time(future_time_input, current_sim_time):
+    """Validates a future time."""
     try:
         # Ensure all times are timezone-aware (UTC)
         if current_sim_time.tzinfo is None:
@@ -1518,7 +1518,7 @@ class SimBriefFunctions:
 
             # Set countdown timer
             current_sim_time = get_simulator_datetime()
-            if set_future_time_internal(future_time, current_sim_time):
+            if validate_future_time(future_time, current_sim_time):
                 countdown_state.set_target_time(future_time)
                 return True
 
@@ -2085,7 +2085,7 @@ class CountdownTimerDialog(tk.Toplevel):
         """
         current_sim_time = get_simulator_datetime()
 
-        if set_future_time_internal(future_time, current_sim_time):
+        if validate_future_time(future_time, current_sim_time):
             countdown_state.is_future_time_manually_set = True
             countdown_state.set_target_time(future_time)
             return True
