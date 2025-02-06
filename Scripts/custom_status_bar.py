@@ -1632,7 +1632,7 @@ class DragHandler:
 def main():
     """Main entry point to script"""
     # Globals here necessary for template support
-    global state, simbrief_settings, countdown_state  # pylint: disable=global-statement
+    global state, countdown_state  # pylint: disable=global-statement
     print_info("Starting custom status bar...")
 
     try:
