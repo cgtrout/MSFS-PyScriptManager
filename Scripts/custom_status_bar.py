@@ -702,15 +702,15 @@ class CountdownState:
     gate_out_time: Optional[datetime] = None  # Store last game out time
     countdown_target_time: datetime = field(default_factory=lambda: CONFIG.UNIX_EPOCH)
 
-    def set_target_time(self, new_time: datetime, simulator_time: datetime) -> bool:
+    def set_future_time(self, new_time: datetime, simulator_time: datetime, simbrief_settings) -> bool:
         """Set a new countdown target time"""
-        if not self._validate_future_time(new_time, simulator_time):
+        if not self._validate_future_time(new_time, simulator_time, simbrief_settings):
             return False
 
         self.countdown_target_time = new_time
         return True
 
-    def _validate_future_time(self, future_time_input, current_sim_time) -> bool:
+    def _validate_future_time(self, future_time_input, current_sim_time, simbrief_settings) -> bool:
         """Validates a future time (countdown timer time)"""
         try:
             # Ensure all times are timezone-aware (UTC)
@@ -720,7 +720,7 @@ class CountdownState:
             if isinstance(future_time_input, datetime):
                 # Validate that the future time is after the current simulator time
                 if future_time_input <= current_sim_time and \
-                not state.settings.simbrief_settings.allow_negative_timer:
+                not simbrief_settings.allow_negative_timer:
                     raise ValueError("Future time must be later than the current simulator time.")
 
                 # Log successful setting of the timer
@@ -1523,7 +1523,7 @@ class SimBriefFunctions:
 
             # Set countdown timer
             current_sim_time = get_simulator_datetime()
-            return countdown_state.set_target_time(future_time, current_sim_time)
+            return countdown_state.set_future_time(future_time, current_sim_time, simbrief_settings)
 
         except Exception as e:
             print_error(f"Exception in update_countdown_from_simbrief: {e}")
@@ -2087,7 +2087,8 @@ class CountdownTimerDialog(tk.Toplevel):
         Set the countdown timer and update global state.
         """
         current_sim_time = get_simulator_datetime()
-        if countdown_state.set_target_time(future_time, current_sim_time):
+        simbrief_settings = self.app_state.settings.simbrief_settings
+        if countdown_state.set_future_time(future_time, current_sim_time, simbrief_settings):
             countdown_state.is_future_time_manually_set = True
             return True
         return False
