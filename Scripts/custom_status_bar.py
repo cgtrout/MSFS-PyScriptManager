@@ -684,7 +684,7 @@ def get_sim_time():
     """Fetch the simulator time from SimConnect, formatted as HH:MM:SS."""
     try:
 
-        if not state.sim_connected:
+        if not is_simconnect_available():
             return "Sim Not Running"
 
         sim_time_seconds = get_simconnect_value("ZULU_TIME")
@@ -703,7 +703,7 @@ def get_simulator_datetime() -> datetime:
     Fetches the absolute time from the simulator and converts it to a datetime object.
     """
     try:
-        if state is None or not state.sim_connected:
+        if state is None or not is_simconnect_available():
             raise ValueError("SimConnect is not connected.")
 
         absolute_time = get_simconnect_value("ABSOLUTE_TIME")
@@ -1059,7 +1059,7 @@ def get_formatted_value(variable_names, format_string=None):
     - The formatted string, or an error message if retrieval fails.
     """
 
-    if not state.sim_connected or state.sim_connect is None or not state.sim_connect.ok:
+    if is_simconnect_available():
         return "Sim Not Running"
 
     if isinstance(variable_names, str):
