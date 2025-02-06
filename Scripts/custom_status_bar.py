@@ -697,9 +697,7 @@ class ServiceManager:
 @dataclass
 class CountdownState:
     """Countdown timer state"""
-    future_time_seconds: Optional[int] = None  # Time for countdown in seconds
     is_future_time_manually_set: bool = False  # Flag for manual setting
-    last_simbrief_generated_time: Optional[datetime] = None  # Last SimBrief time
     last_entered_time: Optional[str] = None  # Last entered time in HHMM format
     gate_out_time: Optional[datetime] = None  # Store last game out time
     countdown_target_time: datetime = field(default_factory=lambda: CONFIG.UNIX_EPOCH)
