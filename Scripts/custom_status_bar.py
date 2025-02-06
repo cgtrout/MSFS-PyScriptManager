@@ -1396,8 +1396,6 @@ class DisplayUpdater:
 # --- Simbrief functionality --------------------------------------------------------------------
 class SimBriefFunctions:
     """Contains grouping of static Simbrief Functions mainly for organizational purposes"""
-    last_simbrief_generated_time = None
-
     @staticmethod
     def get_latest_simbrief_ofp_json(username):
         """Fetch SimBrief OFP JSON data for the provided username."""
