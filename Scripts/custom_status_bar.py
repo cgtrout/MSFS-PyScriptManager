@@ -1079,7 +1079,12 @@ def get_formatted_value(variable_names, format_string=None):
 
 # --- Background Updater -------------------------------------------------------------------------
 class BackgroundUpdater:
-    """Continously updates cached values from Simconnect"""
+    """
+    Continously updates cached values from Simconnect
+    Purpose: Ensures that all cached requests are updated continously as the
+             default SimConnect library caching does not updated its own cached
+             values until get is called.
+    """
 
     MIN_UPDATE_INTERVAL = 33 / 2  # Retry interval
     STANDARD_UPDATE_INTERVAL = 33  # Normal interval
@@ -1155,7 +1160,8 @@ class BackgroundUpdater:
                                             "Will retry in the next cycle.")
                             lookup_failed = True
 
-                        # Introduce a small sleep between variable updates
+                        # Add a small sleep to allow main thread to not be blocked (due to GIL
+                        # thread restrictions)
                         time.sleep(self.variable_sleep)
 
                 else: # sim_connected == False
