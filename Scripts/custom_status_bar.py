@@ -373,63 +373,6 @@ class AppState:
         # Pass user_setting to SimBriefAutoTimer
         self.simbrief_timer.update_countdown(user_setting)
 
-class TickManager:
-    """
-    Handles scheduling and notifying tick subscribers.
-    Used to handle timing for user calls and display update
-    """
-    UPDATE_INTERVAL = 33
-    SLOW_UPDATE_INTERVAL = 500
-    SLOW_UPDATE_TICKS = SLOW_UPDATE_INTERVAL // UPDATE_INTERVAL
-
-    def __init__(self):
-        """Initialize tick tracking and subscriber lists."""
-        self.tick_count = 0
-        self.root = None  # Assigned when `start()` is called
-
-        # Crate tick subscriber sets
-        self.tick_subscribers = set()
-        self.slow_tick_subscribers = set()
-
-    def start(self, root):
-        """Start ticking using Tkinter's scheduler."""
-        self.root = root
-        self.tick()
-
-    def tick(self):
-        """Called every `update_interval` to notify subscribers."""
-        self.tick_count += 1
-
-        # Notify fast tick subscribers
-        for subscriber in self.tick_subscribers:
-            subscriber.tick()
-
-        # If slow tick interval is reached
-        if self.tick_count >= self.SLOW_UPDATE_TICKS:
-            for subscriber in self.slow_tick_subscribers:
-                subscriber.slow_tick()
-            self.tick_count = 0  # Reset tick count
-
-        # Schedule the next tick
-        self.root.after(self.UPDATE_INTERVAL, self.tick)
-
-    def subscribe_to_tick(self, subscriber):
-        """Register a component for fast tick updates."""
-        self._validate_subscriber(subscriber, "tick")
-        self.tick_subscribers.add(subscriber)
-
-    def subscribe_to_slow_tick(self, subscriber):
-        """Register a component for slow tick updates."""
-        self._validate_subscriber(subscriber, "slow_tick")
-        self.slow_tick_subscribers.add(subscriber)
-
-    @staticmethod
-    def _validate_subscriber(subscriber, method_name):
-        """Ensure the subscriber implements the required method."""
-        if not hasattr(subscriber, method_name) or not callable(getattr(subscriber, method_name)):
-            raise TypeError(f"Subscriber {subscriber.__class__.__name__} "
-                            f"must implement '{method_name}()'")
-
 class SimBriefAutoTimer:
     """Handles automatic countdown timer updates based on SimBrief data."""
 
@@ -2161,6 +2104,63 @@ class CollapsibleSection(tk.Frame):
         """Expand the section."""
         self.content_frame.pack(fill="x", padx=2, pady=2)
         self.toggle_button.config(text="▲ " + self.toggle_button.cget("text")[2:])
+
+class TickManager:
+    """
+    Handles scheduling and notifying tick subscribers.
+    Used to handle timing for user calls and display update
+    """
+    UPDATE_INTERVAL = 33
+    SLOW_UPDATE_INTERVAL = 500
+    SLOW_UPDATE_TICKS = SLOW_UPDATE_INTERVAL // UPDATE_INTERVAL
+
+    def __init__(self):
+        """Initialize tick tracking and subscriber lists."""
+        self.tick_count = 0
+        self.root = None  # Assigned when `start()` is called
+
+        # Crate tick subscriber sets
+        self.tick_subscribers = set()
+        self.slow_tick_subscribers = set()
+
+    def start(self, root):
+        """Start ticking using Tkinter's scheduler."""
+        self.root = root
+        self.tick()
+
+    def tick(self):
+        """Called every `update_interval` to notify subscribers."""
+        self.tick_count += 1
+
+        # Notify fast tick subscribers
+        for subscriber in self.tick_subscribers:
+            subscriber.tick()
+
+        # If slow tick interval is reached
+        if self.tick_count >= self.SLOW_UPDATE_TICKS:
+            for subscriber in self.slow_tick_subscribers:
+                subscriber.slow_tick()
+            self.tick_count = 0  # Reset tick count
+
+        # Schedule the next tick
+        self.root.after(self.UPDATE_INTERVAL, self.tick)
+
+    def subscribe_to_tick(self, subscriber):
+        """Register a component for fast tick updates."""
+        self._validate_subscriber(subscriber, "tick")
+        self.tick_subscribers.add(subscriber)
+
+    def subscribe_to_slow_tick(self, subscriber):
+        """Register a component for slow tick updates."""
+        self._validate_subscriber(subscriber, "slow_tick")
+        self.slow_tick_subscribers.add(subscriber)
+
+    @staticmethod
+    def _validate_subscriber(subscriber, method_name):
+        """Ensure the subscriber implements the required method."""
+        if not hasattr(subscriber, method_name) or not callable(getattr(subscriber, method_name)):
+            raise TypeError(f"Subscriber {subscriber.__class__.__name__} "
+                            f"must implement '{method_name}()'")
 
 class WidgetPool:  # pylint: disable=missing-function-docstring
     """Manages Tkinter widgets and their order - used by DisplayUpdater"""
