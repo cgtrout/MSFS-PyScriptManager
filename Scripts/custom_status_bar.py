@@ -1970,6 +1970,9 @@ class CountdownTimerDialog(tk.Toplevel):
                 messagebox.showerror("Error", "Failed to set the countdown timer.")
                 return
 
+            # Save last entered time so it shows next time
+            countdown_state.last_entered_time = time_text
+
         # Close the dialog
         self.destroy()
 
