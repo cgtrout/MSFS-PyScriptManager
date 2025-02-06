@@ -704,18 +704,15 @@ def get_simulator_datetime() -> datetime:
     """
     try:
         if state is None or not is_simconnect_available():
-            raise ValueError("SimConnect is not connected.")
+           return CONFIG.UNIX_EPOCH
 
         absolute_time = get_simconnect_value("ABSOLUTE_TIME")
         if absolute_time is None:
-            raise ValueError("Absolute time is unavailable.")
+            return CONFIG.UNIX_EPOCH
 
         base_datetime = datetime(1, 1, 1, tzinfo=timezone.utc)
         return base_datetime + timedelta(seconds=float(absolute_time))
 
-    except ValueError as ve:
-        #print(ve)
-        pass
     except Exception as e:
         print(f"get_simulator_datetime: Failed to retrieve simulator datetime: {e}")
 
@@ -774,34 +771,30 @@ def get_time_to_future(adjusted_for_sim_rate: bool) -> str:
     if countdown_state is None or countdown_state.countdown_target_time == CONFIG.UNIX_EPOCH:
         return "N/A"
 
-    try:
-        current_sim_time = get_simulator_datetime()
+    current_sim_time = get_simulator_datetime()
 
-        if countdown_state.countdown_target_time.tzinfo is None or current_sim_time.tzinfo is None:
-            raise ValueError("Target time or simulator time is offset-naive. "
-                             "Ensure all times are offset-aware.")
-
-        # Fetch sim rate if we want to adjust for it,
-        # otherwise default to 1.0 (normal time progression)
-        sim_rate = 1.0
-        if adjusted_for_sim_rate:
-            sim_rate_str = get_sim_rate()
-            sim_rate = float(sim_rate_str) if sim_rate_str.replace('.', '', 1).isdigit() else 1.0
-
-        # Compute the count-down time
-        countdown_str = compute_countdown_timer(
-            current_sim_time=current_sim_time,
-            target_time=countdown_state.countdown_target_time,
-            sim_rate=sim_rate,
-        )
-
-        return countdown_str
-
-    except Exception as e:
-        # TODO: investigate if we can handle errors better here
-        exception_type = type(e).__name__  # Get the exception type
-        print(f"Exception occurred: {e} (Type: {exception_type})")
+    if current_sim_time == CONFIG.UNIX_EPOCH:
         return "N/A"
+
+    if countdown_state.countdown_target_time.tzinfo is None or current_sim_time.tzinfo is None:
+        raise ValueError("Target time or simulator time is offset-naive. "
+                            "Ensure all times are offset-aware.")
+
+    # Fetch sim rate if we want to adjust for it,
+    # otherwise default to 1.0 (normal time progression)
+    sim_rate = 1.0
+    if adjusted_for_sim_rate:
+        sim_rate_str = get_sim_rate()
+        sim_rate = float(sim_rate_str) if sim_rate_str.replace('.', '', 1).isdigit() else 1.0
+
+    # Compute the count-down time
+    countdown_str = compute_countdown_timer(
+        current_sim_time=current_sim_time,
+        target_time=countdown_state.countdown_target_time,
+        sim_rate=sim_rate,
+    )
+
+    return countdown_str
 
 def compute_countdown_timer(
     current_sim_time: datetime,
@@ -1212,7 +1205,7 @@ def get_dynamic_value(function_name):
             func = globals()[function_name]
             if callable(func):
                 return func()
-        print_warning("get_dynamic_value: {function_name} not found!")
+        print_warning(f"get_dynamic_value: {function_name} not found!")
         return "Err-DE" # Error 'doesn't exist'
     except Exception as e:  # pylint: disable=broad-except
         print_error(f"get_dynamic_value: ({function_name}) exception [{type(e).__name__ }]: {e}")
@@ -2442,7 +2435,11 @@ class TemplateParser:
         condition = get_dynamic_value(block["condition"])
         if condition:
             static_text = self.process_label_with_dynamic_functions(block["label"])
-            value = get_dynamic_value(block["function"])
+            # If function is not set then ignore it
+            if block["function"] == "''" or not block["function"].strip():
+                value = ""
+            else:
+                value = get_dynamic_value(block["function"])
             return {
                 "text": f"{static_text} {value}",
                 "color": block["color"]
