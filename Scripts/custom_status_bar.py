@@ -1117,7 +1117,7 @@ class BackgroundUpdater:
         # Reschedule the watchdog to run again after 10 seconds
         self.root.after(10_000, self.background_thread_watchdog_function)
 
-# --- Timer Calcuation Functions------------------------------------------------------------------
+# --- Timer Calculation Functions------------------------------------------------------------------
 def get_time_to_future_adjusted():
     """
     Calculate and return the countdown timer string.
@@ -1252,7 +1252,6 @@ def convert_real_world_time_to_sim_time(real_world_time):
     except Exception as e:
         print_error(f"Error converting real-world time to sim time: {e}")
         return real_world_time  # Return the original time as fallback
-
 
 # --- Display Update  ----------------------------------------------------------------------------
 def get_dynamic_value(function_name):
