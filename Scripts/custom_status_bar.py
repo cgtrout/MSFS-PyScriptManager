@@ -1212,6 +1212,7 @@ def get_dynamic_value(function_name):
             func = globals()[function_name]
             if callable(func):
                 return func()
+        print_warning("get_dynamic_value: {function_name} not found!")
         return "Err-DE" # Error 'doesn't exist'
     except Exception as e:  # pylint: disable=broad-except
         print_error(f"get_dynamic_value: ({function_name}) exception [{type(e).__name__ }]: {e}")
