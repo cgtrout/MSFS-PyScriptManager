@@ -33,7 +33,7 @@ If the status bar is double-clicked, it will bring up a settings dialog for the 
 - **Get Time Button:** when clicked will take the SimBrief time and use that to set the countdown timer.
 
 ## Template Customization
-When the script runs for the first time, it generates a status_bar_templates.py file. This file:
+When the script runs for the first time, it generates a status_bar_templates.py file in /Settings directory. This file:
 - Defines how the status bar displays information.
 - Can be edited to create multiple templates for different aircraft or situations.
 
@@ -67,103 +67,50 @@ def user_slow_update():
 # Runs once during startup for initialization tasks.
 def user_init():
     pass
+
+# Runs once every 500ms. If this returns a SimBriefTimeOption, this will set the count down timer
+# to a preset.
+def user_simbrief():
+    pass
 ```
-## Template Example
-The following is a template created by  [@leftos](https://github.com/leftos) that is a great example of how this can be utilized to create custom template behavior on the countdown timer.
+## 
 
-The following example dynamically adjusts the countdown timer based on the engine state. It demonstrates how to link SimBrief's "gate out" and "arrival" times to flight phases.
+## Leftos SimBrief Timer Automation Example
+There are a couple of lines you can change in the generated template file to automate the countdown timer in the following way:
+- When engines are off the countdown timer will be based EOBT (Gate leave time).
+- Otherwise it will select the saved timer preset.
+This easily allows you to see if you are ahead or behind schedule on EOBT before engine-startup.
+
+To enable this functionality change these lines to match:
 ```python
-# Runs approx every 500ms for less frequent, CPU-intensive tasks.
-def user_slow_update():
-    update_target_time_based_on_engine_state()
+# Runs once every 500ms. If this returns a SimBriefTimeOption, this will set the count down timer
+# to a preset.
+def user_simbrief():
+    return leftos_engineoff_sets_EOBT() # UNCOMMENT THIS LINE
+    #pass # REMOVE OR COMMENT THIS LINE OUT
 
-# Runs once during startup for initialization tasks.
-def user_init():
-    global simbrief_settings, SIMBRIEF_TIME_OPTION_FUNCTIONS
+# This will return None / SimBriefTimeOption.EOBT to automate setting the timer according to engine
+# state. Original idea/implementation by @leftos
+def leftos_engineoff_sets_EOBT():
+    is_engine_on = [ None, None, None, None ]
 
-    # This defines a custom Simbrief datetime load option
-    SIMBRIEF_TIME_OPTION_FUNCTIONS["CUSTOM"] = SimBriefFunctions.get_simbrief_ofp_arrival_datetime
-    simbrief_settings.selected_time_option = "CUSTOM"
-    simbrief_settings.allow_negative_timer = True
-
-was_engine_on = [ None, None, None, None ]
-first_update = True
-
-def get_remaining_label():
-    if any(x is None for x in was_engine_on):
-        return "Remaining"
-    return "Remaining" if any(was_engine_on) else "Until OBT"
-
-def update_target_time_based_on_engine_state():
-    global was_engine_on, first_update, simbrief_settings, SIMBRIEF_TIME_OPTION_FUNCTIONS
-    
-    if simbrief_settings.selected_time_option != "CUSTOM":
-        return
-
-    if any(x is None for x in was_engine_on):
-        for idx in range(4):
-            if was_engine_on[idx] is None:
-                eng_value = get_simconnect_value(f"GENERAL_ENG_COMBUSTION:{idx+1}", default_value=None, retries=10)
-                if eng_value is not None:
-                    try:
-                        was_engine_on[idx] = int(eng_value) == 1
-                    except ValueError:
-                        pass
-    
-    if any(x is None for x in was_engine_on):
-        return
-    
-    is_engine_on = was_engine_on.copy()
     for eng_idx in range(4):
-        eng_value = check_cache(f"GENERAL_ENG_COMBUSTION:{eng_idx+1}")
+        eng_value = get_simconnect_value(f"GENERAL_ENG_COMBUSTION:{eng_idx+1}")
         if eng_value is not None:
             try:
                 is_engine_on[eng_idx] = int(eng_value) == 1
             except ValueError:
                 pass
-    was_any_engine_on = any(was_engine_on)
     is_any_engine_on = any(is_engine_on)
-    was_engine_on = is_engine_on.copy()
-    if first_update or is_any_engine_on != was_any_engine_on:
-        if first_update:
-            first_update = False
-            print_info("First update of engine state.")
-        else:
-            print_info(f"Detected change in engine state. Updating target time from SimBrief. Before: {was_any_engine_on}, After: {is_any_engine_on}")
-            
-        if is_any_engine_on:
-            SIMBRIEF_TIME_OPTION_FUNCTIONS["CUSTOM"] = SimBriefFunctions.get_simbrief_ofp_arrival_datetime
-        else:
-            SIMBRIEF_TIME_OPTION_FUNCTIONS["CUSTOM"] = SimBriefFunctions.get_simbrief_ofp_gate_out_datetime
-            
-        try:
-            # Fetch the latest SimBrief data
-            simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(simbrief_settings.username)
-            if simbrief_json:
-                # Extract the generation time
-                current_generated_time = simbrief_json.get("params", {}).get("time_generated")
-                if not current_generated_time:
-                    print_warning("Unable to determine SimBrief flight plan generation time.")
-                else:
-                    # Try to reload SimBrief future time
-                    success = SimBriefFunctions.update_countdown_from_simbrief(
-                        simbrief_json=simbrief_json,
-                        simbrief_settings=simbrief_settings,
-                        gate_out_entry_value=None  # No manual entry for auto-update
-                    )
-                    if success:
-                        print_info("Countdown timer updated successfully.")
-                        # Update the stored generation time only on successful update
-                        SimBriefFunctions.last_simbrief_generated_time = current_generated_time
-                    else:
-                        print_warning("Failed to update countdown timer from SimBrief data.")
-            else:
-                print_error("Failed to fetch SimBrief data during auto-update.")
-        except Exception as e:
-            print_error(f"DEBUG: Exception during auto-update: {e}")
+    if is_any_engine_on:
+        return None # This will cause saved timer setting to be used (SimBriefTimeOption)
+    else:
+        return SimBriefTimeOption.EOBT
 ```
+This is based on the initial idea / implementation provided by Leftos.  This has been added to the default template with his permission.
+
 ## Additional Credits
-Special thanks to [@leftos](https://github.com/leftos) for their valuable insights, feedback, pull requests, and initial implementations, which significantly contributed to the following features:
+Special thanks to [@leftos](https://github.com/leftos) for his valuable insights, feedback, pull requests, and initial implementations, which significantly contributed to the following features:
 - SimBrief connectivity.
 - VARIF/## template function.
 - Dynamic template functionality.
