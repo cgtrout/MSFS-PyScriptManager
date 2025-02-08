@@ -1293,7 +1293,21 @@ class DisplayUpdater:
             widget.pack(side=tk.LEFT, padx=0, pady=0)
 
     def process_block(self, block):
-        """Process one block from the parsed template."""
+        """
+        Processes a UI block by evaluating conditions, updating existing widgets, or creating
+        new ones.
+
+        If the block has a `condition`, it is evaluated, and the widget is removed if the condition
+        fails.
+
+        Otherwise, the function updates an existing widget or creates a new one if needed.
+
+        Args:
+            block (dict): Parsed template block containing type, label, function, and styling info.
+
+        Returns:
+            bool: True if a UI refresh is needed (widget added/removed), False otherwise.
+        """
         block_type = block["type"]
         block_id = block.get("label", f"block_{id(block)}")
         block_metadata = self.template_handler.parser.block_registry.get(block_type, {})
@@ -1313,12 +1327,12 @@ class DisplayUpdater:
 
         # Attempt to retrieve an existing widget
         widget = self.widget_pool.get_widget(block_id)
-        render_function = block_metadata.get("render")
+        render_data_function = block_metadata.get("render")
 
-        if widget:
+        if widget: # Case: Widget exists, check for updates
             # Use render function to get new configuration
-            if render_function:
-                render_config = render_function(block)
+            if render_data_function:
+                render_config = render_data_function(block)
 
                 # Check if the render function returned valid data
                 if render_config:
@@ -1329,10 +1343,9 @@ class DisplayUpdater:
                 else:
                     # Remove the widget if the config is invalid (e.g., condition failed)
                     self.widget_pool.remove_widget(block_id)
-        else:
-            # Create and register a new widget
-            if render_function:
-                render_config = render_function(block)
+        else: # Case: No existing widget, create a new one
+            if render_data_function:
+                render_config = render_data_function(block)
                 if render_config:
                     # Create a new widget based on the render function's config
                     widget = tk.Label( self.display_frame, text=render_config["text"],
