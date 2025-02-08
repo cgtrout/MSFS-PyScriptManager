@@ -46,7 +46,7 @@
 - **fenix_radio.py:** Shows a draggable radio panel that shows A32x RMP1 active/standby channels. (Requires Mobiflight "WASM" module installation).
 - **fenix_lights.py:** Preassign flight deck lighting knob values.  Also allows one knob to control all screen brightness or to optionally bind a joystick axis to control screen lighting. This will also reset all of the lights to get around the MSFS 2024 'full bright' lighting bug.  (Requires Mobiflight "WASM" module installation).
 - **metar_load.py:** Load a historical metar based on Simulator or real world time - can print to virtual_pos_printer.
-- **plot_altitude.py:** Shows a draggable graph panel of altitude - can easily be changed to other SimConnect variables.
+- **plot_altitude.py:** Shows a draggable graph panel of altitude - can easily be changed to other SimConnect variables.  Can also export recorded data as CSV.
 - **plot_joystick.py:** Show visualization of joystick and trim values state. Will either show heli or plane trims dynamically.
 
 # Script Groups
