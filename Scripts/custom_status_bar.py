@@ -346,7 +346,7 @@ class AppState:
         if self.user_update_function_defined:
             try:
                 user_update() # type: ignore  # pylint: disable=undefined-variable
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 print_error(f"Error in user_update [{type(e).__name__}]: {e}")
 
     def call_user_slow_update(self):
@@ -354,7 +354,7 @@ class AppState:
         if self.user_slow_update_function_defined:
             try:
                 user_slow_update() # type: ignore  # pylint: disable=undefined-variable
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 print_error(f"Error in user_slow_update [{type(e).__name__}]: {e}")
 
     def auto_update_simbrief(self):
@@ -366,7 +366,7 @@ class AppState:
         if self.user_simbrief_function_defined:
             try:
                 user_setting = user_simbrief()  # type: ignore  # pylint: disable=undefined-variable
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 print_error(f"Error calling user_simbrief(): {e}")
 
         # Pass user_setting to SimBriefAutoTimer
