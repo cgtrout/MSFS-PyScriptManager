@@ -646,6 +646,8 @@ class CountdownState:
     def set_future_time(self, new_time: datetime, simulator_time: datetime, simbrief_settings) -> bool:
         """Set a new countdown target time"""
         if not self._validate_future_time(new_time, simulator_time, simbrief_settings):
+            print_error(f"Failed to set countdown timer: {new_time} is invalid"
+                        f"(current sim time: {simulator_time})")
             return False
 
         self.countdown_target_time = new_time
