@@ -770,8 +770,12 @@ def get_time_to_future(adjusted_for_sim_rate: bool) -> str:
     # otherwise default to 1.0 (normal time progression)
     sim_rate = 1.0
     if adjusted_for_sim_rate:
-        sim_rate_str = get_sim_rate()
-        sim_rate = float(sim_rate_str) if sim_rate_str.replace('.', '', 1).isdigit() else 1.0
+        raw_sim_rate = get_simconnect_value("SIMULATION_RATE", default_value=1.0)
+        try:
+            sim_rate = float(raw_sim_rate) if raw_sim_rate is not None else 1.0
+        except (TypeError, ValueError):
+            print_warning("get_time_to_future: Exception on sim_rate")
+            sim_rate = 1.0
 
     # Compute the count-down time
     countdown_str = compute_countdown_timer(
@@ -1180,7 +1184,7 @@ class BackgroundUpdater:
         self.root.after(10_000, self.background_thread_watchdog_function)
 
 # --- Display Update  ----------------------------------------------------------------------------
-def get_dynamic_value(function_name: str) -> str:
+def get_dynamic_value(function_name: str):
     """
     Retrieve a value dynamically from a globally defined function.
 
@@ -2410,7 +2414,8 @@ class TemplateParser:
     def get_var_data(self, block):
         """Obtain render data for a VAR block"""
         static_text = self.process_label_with_dynamic_functions(block["label"])
-        value = get_dynamic_value(block["function"])
+        value = str(get_dynamic_value(block["function"]))
+
         return {
             "text": f"{static_text} {value}",
             "color": block["color"]
@@ -2418,7 +2423,7 @@ class TemplateParser:
 
     def get_varif_data(self, block):
         """Obtain render data for a varif block"""
-        condition = get_dynamic_value(block["condition"])
+        condition = bool(get_dynamic_value(block["condition"]))
         if condition:
             static_text = self.process_label_with_dynamic_functions(block["label"])
             # If function is not set then ignore it
