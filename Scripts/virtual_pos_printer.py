@@ -202,7 +202,7 @@ class VirtualPosPrinter:
         self.settings = self.load_settings()
         self.spawn_position = tuple(self.settings.get("spawn_position", (100, 100)))
         self.play_sound_path = os.path.abspath(os.path.join(SETTINGS_DIR, self.settings.get("play_sound", "")))
-        self.play_volume = self.settings.get("play_volume", 0.5)
+        self.play_volume = self.settings.get("play_volume", 0.25)
 
         # Ensure port is available
         self.ensure_port_available(PRINTER_SERVER_PORT)
@@ -238,17 +238,26 @@ class VirtualPosPrinter:
         self.print_instructions()
 
     def load_settings(self):
-        """Load settings from file"""
+        """Load settings from file or create a new one if missing"""
         os.makedirs(SETTINGS_DIR, exist_ok=True)
+
         if os.path.exists(SETTINGS_FILE):
             with open(SETTINGS_FILE, 'r', encoding="utf-8") as f:
                 return json.load(f)
-        return {
+
+        # Default settings
+        default_settings = {
             "spawn_position": (100, 100),
             "enable_popups": True,
             "play_sound": "../Data/receipt-printer-01-43872.mp3",
             "play_volume": 0.25
         }
+
+        # Write default settings to file
+        with open(SETTINGS_FILE, 'w', encoding="utf-8") as f:
+            json.dump(default_settings, f, indent=4)
+
+        return default_settings
 
     def capture_mouse_position(self):
         """Set spawn position based on current mouse position"""
