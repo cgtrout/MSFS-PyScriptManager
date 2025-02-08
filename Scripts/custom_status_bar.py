@@ -269,11 +269,6 @@ class AppState:
         self.settings_manager = SettingsManager()
         self.settings = self.settings_manager.load_settings()
 
-        # Log File
-        self.log_file_path = "traceback.log"
-        self.traceback_log_file = open(self.log_file_path, "w", encoding="utf-8")
-        faulthandler.enable(file=self.traceback_log_file)
-
         # User functions
         self.user_update_function_defined = False
         self.user_slow_update_function_defined = False
@@ -522,6 +517,11 @@ class ServiceManager:
         self.app_state = app_state
         self.background_updater = BackgroundUpdater(self.app_state, root)
 
+        # Log File
+        self.log_file_path = "traceback.log"
+        self.traceback_log_file = open(self.log_file_path, "w", encoding="utf-8")
+        faulthandler.enable(file=self.traceback_log_file)
+
         self.settings = settings
         self.root = root
 
@@ -534,7 +534,7 @@ class ServiceManager:
         """Start debug related utilites"""
         def reset_traceback_timer():
             """Reset the faulthandler timer to prevent a dump."""
-            faulthandler.dump_traceback_later(60, file=state.traceback_log_file)
+            faulthandler.dump_traceback_later(60, file=self.traceback_log_file)
             self.root.after(10000, reset_traceback_timer)
         if not self.is_debugging():
             print_info("Traceback fault timer started")
