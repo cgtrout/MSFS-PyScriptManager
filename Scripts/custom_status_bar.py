@@ -1204,7 +1204,7 @@ def get_dynamic_value(function_name: str):
         function_name (str): The name of the global function to call.
 
     Returns:
-        str:
+        Any:
             - The function's return value if found and callable.
             - "" (empty string) if `function_name` is empty.
             - "Err-DE" if the function does not exist.
