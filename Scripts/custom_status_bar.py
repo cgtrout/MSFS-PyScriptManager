@@ -1330,7 +1330,7 @@ class DisplayUpdater:
         render_data_function = block_metadata.get("render")
 
         if widget: # Case: Widget exists, check for updates
-            # Use render function to get new configuration
+            # Use render data function to get new configuration
             if render_data_function:
                 render_config = render_data_function(block)
 
@@ -1603,10 +1603,13 @@ def main():
 
         state = AppState()
         ui_manager = UIManager(state)
+
+        # Root is used for scheduling (after call)
         root = ui_manager.get_root()
+
         service_manager = ServiceManager(state, state.settings, root)
 
-        # Load template once all globals are initialize to ensure template file has proper scope
+        # Load template once all globals are initialized to ensure template file has proper scope
         ui_manager.template_handler.load_template_file()
 
         state.start(root)           # Clocks user updates
