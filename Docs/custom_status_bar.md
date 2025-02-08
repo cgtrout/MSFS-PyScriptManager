@@ -93,8 +93,8 @@ To enable this functionality change these lines to match:
 # Runs once every 500ms. If this returns a SimBriefTimeOption, this will set the count down timer
 # to a preset.
 def user_simbrief():
-    return leftos_engineoff_sets_EOBT() # UNCOMMENT THIS LINE
-    #pass # REMOVE OR COMMENT THIS LINE OUT
+    return leftos_engineoff_sets_EOBT()   # UNCOMMENT THIS LINE
+    #pass                                 # REMOVE OR COMMENT THIS LINE OUT
 
 # This will return None / SimBriefTimeOption.EOBT to automate setting the timer according to engine
 # state. Original idea/implementation by @leftos
