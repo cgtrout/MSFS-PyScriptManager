@@ -1481,7 +1481,6 @@ class SimBriefFunctions:
             print_error(f"Exception in update_countdown_from_simbrief: {e}")
         return False
 
-
     @staticmethod
     def adjust_gate_out_delta(
         simbrief_json, gate_out_entry_value: Optional[str], simbrief_settings: SimBriefSettings
