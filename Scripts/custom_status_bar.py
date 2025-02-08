@@ -395,8 +395,7 @@ class SimBriefAutoTimer:
             if elapsed_time.total_seconds() > CONFIG.SIMBRIEF_AUTO_UPDATE_INTERVAL_SECONDS:
                 self.last_simbrief_load = datetime.now(timezone.utc)
                 print_debug("SimBriefAutoTimer: Checking SimBrief (elapsed time has passed)")
-                self.update_simbrief_json()
-                simbrief_updated = True
+                simbrief_updated = self.update_simbrief_json()
 
             # Update countdown timer only if necessary
             if ( user_setting != self.last_user_setting or simbrief_updated ) \
@@ -420,12 +419,19 @@ class SimBriefAutoTimer:
         except Exception as e:
             print_error(f"SimBriefAutoTimer: Exception during auto-update: {e}")
 
-    def update_simbrief_json(self):
-        """Fetch and store the latest SimBrief JSON data."""
+    def update_simbrief_json(self) -> bool:
+        """
+        Fetch and store the latest SimBrief JSON data.
+        Returns True if successful, False otherwise.
+        """
         simbrief_settings = self.app_state.settings.simbrief_settings
-        self.last_simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(
-            simbrief_settings.username
-        )
+        self.last_simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(simbrief_settings.username)
+        if self.last_simbrief_json:
+            print_info("SimBrief data fetched successfully.")
+            return True
+        print_warning("SimBrief JSON fetch failed or returned empty data.")
+        self.last_simbrief_json = None
+        return False
 
 class UIManager:
     """Manages UI-specific state, such as dragging and widget updates."""
