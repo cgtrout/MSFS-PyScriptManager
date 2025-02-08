@@ -378,9 +378,7 @@ class SimBriefAutoTimer:
         self.last_user_setting = None
 
     def update_countdown(self, user_setting):
-        """
-        Update countdown timer based on SimBrief settings.
-        """
+        """Update countdown timer based on SimBrief settings."""
         simbrief_updated = False
 
         simbrief_settings = self.app_state.settings.simbrief_settings
@@ -477,9 +475,7 @@ class UIManager:
         self.root.wait_window(dialog)  # Wait for dialog to close
 
     def show_template_menu(self, event):
-        """
-        Display a context menu to allow the user to select a template.
-        """
+        """Display a context menu to allow the user to select a template."""
         menu = tk.Menu(self.root, tearoff=0)
 
         # Add all templates to the menu
@@ -493,9 +489,7 @@ class UIManager:
         menu.post(event.x_root, event.y_root)
 
     def switch_template(self, new_template_name):
-        """
-        Switch to a new template and mark it for re-rendering in the next update cycle.
-        """
+        """Switch to a new template and mark it for re-rendering in the next update cycle."""
         try:
             # Update the selected template
             self.template_handler.selected_template_name = new_template_name
@@ -699,9 +693,7 @@ def get_sim_time():
         return "Err"
 
 def get_simulator_datetime() -> datetime:
-    """
-    Fetches the absolute time from the simulator and converts it to a datetime object.
-    """
+    """Fetches the absolute time from the simulator and converts it to a datetime object."""
     try:
         if state is None or not is_simconnect_available():
             return CONFIG.UNIX_EPOCH
@@ -753,21 +745,15 @@ def remain_label():
 
 # --- Timer Calculation Functions------------------------------------------------------------------
 def get_time_to_future_adjusted():
-    """
-    Calculate and return the countdown timer string.
-    """
+    """Calculate and return the countdown timer string."""
     return get_time_to_future(adjusted_for_sim_rate=True)
 
 def get_time_to_future_unadjusted():
-    """
-    Calculate and return the countdown timer string without adjusting for sim rate.
-    """
+    """Calculate and return the countdown timer string without adjusting for sim rate."""
     return get_time_to_future(adjusted_for_sim_rate=False)
 
 def get_time_to_future(adjusted_for_sim_rate: bool) -> str:
-    """
-    Calculate and return the countdown timer string.
-    """
+    """Calculate and return the countdown timer string."""
     if countdown_state is None or countdown_state.countdown_target_time == CONFIG.UNIX_EPOCH:
         return "N/A"
 
@@ -868,9 +854,7 @@ def get_simulator_time_offset():
         return timedelta(0)  # Default to no offset if error occurs
 
 def convert_real_world_time_to_sim_time(real_world_time):
-    """
-    Convert a real-world datetime (UTC) to simulator time using the calculated offset.
-    """
+    """Convert a real-world datetime (UTC) to simulator time using the calculated offset."""
     try:
         # Get the simulator time offset
         offset = get_simulator_time_offset()
@@ -1425,9 +1409,7 @@ class SimBriefFunctions:
     @staticmethod
     def update_countdown_from_simbrief(simbrief_json, simbrief_settings,
                                        gate_out_entry_value=None, custom_time_option=None):
-        """
-        Update the countdown timer based on SimBrief data and optional manual gate-out time.
-        """
+        """Update the countdown timer based on SimBrief data and optional manual gate-out time."""
         try:
             # Adjust gate-out time
             gate_time_offset = SimBriefFunctions.adjust_gate_out_delta(
@@ -1920,9 +1902,7 @@ class CountdownTimerDialog(tk.Toplevel):
         self.destroy()
 
     def pull_time(self):
-        """
-        Pull the selected time from SimBrief and update the countdown timer.
-        """
+        """Pull the selected time from SimBrief and update the countdown timer."""
         try:
             print_debug("pull_time started")
 
@@ -2025,9 +2005,7 @@ class CountdownTimerDialog(tk.Toplevel):
         return future_time
 
     def set_countdown_timer(self, future_time):
-        """
-        Set the countdown timer and update global state.
-        """
+        """Set the countdown timer and update global state."""
         current_sim_time = get_simulator_datetime()
         simbrief_settings = self.app_state.settings.simbrief_settings
         if countdown_state.set_future_time(future_time, current_sim_time, simbrief_settings):
@@ -2195,9 +2173,7 @@ class WidgetPool:  # pylint: disable=missing-function-docstring
 class TemplateHandler:
     """Class to manage the template file and selected template."""
     def __init__(self):
-        """
-        Initialize the TemplateHandler with the given settings.
-        """
+        """Initialize the TemplateHandler with the given settings."""
         self.parser = TemplateParser()  # Initialize the parser
 
         self.templates = self.load_templates()  # Load templates from file
@@ -2234,9 +2210,7 @@ class TemplateHandler:
             return {}
 
     def load_template_functions(self):
-        """
-        Dynamically import functions from the template file and inject only relevant globals.
-        """
+        """Dynamically import functions from the template file and inject only relevant globals."""
         try:
             spec = importlib.util.spec_from_file_location("status_bar_templates",
                                                           CONFIG.TEMPLATE_FILE)
