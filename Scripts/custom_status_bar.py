@@ -2324,15 +2324,15 @@ class TemplateParser:
         self.block_registry = {
             "VAR": {
                 "keys": ["label", "function", "color"],
-                "render": self.render_var,
+                "render": self.get_var_data,
             },
             "VARIF": {
                 "keys": ["label", "function", "color", "condition"],
-                "render": self.render_varif,
+                "render": self.get_varif_data,
             },
             "STATIC_TEXT": {
                 "keys": ["value"],
-                "render": self.render_static_text,
+                "render": self.get_static_text_data,
             },
         }
 
@@ -2421,8 +2421,8 @@ class TemplateParser:
         except tk.TclError:
             return False
 
-    def render_var(self, block):
-        """Render a VAR block."""
+    def get_var_data(self, block):
+        """Obtain render data for a VAR block"""
         static_text = self.process_label_with_dynamic_functions(block["label"])
         value = get_dynamic_value(block["function"])
         return {
@@ -2430,8 +2430,8 @@ class TemplateParser:
             "color": block["color"]
         }
 
-    def render_varif(self, block):
-        """Render a VARIF block."""
+    def get_varif_data(self, block):
+        """Obtain render data for a varif block"""
         condition = get_dynamic_value(block["condition"])
         if condition:
             static_text = self.process_label_with_dynamic_functions(block["label"])
@@ -2446,8 +2446,8 @@ class TemplateParser:
             }
         return None
 
-    def render_static_text(self, block):
-        """Render a STATIC_TEXT block."""
+    def get_static_text_data(self, block):
+        """Obtain static text render data"""
         return {
             "text": block["value"],
             "color": "white"
