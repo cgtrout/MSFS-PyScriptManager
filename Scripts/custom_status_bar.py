@@ -85,6 +85,10 @@ TEMPLATES = {
 def get_altitude():
     return get_formatted_value("PLANE_ALTITUDE", "{:.0f} ft")
 
+# NOTE: get_formatted_value will return as a string.  In cases where you want to get direct value
+#       (as a float) you may want to use get_simconnect_value("PLANE_ALTITUDE") to get the actual
+#       value rather than a formatted value.
+
 ## USER FUNCTIONS ##
 # The following functions are hooks for user-defined behaviors and will be called by the
 # custom_status_bar script.
