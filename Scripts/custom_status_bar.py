@@ -704,7 +704,7 @@ def get_simulator_datetime() -> datetime:
     """
     try:
         if state is None or not is_simconnect_available():
-           return CONFIG.UNIX_EPOCH
+            return CONFIG.UNIX_EPOCH
 
         absolute_time = get_simconnect_value("ABSOLUTE_TIME")
         if absolute_time is None:
