@@ -1075,7 +1075,7 @@ class BackgroundUpdater:
     """
     Continously updates cached values from Simconnect
     Purpose: Ensures that all cached requests are updated continously as the
-             default SimConnect library caching does not updated its own cached
+             default SimConnect library caching does not update its own cached
              values until get is called.
     """
 
