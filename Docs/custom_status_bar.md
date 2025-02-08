@@ -13,8 +13,8 @@
 - One user has reported to me that the status bar can randomly dissapear([#23](https://github.com/cgtrout/MSFS-PyScriptManager/issues/23)).
 - Note that in my own extensive use of this script, I have never seen this issue, but if you do see it, the workaround is to restart the script with the "Restart" button on the bottom of the selected tab.
 - To fix this issue I need to get more data:
-  - If you do see this I would appreciate it if you can send me logs.
-  - Logs can be generated with ctrl+shift+alt+L (while script is running).  The file generated is called "detailed_state_log.log".
+  - If you do see this I would appreciate it if you can send me some log files to help me troubleshoot the issue.
+  - A log file can be generated with ctrl+shift+alt+L (while the script is running).  The file generated is called "detailed_state_log.log".
   
 ## Setting the Countdown Timer 
 If the status bar is double-clicked, it will bring up a settings dialog for the countdown timer:
