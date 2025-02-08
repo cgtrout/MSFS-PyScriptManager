@@ -10,11 +10,11 @@
 - To open this script, ensure MSFS-PyScriptManager.exe is running, click "Run Script" and then open "custom_status_bar.py".
 
 ## Potential Issues
-- One user has reported to me that the status bar can randomly dissapear([#23](https://github.com/cgtrout/MSFS-PyScriptManager/issues/23)).
-- Note that in my own extensive use of this script, I have never seen this issue, but if you do see it, the workaround is to restart the script with the "Restart" button on the bottom of the selected tab.
-- To fix this issue I need to get more data:
-  - If you do see this I would appreciate it if you can send me some log files to help me troubleshoot the issue.
-  - A log file can be generated with ctrl+shift+alt+L (while the script is running).  The file generated is called "detailed_state_log.log".
+- One user has reported that the status bar can randomly disappear ([#23](https://github.com/cgtrout/MSFS-PyScriptManager/issues/23)).
+- Note that in my own extensive use of this script, I have never seen this issue.  However, if you do experience it, the workaround is to restart the script by clicking the **"Restart"** button on the bottom of the selected tab.
+- To help diagnose and fix this issue, I need more data:
+  - If you encounter this bug, please consider sending me log files for troubleshooting.
+  - You can generate a log file by pressing Ctrl + Shift + Alt + L while the script is running. The file will be saved as detailed_state_log.log.
   
 ## Setting the Countdown Timer 
 If the status bar is double-clicked, it will bring up a settings dialog for the countdown timer:
