@@ -1180,8 +1180,20 @@ class BackgroundUpdater:
         self.root.after(10_000, self.background_thread_watchdog_function)
 
 # --- Display Update  ----------------------------------------------------------------------------
-def get_dynamic_value(function_name):
-    """ Get a value dynamically from the function name. """
+def get_dynamic_value(function_name: str) -> str:
+    """
+    Retrieve a value dynamically from a globally defined function.
+
+    Args:
+        function_name (str): The name of the global function to call.
+
+    Returns:
+        str:
+            - The function's return value if found and callable.
+            - "" (empty string) if `function_name` is empty.
+            - "Err-DE" if the function does not exist.
+            - "Err" if an exception occurs.
+    """
     try:
         if not function_name.strip():  # If function name is empty, return an empty string
             return ""
