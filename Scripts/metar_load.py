@@ -400,7 +400,7 @@ def main():
     use_simulator_time = settings.get("use_simulator_time", True)
 
     print("=" * 80)
-    print_color(" METAR Lookup Tool ", color="green")
+    print_color("   METAR Lookup Tool ", color="green")
     print("=" * 80)
 
     print_color(f"NOTE: [green(]use_simulator_time[)] is currently set to [yellow(]{use_simulator_time}[)]\n")
@@ -410,7 +410,7 @@ def main():
         "- The [cyan(]simulator's in-game time[)] (if [green(]True[)])\n"
     )
 
-    print_color("Change [green(]use_simulator_time[)] in [green(]/Settings/metar_load.json[)] to change this setting.\n")
+    print("Click the 'Open Settings' button to change the settings for this script\n\n")
 
     while True:
         print("Enter an Airport ICAO Code (or type 'quit' to exit):")
