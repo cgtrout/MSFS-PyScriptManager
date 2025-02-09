@@ -1,0 +1,20 @@
+{
+    "virtual_pos_printer.py": {
+      "commands": [
+        {
+          "command_name": "open_settings_editor",
+          "command_arg": "/Settings/settings.json",
+          "description": "Open Settings"
+        }
+      ]
+    },
+    "metar_load.py": {
+      "commands": [
+        {
+          "command_name": "open_settings_editor",
+          "command_arg": "/Settings/metar_load.json",
+          "description": "Open Settings"
+        }
+      ]
+    }
+  }

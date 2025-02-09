@@ -432,6 +432,7 @@ class VirtualPosPrinter:
         print_color("- Use [yellow(]Ctrl+Alt+Shift+P[)] to change the print location of pop-ups.")
         print_color("- In the Fenix A32x EFB, set the printer to [yellow(]'VirtualTextPrinter'[)] to enable printing.")
         print("- Right-click on a note to close it.")
+        print("- To modify the settings for this script, click the 'Open Settings' button")
         print("- For more information, visit the project Github page for MSFS-PyScriptManager.")
 
     def run(self):
