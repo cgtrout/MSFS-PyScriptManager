@@ -1,5 +1,6 @@
 # Launcher.py - main launcher app script for MSFSPyScriptManager
 
+import json
 import logging
 import os
 import queue
@@ -13,7 +14,6 @@ from typing import Dict
 import ctypes
 
 from threading import Lock
-
 
 import pstats
 from parse_ansi import AnsiParser
@@ -33,6 +33,10 @@ import traceback
 
 import signal
 
+# Add parent directory so Lib path can be found
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
+from Lib.settings_changer import JsonSaveEditor
+
 # Path to the WinPython Python executable and VS Code.exe
 current_dir = Path(__file__).resolve().parent
 project_root = current_dir.parents[1]
@@ -40,6 +44,7 @@ python_path = project_root / "WinPython" / "python-3.13.0rc1.amd64" / "python.ex
 pythonw_path = python_path.with_name("pythonw.exe")
 vscode_path = project_root / "WinPython" / "VS Code.exe"
 scripts_path = project_root / "Scripts"
+data_path = project_root / "Data"
 
 # Define color constants
 DARK_BG_COLOR = "#2E2E2E"
@@ -364,6 +369,7 @@ class ScriptTab(Tab):
     def __init__(self, title, script_path, process_tracker):
         super().__init__(title)
         self.script_path = script_path
+        self.script_name = script_path.name
         self.process_tracker:ProcessTracker = process_tracker
 
         # Define font settings
@@ -405,12 +411,12 @@ class ScriptTab(Tab):
         scrollbar.pack(side="right", fill="y")  # Place the scrollbar next to the text widget
 
         # Create the bottom frame for control buttons
-        button_frame = tk.Frame(self.frame, bg=FRAME_BG_COLOR)  # Apply dark background color
-        button_frame.pack(side="bottom", fill="x", padx=5, pady=5)
+        self.button_frame = tk.Frame(self.frame, bg=FRAME_BG_COLOR)  # Apply dark background color
+        self.button_frame.pack(side="bottom", fill="x", padx=5, pady=5)
 
         # Add the "Edit Script" button
         edit_button = tk.Button(
-            button_frame,
+            self.button_frame,
             text="Edit Script",
             command=self.edit_script,
             bg=BUTTON_BG_COLOR,
@@ -424,7 +430,7 @@ class ScriptTab(Tab):
 
         # Add the "Reload Script" button
         reload_button = tk.Button(
-            button_frame,
+            self.button_frame,
             text="Reload Script (F5)",
             command=self.reload_script,
             bg=BUTTON_BG_COLOR,
@@ -438,7 +444,7 @@ class ScriptTab(Tab):
 
          # Add the "Reload Script" button
         stop_button = tk.Button(
-            button_frame,
+            self.button_frame,
             text="Stop Script",
             command=self.stop_script,
             bg=BUTTON_BG_COLOR,
@@ -454,8 +460,54 @@ class ScriptTab(Tab):
         #self.frame.bind("<F5>", lambda event: self.reload_script())
         self.text_widget.bind("<F5>", lambda event: self.reload_script())
 
+        # Check metadata for any commands
+        # This allows custom buttons to be assigned for each script
+        script_metadata  = self.load_script_metadata()
+        if len(script_metadata) > 0:
+            self.process_commands(script_metadata)
+
         # Start the script execution
         self.run_script()
+
+    def load_script_metadata(self, filename="script_metadata.json"):
+        """Load script metadata for loaded script"""
+        metadata_path = os.path.join(data_path, filename)
+
+        if not os.path.exists(metadata_path):
+            print(f"Error: Metadata file not found at {metadata_path}")
+            return {}
+
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as file:
+                metadata = json.load(file)
+                return metadata.get(self.script_name, {})  # Return only the section for the given script
+        except json.JSONDecodeError as e:
+            print(f"Error loading JSON: {e}")
+            return {}
+
+    def process_commands(self, script_metadata):
+        """Process commands from script metadata"""
+        commands = script_metadata.get("commands", [])
+        for command in commands:
+            command_name = command.get("command_name")
+            command_arg = command.get("command_arg")
+            description = command.get("description")
+
+            if command_name == "open_settings_editor":
+                button = tk.Button(
+                    self.button_frame,
+                    text=description,
+                    command=lambda arg=command_arg: JsonSaveEditor(
+                        os.path.normpath(os.path.join(project_root, arg.lstrip("/\\")))
+                    ),
+                    bg=BUTTON_BG_COLOR,
+                    fg=BUTTON_FG_COLOR,
+                    activebackground=BUTTON_ACTIVE_BG_COLOR,
+                    activeforeground=BUTTON_ACTIVE_FG_COLOR,
+                    relief="flat",
+                    highlightthickness=0
+                )
+                button.pack(side="right", padx=0, pady=2)
 
     def close(self):
         """Clean up resources associated with the tab."""
