@@ -1,5 +1,4 @@
 # fenix_radio.py: shows draggable radio panel on screen showing currently set radio channels on RMP1.
-
 import os
 print(f"Current Working Directory: {os.getcwd()}")
 
@@ -8,10 +7,11 @@ import json
 import os
 from time import sleep
 from PIL import Image, ImageDraw, ImageFont, ImageTk
-from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
-from Lib.extended_mobiflight_variable_requests import ExtendedMobiFlightVariableRequests
-import logging
 from threading import Thread
+import logging
+
+# Import the new connection library instead of doing manual connection below
+from Lib.mobiflight_connection import MobiflightConnection
 
 # Set the SimConnect logging level to ERROR to suppress warnings
 logging.getLogger("SimConnect.SimConnect").setLevel(logging.ERROR)
@@ -129,24 +129,22 @@ def resize(event, window, labels):
     labels['label_arrow'].config(font=("Arial", int(font_size / 3), "bold"))
     labels['label_stby'].config(font=("Arial", int(font_size / 3), "bold"))
 
-    active_value = labels['label_active_value'].cget("text")
-    standby_value = labels['label_stby_value'].cget("text")
-    labels['label_active_value'].config(image=create_lcd_text_image(active_value, font_size))
-    labels['label_stby_value'].config(image=create_lcd_text_image(standby_value, font_size))
-
+    # The images will be updated on the next fetch_values cycle.
     save_settings(font_size, {"x": window.winfo_x(), "y": window.winfo_y()})
 
 # Main function to set up SimConnect and the GUI window
 def main():
     try:
         settings = load_settings()
+        # Retrieve saved font size and window position
+        global font_size
         font_size = settings.get("font_size", initial_font_size)
         position = settings.get("position", {"x": 0, "y": 0})
 
-        # Initialize SimConnect and MobiFlightVariableRequests
-        sm = SimConnectMobiFlight()
-        mf_requests = ExtendedMobiFlightVariableRequests(sm, "fenix_radio")
-        mf_requests.clear_sim_variables()
+        # Use the new connection library to initialize SimConnect and the Mobiflight variable requests
+        mobiflight = MobiflightConnection(client_name="fenix_radio")
+        mobiflight.connect()
+        mf_requests = mobiflight.get_request_handler()
 
         # Set up the tkinter window
         window = tk.Tk()
@@ -158,7 +156,6 @@ def main():
         label_active = tk.Label(window, text="ACTIVE", fg="#FFD700", bg="black", font=("Arial", int(font_size / 3), "bold"))
         label_arrow = tk.Label(window, text="↔", fg="green", bg="black", font=("Arial", int(font_size / 3), "bold"))
         label_stby = tk.Label(window, text="STBY/CRS", fg="#FFD700", bg="black", font=("Arial", int(font_size / 3), "bold"))
-
         label_active_value = tk.Label(window, bg="black")
         label_stby_value = tk.Label(window, bg="black")
 
@@ -177,15 +174,15 @@ def main():
             'label_stby_value': label_stby_value
         }
 
-        # Position the window based on saved position
+        # Position the window based on saved settings
         window.geometry(f"+{position['x']}+{position['y']}")
         make_draggable(window)
 
-        # Bind mouse wheel for resizing and right-click for closing
+        # Bind mouse wheel for resizing and right-click to close the window
         window.bind("<MouseWheel>", lambda event: resize(event, window, labels))
-        window.bind("<Button-3>", lambda event: window.destroy())  # Right-click to close
+        window.bind("<Button-3>", lambda event: window.destroy())
 
-        # Start a thread to continuously update values without blocking the GUI
+        # Start a thread to continuously update the radio frequency values
         fetch_thread = Thread(target=fetch_values, args=(mf_requests, label_active_value, label_stby_value), daemon=True)
         fetch_thread.start()
 

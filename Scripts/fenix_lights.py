@@ -1,49 +1,39 @@
-# fenix_lights.py: Applies preset lighting to the cockpit lights on the Fenix A320
-# Requires the Mobiflight Wasm module
-# https://kb.fenixsim.com/example-of-how-to-use-lvars
-# https://github.com/Koseng/MSFSPythonSimConnectMobiFlightExtension/
-
 import logging
-from time import sleep
 import os
 import json
-from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
-from Lib.extended_mobiflight_variable_requests import ExtendedMobiFlightVariableRequests, set_and_verify_lvar
 import sys
+import time
+from time import sleep
 from queue import Queue
 import threading
 
-try:
-    from Lib.color_print import *
-    from Lib.pygame_joy import *
-except ImportError:
-    print("MSFS-PyScriptManager: Please ensure /Lib dir is present")
-    sys.exit(1)
+from Lib.mobiflight_connection import MobiflightConnection, set_and_verify_lvar
+from Lib.color_print import print_info, print_error
+from Lib.pygame_joy import PygameJoy
 
 # Disable warnings - still shows errors
 logging.getLogger("SimConnect.SimConnect").setLevel(logging.ERROR)
 
-# Initialization Lighting LVARs with default values - these values will be assigned by script
-# at start of script
+# --- Constants & Global Variables ---
+
+# Lighting LVARs with default values (will be assigned at start)
 LIGHTING_LVARS = {
-    "L:S_OH_INT_LT_DOME": 0,                # Default value for Dome Light (0,1,2)
+    "L:S_OH_INT_LT_DOME": 0,                # Dome Light (0,1,2)
     "L:A_OH_LIGHTING_OVD": 100,             # Overhead backlighting (0-100)
-    "L:A_MIP_LIGHTING_MAP_L": 0.1,          # Default value for Left Map Lighting
-    "L:A_MIP_LIGHTING_MAP_R": 0.1,          # Default value for Right Map Lighting
-    "L:A_MIP_LIGHTING_FLOOD_MAIN": 0.1,     # FLOOD LT MAIN PNL
-    "L:A_MIP_LIGHTING_FLOOD_PEDESTAL": 0.1, # Flood Light - PED
-    "L:A_PED_LIGHTING_PEDESTAL": 1,         # INTEG LT MAIN PNL & PED (button backlight)
-    "L:A_CHART_LIGHT_TEMP_FO": 0,           # Brightness knob on FO window
-    "L:S_CHART_LIGHT_TEMP_FO": 0,           # Switch for chart light (captain)
-    "L:A_CHART_LIGHT_TEMP_CAPT": 0,         # Brightness knob on capt window
-    "L:S_CHART_LIGHT_TEMP_CAPT": 0,         # Switch for chart light (captain)
-    "L:S_MIP_LIGHT_CONSOLEFLOOR_CAPT": 0,   # Console floor light (captain)
+    "L:A_MIP_LIGHTING_MAP_L": 0.1,          # Left Map Lighting
+    "L:A_MIP_LIGHTING_MAP_R": 0.1,          # Right Map Lighting
+    "L:A_MIP_LIGHTING_FLOOD_MAIN": 0.1,     # Flood Light - Main Panel
+    "L:A_MIP_LIGHTING_FLOOD_PEDESTAL": 0.1, # Flood Light - Pedestal
+    "L:A_PED_LIGHTING_PEDESTAL": 1,         # Panel & Pedestal (button backlight)
+    "L:A_CHART_LIGHT_TEMP_FO": 0,           # FO window brightness knob
+    "L:S_CHART_LIGHT_TEMP_FO": 0,           # FO chart light switch
+    "L:A_CHART_LIGHT_TEMP_CAPT": 0,         # Capt window brightness knob
+    "L:S_CHART_LIGHT_TEMP_CAPT": 0,         # Capt chart light switch
+    "L:S_MIP_LIGHT_CONSOLEFLOOR_CAPT": 0,   # Console floor light (capt)
     "L:S_MIP_LIGHT_CONSOLEFLOOR_FO": 0      # Console floor light (FO)
 }
 
-# List of screen LVARs to control
-# These will be linked to far left captain side screen control (PFD Brightness)
-# AND/OR joystick bind
+# List of screen LVARs to control (for display brightness propagation)
 DISPLAY_LVARS = [
     "L:A_DISPLAY_BRIGHTNESS_CO",
     "L:A_DISPLAY_BRIGHTNESS_FO",
@@ -55,10 +45,16 @@ DISPLAY_LVARS = [
     "L:A_DISPLAY_BRIGHTNESS_ECAM_U"
 ]
 
-# Set settings file path
+# Settings file paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SETTINGS_DIR = os.path.join(BASE_DIR, "Settings")
 SETTINGS_FILE = os.path.join(SETTINGS_DIR, "fenix_lights.json")
+
+# Default LVAR wait condition (e.g., ground power)
+DEFAULT_WAIT_LVAR = "L:S_OH_ELEC_EXT_PWR"
+DEFAULT_WAIT_VALUE = 1
+
+# --- Settings & Setup Functions ---
 
 def load_settings():
     """Load user settings from the settings file."""
@@ -75,10 +71,7 @@ def save_settings(settings):
 def setup():
     """Initial setup to collect user preferences."""
     settings = {}
-
     print_info("Welcome to the Fenix A320 Lighting Manager setup!")
-
-    # Prompt user for joystick axis assignment
     assign_joystick = input("Do you want to assign a joystick axis to control screen brightness? (y/n): ").strip().lower()
     if assign_joystick == "y":
         joystick = PygameJoy()
@@ -89,30 +82,30 @@ def setup():
         settings["axis_id"] = axis_to_use
     else:
         settings["joystick_enabled"] = False
-
     save_settings(settings)
     print_info("Setup complete! Settings saved.")
     return settings
 
+# --- Lighting & Joystick Functions ---
+
 def set_cockpit_lights(mf_requests):
-    """Iterate through cockpit lights and set them to values"""
+    """Set all cockpit lighting LVARs to their default values."""
     for lvar_name, default_value in LIGHTING_LVARS.items():
-        # Set to max value then default value
+        # First set to a known (max) value then to the default
         set_and_verify_lvar(mf_requests, lvar_name, 1.0)
         set_and_verify_lvar(mf_requests, lvar_name, default_value)
 
 def propagate_lvars(mf_requests, co_value):
     """
-    Propagate 'L:A_DISPLAY_BRIGHTNESS_CO' value to other LVARs.
-    This is so display brightness can be used to control all screen values
+    Propagate the 'L:A_DISPLAY_BRIGHTNESS_CO' value to other display LVARs.
+    This ensures all screen brightness values are synchronized.
     """
     for lvar in DISPLAY_LVARS:
         if lvar != "L:A_DISPLAY_BRIGHTNESS_CO":  # Skip the master variable
-            set_and_verify_lvar(mf_requests, lvar, co_value, tolerance=None,
-                max_retries=1, retry_delay=0, )
+            set_and_verify_lvar(mf_requests, lvar, co_value, tolerance=None, max_retries=1, retry_delay=0)
 
 def joystick_init(settings):
-    # Joystick initialization if enabled in settings
+    """Initialize joystick control if enabled."""
     joystick = None
     axis_to_use = None
     if settings.get("joystick_enabled", True):
@@ -123,81 +116,79 @@ def joystick_init(settings):
         print_info("Joystick control is disabled in settings.")
     return joystick, axis_to_use
 
-def main_screen_update_loop(mf_requests, joystick:PygameJoy, axis_to_use, settings):
-    """Continuously update cockpit screen lighting either based on axis or on left disp knob"""
-    # Variables to track changes
+def main_screen_update_loop(mf_requests, joystick, axis_to_use, settings):
+    """Continuously update cockpit screen brightness based on joystick or knob changes."""
     previous_axis_value = None
     previous_co_value = None
-
     while True:
-        # Get the current value of "L:A_DISPLAY_BRIGHTNESS_CO"
-        current_co_value = mf_requests.get("(L:A_DISPLAY_BRIGHTNESS_CO)")
+        try:
+            current_co_value = mf_requests.get("(L:A_DISPLAY_BRIGHTNESS_CO)")
 
-        if settings["joystick_enabled"]:
-            # Update joystick state
-            joystick.update()
+            if settings["joystick_enabled"]:
+                joystick.update()
+                axis_value = joystick.get_axis_value(axis_to_use)
+                # Scale the joystick axis value appropriately
+                scaled_value = -axis_value
 
-            # Read the joystick axis value
-            axis_value = joystick.get_axis_value(axis_to_use)
+            # If the joystick value has changed, update the master LVAR and propagate
+            if settings["joystick_enabled"] and (previous_axis_value is None or scaled_value != previous_axis_value):
+                set_and_verify_lvar(mf_requests, "L:A_DISPLAY_BRIGHTNESS_CO", scaled_value,
+                                    tolerance=None, max_retries=1, retry_delay=0)
+                propagate_lvars(mf_requests, scaled_value)
+                previous_axis_value = scaled_value
+                previous_co_value = scaled_value
 
-            # Scale the joystick axis value to the LVAR range
-            scaled_value = -axis_value
+            # If the master LVAR has been independently changed, propagate that change
+            elif previous_co_value is None or current_co_value != previous_co_value:
+                propagate_lvars(mf_requests, current_co_value)
+                previous_co_value = current_co_value
 
-        # Detect joystick axis change
-        if settings["joystick_enabled"] and (previous_axis_value is None or scaled_value != previous_axis_value):
-            # Update "L:A_DISPLAY_BRIGHTNESS_CO" from joystick
-            set_and_verify_lvar( mf_requests,"L:A_DISPLAY_BRIGHTNESS_CO",
-                scaled_value, tolerance=None, max_retries=1, retry_delay=0, )
+            sleep(0.1)
 
-            # Propagate the updated value to all other LVARs
-            propagate_lvars(mf_requests, scaled_value)
+        except Exception as e:
+            print_error(f"Error in main screen update loop: {e}")
+            raise  # Propagate the error to trigger a full restart
 
-            # Update previous values
-            previous_axis_value = scaled_value
-            previous_co_value = scaled_value
-
-        # Detect independent "L:A_DISPLAY_BRIGHTNESS_CO" change
-        elif previous_co_value is None or current_co_value != previous_co_value:
-            # Propagate the new "L:A_DISPLAY_BRIGHTNESS_CO" value to all other LVARs
-            propagate_lvars(mf_requests, current_co_value)
-
-            # Update the previous "L:A_DISPLAY_BRIGHTNESS_CO" value
-            previous_co_value = current_co_value
-
-        sleep(0.1)
+# --- Main Routine ---
 
 def main():
     try:
-        # Load Settings
+        # Load settings (or run setup if none exist)
         settings = load_settings()
         if settings is None:
             settings = setup()
 
-        # Initialize the SimConnect connection
-        client_name = "fenix_set_lighting_defaults"
-        sm = SimConnectMobiFlight()
-        mf_requests = ExtendedMobiFlightVariableRequests(sm, client_name)
-        mf_requests.clear_sim_variables()
+        # Create a MobiflightConnection instance and connect
+        mobiflight = MobiflightConnection(client_name="fenix_set_lighting_defaults")
+        mobiflight.connect()
+        mf_requests = mobiflight.get_request_handler()
 
-        # Prime the library - possibly necessary to ensure the connection works properly
-        _ = mf_requests.get("(A:PLANE ALTITUDE,Feet)")
+        # Prime the library by reading the altitude
+        altitude = mf_requests.get("(A:PLANE ALTITUDE,Feet)")
+        print_info(f"Primed with altitude: {altitude}")
 
-        # Set all lighting LVARs to their default values with retry mechanism
+        # Wait for the required LVAR (ground power) to be active
+        mobiflight.wait_for_lvar(DEFAULT_WAIT_LVAR, DEFAULT_WAIT_VALUE)
+
         print_info("Setting interior light values...")
         set_cockpit_lights(mf_requests)
         print_info("Setting interior light values... DONE")
 
-        # Initialize joystick
+        # Initialize joystick if enabled
         joystick, axis_to_use = joystick_init(settings)
 
-        # Main lighting update loop
+        # Enter the main update loop for cockpit display brightness
         main_screen_update_loop(mf_requests, joystick, axis_to_use, settings)
 
-    except ConnectionError as e:
-        print_info(f"Could not connect to Flight Simulator: {e}")
-        print_info("Make sure MSFS is running and try again.")
     except Exception as e:
         print_error(f"An unexpected error occurred: {e}")
+        raise  # Allow the exception to bubble up for the outer loop to restart
 
 if __name__ == "__main__":
-    main()
+    # Outer loop: if main() fails (e.g., connection lost), restart after a short delay.
+    while True:
+        try:
+            main()
+        except Exception as e:
+            print_error(f"Restarting main loop due to error: {e}")
+            time.sleep(10)

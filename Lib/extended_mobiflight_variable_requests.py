@@ -18,34 +18,6 @@ except ImportError:
     print("MSFS-PyScriptManager: Please ensure /Lib dir is present")
     sys.exit(1)
 
-def set_and_verify_lvar(mf_requests, lvar, value, tolerance=0.01, max_retries=5, retry_delay=0.1):
-    """
-    Sets an LVAR to a specified value and verifies it within a tolerance. Retries if necessary.
-    If tolerance is None, disables the verification step entirely.
-    """
-    for attempt in range(1, max_retries + 1):
-        # Attempt to set the LVAR
-        req_str = f"{value} (> {lvar})"
-        mf_requests.set(req_str)
-
-        # Skip verification if tolerance is None
-        if tolerance is None:
-            return True
-
-        time.sleep(retry_delay)  # Allow time for the simulator to apply the value
-
-        # Check if the value was successfully applied within the tolerance
-        current_value = mf_requests.get(f"({lvar})")
-        if abs(current_value - value) <= tolerance:
-            return True
-
-    # Enhanced error message with actual vs expected values
-    print_error(
-        f"[FAILURE] Could not set {lvar} to {value} (current value: {current_value}) "
-        f"within tolerance {tolerance} after {max_retries} attempts."
-    )
-    return False
-
 # Borrow 'Mobiclient' idea from 'prototype' version of the library
 # https://github.com/Koseng/MSFSPythonSimConnectMobiFlightExtension/blob/main/prototype/mobiflight_variable_requests.py
 class MobiClient:
