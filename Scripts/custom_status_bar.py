@@ -32,9 +32,6 @@ except ImportError:
     print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
     sys.exit(1)
 
-# Print initial message
-print("custom_status_bar: Close this window to close status bar")
-
 # Default templates file - this will be created if it doesn't exist
 # in the settings directory as /Settings/status_bar_templates.py
 #
