@@ -433,7 +433,7 @@ class ScriptTab(Tab):
         # Add the "Reload Script" button
         reload_button = tk.Button(
             self.button_frame,
-            text="Reload Script (F5)",
+            text="Restart Script (F5)",
             command=self.reload_script,
             bg=BUTTON_BG_COLOR,
             fg=BUTTON_FG_COLOR,
