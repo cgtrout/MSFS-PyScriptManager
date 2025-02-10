@@ -168,8 +168,8 @@ CONFIG = Config()       # Global configuration
 # --- SimBrief Data Structures  ------------------------------------------------------------------
 class SimBriefTimeOption(Enum):
     """Type of time to pull from SimBrief"""
-    ESTIMATED_IN = "Estimated In"
-    ESTIMATED_TOD = "Estimated TOD"
+    EST_IN = "Est In"
+    TOD = "Est TOD"
     EOBT = "Gate out time (EOBT)"
 
 # --- Settings Handling  -------------------------------------------------------------------------
@@ -178,7 +178,7 @@ class SimBriefSettings:
     """Contains settings related to Simbrief functionality"""
     username: str = ""
     use_adjusted_time: bool = False
-    selected_time_option: Any = SimBriefTimeOption.ESTIMATED_IN
+    selected_time_option: Any = SimBriefTimeOption.EST_IN
     allow_negative_timer: bool = False
     auto_update_enabled: bool = False
 
@@ -190,23 +190,43 @@ class SimBriefSettings:
             "selected_time_option": (
                 self.selected_time_option.value
                 if isinstance(self.selected_time_option, SimBriefTimeOption)
-                else SimBriefTimeOption.ESTIMATED_IN.value
+                else SimBriefTimeOption.EST_IN.value
             ),
             "allow_negative_timer": self.allow_negative_timer,
             "auto_update_enabled": self.auto_update_enabled,
         }
 
     @staticmethod
+    @staticmethod
     def from_dict(data):
-        """Take values from dictionary"""
+        """Take values from dictionary and ensure proper type conversion"""
+
+        # Retrieve values from dictionary
+        username = data.get("username", "")
+        use_adjusted_time = data.get("use_adjusted_time", False)
+        allow_negative_timer = data.get("allow_negative_timer", False)
+        auto_update_enabled = data.get("auto_update_enabled", False)
+
+        # Handle `selected_time_option`
+        selected_time_option = data.get("selected_time_option", SimBriefTimeOption.EST_IN.value)
+
+        if isinstance(selected_time_option, str):
+            try:
+                selected_time_option = SimBriefTimeOption(selected_time_option)
+            except ValueError:
+                print(f"Warning: Invalid value '{selected_time_option}' for 'selected_time_option'. Resetting to default (ESTIMATED_IN).")
+                selected_time_option = SimBriefTimeOption.EST_IN
+        elif not isinstance(selected_time_option, SimBriefTimeOption):
+            print(f"Warning: Unexpected type for 'selected_time_option'. Resetting to default.")
+            selected_time_option = SimBriefTimeOption.EST_IN
+
+        # Return instance of SimBriefSettings with corrected values
         return SimBriefSettings(
-            username=data.get("username", ""),
-            use_adjusted_time=data.get("use_adjusted_time", False),
-            selected_time_option=SimBriefTimeOption(
-                                    data.get("selected_time_option",
-                                    SimBriefTimeOption.ESTIMATED_IN.value)),
-            allow_negative_timer=data.get("allow_negative_timer", False),
-            auto_update_enabled=data.get("auto_update_enabled", False),
+            username=username,
+            use_adjusted_time=use_adjusted_time,
+            selected_time_option=selected_time_option,
+            allow_negative_timer=allow_negative_timer,
+            auto_update_enabled=auto_update_enabled,
         )
 
 @dataclass
@@ -399,7 +419,7 @@ class SimBriefAutoTimer:
 
             # Update countdown timer only if necessary
             if ( user_setting != self.last_user_setting or simbrief_updated ) \
-              and not countdown_state.is_future_time_manually_set:
+              and not countdown_state.timer_source == CountdownState.TimerSource.USER_TIMER:
                 print_debug("SimBriefAutoTimer: updating timer user_setting:"
                             f" {user_setting} simbrief_updated: {simbrief_updated}")
 
@@ -644,12 +664,20 @@ class ServiceManager:
 @dataclass
 class CountdownState:
     """Countdown timer state"""
-    is_future_time_manually_set: bool = False  # Flag for manual setting
-    last_entered_time: Optional[str] = None  # Last entered time in HHMM format
-    gate_out_time: Optional[datetime] = None  # Store last game out time
+
+    class TimerSource(Enum):
+        """Which source set the timer last"""
+        AUTO_TIMER = "auto_timer"
+        USER_TIMER = "user_timer"
+        USER_SELECTED_PRESET = "user_selected_preset"
+
+    timer_source: Optional[TimerSource] = None  # Tracks the source of the timer
+    last_entered_time: Optional[str] = None     # Last entered time in HHMM format
+    gate_out_time: Optional[datetime] = None    # Store last game out time
     countdown_target_time: datetime = field(default_factory=lambda: CONFIG.UNIX_EPOCH)
 
-    def set_future_time(self, new_time: datetime, simulator_time: datetime, simbrief_settings) -> bool:
+    def set_future_time(self, new_time: datetime, simulator_time: datetime, simbrief_settings,
+                        timer_source: TimerSource) -> bool:
         """Set a new countdown target time"""
         if not self._validate_future_time(new_time, simulator_time, simbrief_settings):
             print_error(f"Failed to set countdown timer: {new_time} is invalid"
@@ -657,6 +685,7 @@ class CountdownState:
             return False
 
         self.countdown_target_time = new_time
+        self.timer_source = timer_source
         return True
 
     def _validate_future_time(self, future_time_input, current_sim_time, simbrief_settings) -> bool:
@@ -754,11 +783,24 @@ def remain_label():
     if is_sim_rate_accelerated():
         return "Rem(adj):"
 
-    if countdown_state.is_future_time_manually_set:
-        return "Remaining:"
+
+    # Show label based on the source of the timer
+    if countdown_state.timer_source == CountdownState.TimerSource.USER_TIMER:
+        return "Rem(user):"
+    elif countdown_state.timer_source == CountdownState.TimerSource.USER_SELECTED_PRESET:
+        simbrief_option = state.settings.simbrief_settings.selected_time_option.name
+        if isinstance(simbrief_option, str):
+            return f"Rem({simbrief_option}):"
+    elif countdown_state.timer_source == CountdownState.TimerSource.AUTO_TIMER:
+        # Dynamically fetch the SimBrief option if it was set by the auto timer
+        if state and state.simbrief_timer:
+            simbrief_option = state.simbrief_timer.last_user_setting
+            if isinstance(simbrief_option, SimBriefTimeOption):
+                return f"Rem({simbrief_option.name}):"
+        return "Auto:"
     else:
-        extra_text = state.settings.simbrief_settings.selected_time_option.value
-        return f"Rem({extra_text}):"
+        return "Remaining:"
+
 
 # --- Timer Calculation Functions------------------------------------------------------------------
 def get_time_to_future_adjusted():
@@ -1457,6 +1499,8 @@ class SimBriefFunctions:
                                        gate_out_entry_value=None, custom_time_option=None):
         """Update the countdown timer based on SimBrief data and optional manual gate-out time."""
         try:
+            timer_source = CountdownState.TimerSource.USER_SELECTED_PRESET
+
             # Adjust gate-out time
             gate_time_offset = SimBriefFunctions.adjust_gate_out_delta(
                 simbrief_json=simbrief_json,
@@ -1468,6 +1512,7 @@ class SimBriefFunctions:
             # If custom_time_option is provided use that, otherwise use saved simbrief setting
             if custom_time_option is not None:
                 selected_time = custom_time_option
+                timer_source = CountdownState.TimerSource.AUTO_TIMER
             else:
                 selected_time = simbrief_settings.selected_time_option
 
@@ -1493,7 +1538,8 @@ class SimBriefFunctions:
 
             # Set countdown timer
             current_sim_time = get_simulator_datetime()
-            return countdown_state.set_future_time(future_time, current_sim_time, simbrief_settings)
+            return countdown_state.set_future_time(future_time, current_sim_time,
+                                                   simbrief_settings, timer_source)
 
         except Exception as e:
             print_error(f"Exception in update_countdown_from_simbrief: {e}")
@@ -1557,8 +1603,8 @@ class SimBriefFunctions:
 
 # MAP SimBriefTimeOption to corresponding functions
 SIMBRIEF_TIME_OPTION_FUNCTIONS = {
-    SimBriefTimeOption.ESTIMATED_IN:    SimBriefFunctions.get_simbrief_ofp_arrival_datetime,
-    SimBriefTimeOption.ESTIMATED_TOD:   SimBriefFunctions.get_simbrief_ofp_tod_datetime,
+    SimBriefTimeOption.EST_IN:          SimBriefFunctions.get_simbrief_ofp_arrival_datetime,
+    SimBriefTimeOption.TOD:             SimBriefFunctions.get_simbrief_ofp_tod_datetime,
     SimBriefTimeOption.EOBT:            SimBriefFunctions.get_simbrief_ofp_gate_out_datetime
 }
 
@@ -1993,7 +2039,6 @@ class CountdownTimerDialog(tk.Toplevel):
                 return
 
             print_debug("Countdown timer updated successfully from SimBrief.")
-            countdown_state.is_future_time_manually_set = False
 
             self.destroy()
 
@@ -2056,8 +2101,9 @@ class CountdownTimerDialog(tk.Toplevel):
         """Set the countdown timer and update global state."""
         current_sim_time = get_simulator_datetime()
         simbrief_settings = self.app_state.settings.simbrief_settings
-        if countdown_state.set_future_time(future_time, current_sim_time, simbrief_settings):
-            countdown_state.is_future_time_manually_set = True
+        timer_source = CountdownState.TimerSource.USER_TIMER
+        if countdown_state.set_future_time(future_time, current_sim_time,
+                                           simbrief_settings, timer_source):
             return True
         return False
 
