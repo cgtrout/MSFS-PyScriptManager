@@ -1303,7 +1303,7 @@ class ScriptLauncherApp:
         # Add buttons to the toolbar with their placement side
         buttons = [
             ("Run Script", self.select_and_run_script, "left"),
-            ("Reload ALL", self.reload_all_scripts, "left"),
+            ("Restart ALL", self.reload_all_scripts, "left"),
             ("Load Script Group", self.load_script_group, "right"),
             ("Save Script Group", self.save_script_group, "right"),
             ("Performance Metrics", self.open_performance_metrics_tab, "right"),
