@@ -753,7 +753,12 @@ def remain_label():
     """
     if is_sim_rate_accelerated():
         return "Rem(adj):"
-    return "Remaining:"
+
+    if countdown_state.is_future_time_manually_set:
+        return "Remaining:"
+    else:
+        extra_text = state.settings.simbrief_settings.selected_time_option.value
+        return f"Rem({extra_text}):"
 
 # --- Timer Calculation Functions------------------------------------------------------------------
 def get_time_to_future_adjusted():
