@@ -10,6 +10,7 @@ import threading
 import time
 from multiprocessing import Process, Event
 from pathlib import Path
+from tkinter import messagebox
 from typing import Dict
 import ctypes
 
@@ -32,6 +33,7 @@ import faulthandler
 import traceback
 
 import signal
+import keyboard
 
 # Add parent directory so Lib path can be found
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
@@ -1301,7 +1303,7 @@ class ScriptLauncherApp:
         # Add buttons to the toolbar with their placement side
         buttons = [
             ("Run Script", self.select_and_run_script, "left"),
-            ("Reload ALL", self.reload_all_scripts, "right"),
+            ("Reload ALL", self.reload_all_scripts, "left"),
             ("Load Script Group", self.load_script_group, "right"),
             ("Save Script Group", self.save_script_group, "right"),
             ("Performance Metrics", self.open_performance_metrics_tab, "right"),
@@ -1337,6 +1339,13 @@ class ScriptLauncherApp:
         self.tab_manager.add_tab(script_tab)
 
     def reload_all_scripts(self):
+        shift_held = is_shift_held()
+        if not shift_held:
+            if not messagebox.askyesno("Confirm Reload",
+                                       "Are you sure you want to reload ALL scripts?\n\n"
+                                       "Note you can hold shift to bypass this check"):
+                return  # User canceled, do not proceed
+
         self.tab_manager.reload_all_scripts()
 
     def bind_events(self):
@@ -1956,6 +1965,10 @@ def monitor_shutdown_pipe(pipe_name, shutdown_event):
 
     logging.debug("join reader_thread")
     reader_thread.join(timeout=1)  # Allow the thread to exit
+
+def is_shift_held():
+    """Check if Shift key is currently held globally."""
+    return keyboard.is_pressed("shift")
 
 def main():
     """Main entry point for the script."""
