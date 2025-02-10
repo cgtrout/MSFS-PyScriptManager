@@ -1322,8 +1322,9 @@ class ScriptLauncherApp:
 
     def select_and_run_script(self):
         """Opens file dialog for script selection and then runs it"""
-        file_path = filedialog.askopenfilename(title="Select Python Script",
-                                               filetypes=[("Python Files", "*.py")])
+        file_path = filedialog.askopenfilename( title="Select Python Script",
+                                                filetypes=[("Python Files", "*.py")],
+                                                initialdir=str(scripts_path) )
         if not file_path:
             print("[INFO] No file selected. Operation cancelled.")
             return
