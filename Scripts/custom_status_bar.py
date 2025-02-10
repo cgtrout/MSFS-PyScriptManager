@@ -783,7 +783,6 @@ def remain_label():
     if is_sim_rate_accelerated():
         return "Rem(adj):"
 
-
     # Show label based on the source of the timer
     if countdown_state.timer_source == CountdownState.TimerSource.USER_TIMER:
         return "Rem(user):"
@@ -800,7 +799,6 @@ def remain_label():
         return "Auto:"
     else:
         return "Remaining:"
-
 
 # --- Timer Calculation Functions------------------------------------------------------------------
 def get_time_to_future_adjusted():
