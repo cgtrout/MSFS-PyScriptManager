@@ -97,7 +97,7 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         self.send_command(("MF.SimVars.Set." + variableString), self.my_client)
 
     def initialize_client_data_areas(self, client):
-        print(f"Initializing client channels for {client.CLIENT_NAME}...")
+        #print(f"Initializing client channels for {client.CLIENT_NAME}...")
         self.map_client_data_name_to_id(f"{client.CLIENT_NAME}.LVars", client.CLIENT_DATA_AREA_LVARS)
         self.create_client_data(client.CLIENT_DATA_AREA_LVARS, 4096, self.FLAG_DEFAULT)
 
@@ -157,13 +157,13 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         return data_bytes[0:data_bytes.index(0)].decode(encoding='ascii') # index(0) for end of c string
 
     def map_client_data_name_to_id(self, name, client_data_id):
-        print(f"MapClientDataNameToID: {name} {client_data_id}")
+        #print(f"MapClientDataNameToID: {name} {client_data_id}")
         result = self.sm.dll.MapClientDataNameToID(self.sm.hSimConnect, name.encode("ascii"), client_data_id)
         if result != 0:
             raise RuntimeError(f"Failed to map '{name}' to ID {client_data_id}. HRESULT: {result}")
 
     def create_client_data(self, client_data_id, size, flags):
-        print(f"CreateClientData: {client_data_id}")
+        #print(f"CreateClientData: {client_data_id}")
         result = self.sm.dll.CreateClientData(self.sm.hSimConnect, client_data_id, size, flags)
         if result != 0:
             raise RuntimeError(f"Failed to create ClientData area for ID {client_data_id}. HRESULT: {result}")
