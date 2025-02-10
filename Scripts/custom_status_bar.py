@@ -85,6 +85,10 @@ TEMPLATES = {
 def get_altitude():
     return get_formatted_value("PLANE_ALTITUDE", "{:.0f} ft")
 
+# NOTE: get_formatted_value will return as a string.  In cases where you want to get direct value
+#       (as a float) you may want to use get_simconnect_value("PLANE_ALTITUDE") to get the actual
+#       value rather than a formatted value.
+
 ## USER FUNCTIONS ##
 # The following functions are hooks for user-defined behaviors and will be called by the
 # custom_status_bar script.
@@ -269,11 +273,6 @@ class AppState:
         self.settings_manager = SettingsManager()
         self.settings = self.settings_manager.load_settings()
 
-        # Log File
-        self.log_file_path = "traceback.log"
-        self.traceback_log_file = open(self.log_file_path, "w", encoding="utf-8")
-        faulthandler.enable(file=self.traceback_log_file)
-
         # User functions
         self.user_update_function_defined = False
         self.user_slow_update_function_defined = False
@@ -347,7 +346,7 @@ class AppState:
         if self.user_update_function_defined:
             try:
                 user_update() # type: ignore  # pylint: disable=undefined-variable
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 print_error(f"Error in user_update [{type(e).__name__}]: {e}")
 
     def call_user_slow_update(self):
@@ -355,7 +354,7 @@ class AppState:
         if self.user_slow_update_function_defined:
             try:
                 user_slow_update() # type: ignore  # pylint: disable=undefined-variable
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 print_error(f"Error in user_slow_update [{type(e).__name__}]: {e}")
 
     def auto_update_simbrief(self):
@@ -367,68 +366,11 @@ class AppState:
         if self.user_simbrief_function_defined:
             try:
                 user_setting = user_simbrief()  # type: ignore  # pylint: disable=undefined-variable
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 print_error(f"Error calling user_simbrief(): {e}")
 
         # Pass user_setting to SimBriefAutoTimer
         self.simbrief_timer.update_countdown(user_setting)
-
-class TickManager:
-    """
-    Handles scheduling and notifying tick subscribers.
-    Used to handle timing for user calls and display update
-    """
-    UPDATE_INTERVAL = 33
-    SLOW_UPDATE_INTERVAL = 500
-    SLOW_UPDATE_TICKS = SLOW_UPDATE_INTERVAL // UPDATE_INTERVAL
-
-    def __init__(self):
-        """Initialize tick tracking and subscriber lists."""
-        self.tick_count = 0
-        self.root = None  # Assigned when `start()` is called
-
-        # Crate tick subscriber sets
-        self.tick_subscribers = set()
-        self.slow_tick_subscribers = set()
-
-    def start(self, root):
-        """Start ticking using Tkinter's scheduler."""
-        self.root = root
-        self.tick()
-
-    def tick(self):
-        """Called every `update_interval` to notify subscribers."""
-        self.tick_count += 1
-
-        # Notify fast tick subscribers
-        for subscriber in self.tick_subscribers:
-            subscriber.tick()
-
-        # If slow tick interval is reached
-        if self.tick_count >= self.SLOW_UPDATE_TICKS:
-            for subscriber in self.slow_tick_subscribers:
-                subscriber.slow_tick()
-            self.tick_count = 0  # Reset tick count
-
-        # Schedule the next tick
-        self.root.after(self.UPDATE_INTERVAL, self.tick)
-
-    def subscribe_to_tick(self, subscriber):
-        """Register a component for fast tick updates."""
-        self._validate_subscriber(subscriber, "tick")
-        self.tick_subscribers.add(subscriber)
-
-    def subscribe_to_slow_tick(self, subscriber):
-        """Register a component for slow tick updates."""
-        self._validate_subscriber(subscriber, "slow_tick")
-        self.slow_tick_subscribers.add(subscriber)
-
-    @staticmethod
-    def _validate_subscriber(subscriber, method_name):
-        """Ensure the subscriber implements the required method."""
-        if not hasattr(subscriber, method_name) or not callable(getattr(subscriber, method_name)):
-            raise TypeError(f"Subscriber {subscriber.__class__.__name__} "
-                            f"must implement '{method_name}()'")
 
 class SimBriefAutoTimer:
     """Handles automatic countdown timer updates based on SimBrief data."""
@@ -440,9 +382,7 @@ class SimBriefAutoTimer:
         self.last_user_setting = None
 
     def update_countdown(self, user_setting):
-        """
-        Update countdown timer based on SimBrief settings.
-        """
+        """Update countdown timer based on SimBrief settings."""
         simbrief_updated = False
 
         simbrief_settings = self.app_state.settings.simbrief_settings
@@ -455,8 +395,7 @@ class SimBriefAutoTimer:
             if elapsed_time.total_seconds() > CONFIG.SIMBRIEF_AUTO_UPDATE_INTERVAL_SECONDS:
                 self.last_simbrief_load = datetime.now(timezone.utc)
                 print_debug("SimBriefAutoTimer: Checking SimBrief (elapsed time has passed)")
-                self.update_simbrief_json()
-                simbrief_updated = True
+                simbrief_updated = self.update_simbrief_json()
 
             # Update countdown timer only if necessary
             if ( user_setting != self.last_user_setting or simbrief_updated ) \
@@ -480,12 +419,19 @@ class SimBriefAutoTimer:
         except Exception as e:
             print_error(f"SimBriefAutoTimer: Exception during auto-update: {e}")
 
-    def update_simbrief_json(self):
-        """Fetch and store the latest SimBrief JSON data."""
+    def update_simbrief_json(self) -> bool:
+        """
+        Fetch and store the latest SimBrief JSON data.
+        Returns True if successful, False otherwise.
+        """
         simbrief_settings = self.app_state.settings.simbrief_settings
-        self.last_simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(
-            simbrief_settings.username
-        )
+        self.last_simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(simbrief_settings.username)
+        if self.last_simbrief_json:
+            print_info("SimBrief data fetched successfully.")
+            return True
+        print_warning("SimBrief JSON fetch failed or returned empty data.")
+        self.last_simbrief_json = None
+        return False
 
 class UIManager:
     """Manages UI-specific state, such as dragging and widget updates."""
@@ -539,9 +485,7 @@ class UIManager:
         self.root.wait_window(dialog)  # Wait for dialog to close
 
     def show_template_menu(self, event):
-        """
-        Display a context menu to allow the user to select a template.
-        """
+        """Display a context menu to allow the user to select a template."""
         menu = tk.Menu(self.root, tearoff=0)
 
         # Add all templates to the menu
@@ -555,9 +499,7 @@ class UIManager:
         menu.post(event.x_root, event.y_root)
 
     def switch_template(self, new_template_name):
-        """
-        Switch to a new template and mark it for re-rendering in the next update cycle.
-        """
+        """Switch to a new template and mark it for re-rendering in the next update cycle."""
         try:
             # Update the selected template
             self.template_handler.selected_template_name = new_template_name
@@ -579,6 +521,11 @@ class ServiceManager:
         self.app_state = app_state
         self.background_updater = BackgroundUpdater(self.app_state, root)
 
+        # Log File
+        self.log_file_path = "traceback.log"
+        self.traceback_log_file = open(self.log_file_path, "w", encoding="utf-8")
+        faulthandler.enable(file=self.traceback_log_file)
+
         self.settings = settings
         self.root = root
 
@@ -591,7 +538,7 @@ class ServiceManager:
         """Start debug related utilites"""
         def reset_traceback_timer():
             """Reset the faulthandler timer to prevent a dump."""
-            faulthandler.dump_traceback_later(60, file=state.traceback_log_file)
+            faulthandler.dump_traceback_later(60, file=self.traceback_log_file)
             self.root.after(10000, reset_traceback_timer)
         if not self.is_debugging():
             print_info("Traceback fault timer started")
@@ -697,25 +644,53 @@ class ServiceManager:
 @dataclass
 class CountdownState:
     """Countdown timer state"""
-    future_time_seconds: Optional[int] = None  # Time for countdown in seconds
     is_future_time_manually_set: bool = False  # Flag for manual setting
-    last_simbrief_generated_time: Optional[datetime] = None  # Last SimBrief time
     last_entered_time: Optional[str] = None  # Last entered time in HHMM format
     gate_out_time: Optional[datetime] = None  # Store last game out time
     countdown_target_time: datetime = field(default_factory=lambda: CONFIG.UNIX_EPOCH)
 
-    def set_target_time(self, new_time: datetime):
-        """Set a new countdown target time with type validation."""
-        if not isinstance(new_time, datetime):
-            raise TypeError("countdown_target_time must be a datetime object")
+    def set_future_time(self, new_time: datetime, simulator_time: datetime, simbrief_settings) -> bool:
+        """Set a new countdown target time"""
+        if not self._validate_future_time(new_time, simulator_time, simbrief_settings):
+            print_error(f"Failed to set countdown timer: {new_time} is invalid"
+                        f"(current sim time: {simulator_time})")
+            return False
+
         self.countdown_target_time = new_time
+        return True
+
+    def _validate_future_time(self, future_time_input, current_sim_time, simbrief_settings) -> bool:
+        """Validates a future time (countdown timer time)"""
+        try:
+            # Ensure all times are timezone-aware (UTC)
+            if current_sim_time.tzinfo is None:
+                current_sim_time = current_sim_time.replace(tzinfo=timezone.utc)
+
+            if isinstance(future_time_input, datetime):
+                # Validate that the future time is after the current simulator time
+                if future_time_input <= current_sim_time and \
+                not simbrief_settings.allow_negative_timer:
+                    raise ValueError("Future time must be later than the current simulator time.")
+
+                # Log successful setting of the timer
+                print(f"Timer set to: {future_time_input}")
+                return True
+            else:
+                raise TypeError("Unsupported future_time_input type. Must be a datetime object.")
+
+        except ValueError as ve:
+            print_error(f"Validation error in set_future_time_internal: {ve}")
+            return False
+        except Exception as e:
+            print_error(f"Unexpected error in set_future_time_internal: {str(e)}")
+            return False
 
 # --- SimConnect Template Functions --------------------------------------------------------------
 def get_sim_time():
     """Fetch the simulator time from SimConnect, formatted as HH:MM:SS."""
     try:
 
-        if not state.sim_connected:
+        if not is_simconnect_available():
             return "Sim Not Running"
 
         sim_time_seconds = get_simconnect_value("ZULU_TIME")
@@ -730,23 +705,18 @@ def get_sim_time():
         return "Err"
 
 def get_simulator_datetime() -> datetime:
-    """
-    Fetches the absolute time from the simulator and converts it to a datetime object.
-    """
+    """Fetches the absolute time from the simulator and converts it to a datetime object."""
     try:
-        if state is None or not state.sim_connected:
-            raise ValueError("SimConnect is not connected.")
+        if state is None or not is_simconnect_available():
+            return CONFIG.UNIX_EPOCH
 
         absolute_time = get_simconnect_value("ABSOLUTE_TIME")
         if absolute_time is None:
-            raise ValueError("Absolute time is unavailable.")
+            return CONFIG.UNIX_EPOCH
 
         base_datetime = datetime(1, 1, 1, tzinfo=timezone.utc)
         return base_datetime + timedelta(seconds=float(absolute_time))
 
-    except ValueError as ve:
-        #print(ve)
-        pass
     except Exception as e:
         print(f"get_simulator_datetime: Failed to retrieve simulator datetime: {e}")
 
@@ -784,6 +754,134 @@ def remain_label():
     if is_sim_rate_accelerated():
         return "Rem(adj):"
     return "Remaining:"
+
+# --- Timer Calculation Functions------------------------------------------------------------------
+def get_time_to_future_adjusted():
+    """Calculate and return the countdown timer string."""
+    return get_time_to_future(adjusted_for_sim_rate=True)
+
+def get_time_to_future_unadjusted():
+    """Calculate and return the countdown timer string without adjusting for sim rate."""
+    return get_time_to_future(adjusted_for_sim_rate=False)
+
+def get_time_to_future(adjusted_for_sim_rate: bool) -> str:
+    """Calculate and return the countdown timer string."""
+    if countdown_state is None or countdown_state.countdown_target_time == CONFIG.UNIX_EPOCH:
+        return "N/A"
+
+    current_sim_time = get_simulator_datetime()
+
+    if current_sim_time == CONFIG.UNIX_EPOCH:
+        return "N/A"
+
+    if countdown_state.countdown_target_time.tzinfo is None or current_sim_time.tzinfo is None:
+        raise ValueError("Target time or simulator time is offset-naive. "
+                            "Ensure all times are offset-aware.")
+
+    # Fetch sim rate if we want to adjust for it,
+    # otherwise default to 1.0 (normal time progression)
+    sim_rate = 1.0
+    if adjusted_for_sim_rate:
+        raw_sim_rate = get_simconnect_value("SIMULATION_RATE", default_value=1.0)
+        try:
+            sim_rate = float(raw_sim_rate) if raw_sim_rate is not None else 1.0
+        except (TypeError, ValueError):
+            print_warning("get_time_to_future: Exception on sim_rate")
+            sim_rate = 1.0
+
+    # Compute the count-down time
+    countdown_str = compute_countdown_timer(
+        current_sim_time=current_sim_time,
+        target_time=countdown_state.countdown_target_time,
+        sim_rate=sim_rate,
+    )
+
+    return countdown_str
+
+def compute_countdown_timer(
+    current_sim_time: datetime,
+    target_time: datetime,
+    sim_rate: float
+) -> str:
+    """
+    Compute the countdown timer string and update its state.
+
+    Parameters:
+    - current_sim_time (datetime): Current simulator time.
+    - target_time (datetime): Target countdown time.
+    - sim_rate (float): Simulation rate.
+
+    Returns:
+    - countdown_str (str): Formatted countdown string "HH:MM:SS".
+    """
+    # Early out if we have no current sim time
+    if current_sim_time == CONFIG.UNIX_EPOCH:
+        return "N/A"
+
+    # Calculate remaining time
+    remaining_time = target_time - current_sim_time
+
+    # Adjust for simulation rate
+    if sim_rate and sim_rate > 0:
+        adjusted_seconds = remaining_time.total_seconds() / sim_rate
+    else:
+        adjusted_seconds = remaining_time.total_seconds()
+
+    # Enforce allow_negative_timer setting
+    if state is not None and state.settings.simbrief_settings is not None:
+        if not state.settings.simbrief_settings.allow_negative_timer and adjusted_seconds < 0:
+            adjusted_seconds = 0
+
+    # Format the adjusted remaining time as HH:MM:SS
+    total_seconds = int(adjusted_seconds)
+    sign = "-" if total_seconds < 0 else ""
+    total_seconds = abs(total_seconds)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    countdown_str = f"{sign}{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
+
+    return countdown_str
+
+def get_simulator_time_offset():
+    """
+    Calculate the offset between simulator time and real-world UTC time.
+    Returns a timedelta representing the difference (simulator time - real-world time).
+    """
+    try:
+        # Use a threshold for considering the offset as zero
+        threshold = timedelta(seconds=5)
+        simulator_time = get_simulator_datetime()
+
+        if simulator_time == CONFIG.UNIX_EPOCH:
+            print_debug("get_simulator_time_offset: skipping since time is == UNIX_EPOCH")
+            return timedelta()
+
+        real_world_time = datetime.now(timezone.utc)
+        offset = simulator_time - real_world_time
+
+        # Check if the offset is within the threshold
+        if abs(offset) <= threshold:
+            print_debug(f"Offset {offset} is within threshold, assuming zero offset.")
+            return timedelta(0)
+        print_debug(f"Simulator Time Offset: {offset}")
+        return offset
+    except Exception as e:
+        print_error(f"Error calculating simulator time offset: {e}")
+        return timedelta(0)  # Default to no offset if error occurs
+
+def convert_real_world_time_to_sim_time(real_world_time):
+    """Convert a real-world datetime (UTC) to simulator time using the calculated offset."""
+    try:
+        # Get the simulator time offset
+        offset = get_simulator_time_offset()
+
+        # Adjust the real-world time to simulator time
+        sim_time = real_world_time + offset
+        print_debug(f"Converted Real-World Time {real_world_time} to Sim Time {sim_time}")
+        return sim_time
+    except Exception as e:
+        print_error(f"Error converting real-world time to sim time: {e}")
+        return real_world_time  # Return the original time as fallback
 
 # --- SimConnect Lookup Functions ----------------------------------------------------------------
 def is_sim_running(min_runtime=120):
@@ -891,7 +989,7 @@ def get_simconnect_value(variable_name: str, default_value: Any = "N/A",
         return "Sim Not Running"
 
     def is_value_valid(value: Any, default_value: Any) -> bool:
-        return value is not None and value != default_value
+        return value is not None
 
     # Check cache value
     value = get_cache_value(variable_name)
@@ -954,7 +1052,7 @@ def get_formatted_value(variable_names, format_string=None):
     - The formatted string, or an error message if retrieval fails.
     """
 
-    if not state.sim_connected or state.sim_connect is None or not state.sim_connect.ok:
+    if not is_simconnect_available():
         return "Sim Not Running"
 
     if isinstance(variable_names, str):
@@ -974,7 +1072,12 @@ def get_formatted_value(variable_names, format_string=None):
 
 # --- Background Updater -------------------------------------------------------------------------
 class BackgroundUpdater:
-    """Continously updates cached values from Simconnect"""
+    """
+    Continously updates cached values from Simconnect
+    Purpose: Ensures that all cached requests are updated continously as the
+             default SimConnect library caching does not update its own cached
+             values until get is called.
+    """
 
     MIN_UPDATE_INTERVAL = 33 / 2  # Retry interval
     STANDARD_UPDATE_INTERVAL = 33  # Normal interval
@@ -1050,7 +1153,8 @@ class BackgroundUpdater:
                                             "Will retry in the next cycle.")
                             lookup_failed = True
 
-                        # Introduce a small sleep between variable updates
+                        # Add a small sleep to allow main thread to not be blocked (due to GIL
+                        # thread restrictions)
                         time.sleep(self.variable_sleep)
 
                 else: # sim_connected == False
@@ -1091,169 +1195,21 @@ class BackgroundUpdater:
         # Reschedule the watchdog to run again after 10 seconds
         self.root.after(10_000, self.background_thread_watchdog_function)
 
-# --- Timer Calcuation Functions------------------------------------------------------------------
-def get_time_to_future_adjusted():
+# --- Display Update  ----------------------------------------------------------------------------
+def get_dynamic_value(function_name: str):
     """
-    Calculate and return the countdown timer string.
-    """
-    return get_time_to_future(adjusted_for_sim_rate=True)
+    Retrieve a value dynamically from a globally defined function.
 
-def get_time_to_future_unadjusted():
-    """
-    Calculate and return the countdown timer string without adjusting for sim rate.
-    """
-    return get_time_to_future(adjusted_for_sim_rate=False)
-
-def get_time_to_future(adjusted_for_sim_rate: bool) -> str:
-    """
-    Calculate and return the countdown timer string.
-    """
-    if countdown_state is None or countdown_state.countdown_target_time == CONFIG.UNIX_EPOCH:
-        return "N/A"
-
-    try:
-        current_sim_time = get_simulator_datetime()
-
-        if countdown_state.countdown_target_time.tzinfo is None or current_sim_time.tzinfo is None:
-            raise ValueError("Target time or simulator time is offset-naive. "
-                             "Ensure all times are offset-aware.")
-
-        # Fetch sim rate if we want to adjust for it,
-        # otherwise default to 1.0 (normal time progression)
-        sim_rate = 1.0
-        if adjusted_for_sim_rate:
-            sim_rate_str = get_sim_rate()
-            sim_rate = float(sim_rate_str) if sim_rate_str.replace('.', '', 1).isdigit() else 1.0
-
-        # Compute the count-down time
-        countdown_str = compute_countdown_timer(
-            current_sim_time=current_sim_time,
-            target_time=countdown_state.countdown_target_time,
-            sim_rate=sim_rate,
-        )
-
-        return countdown_str
-
-    except Exception as e:
-        # TODO: investigate if we can handle errors better here
-        exception_type = type(e).__name__  # Get the exception type
-        print(f"Exception occurred: {e} (Type: {exception_type})")
-        return "N/A"
-
-def compute_countdown_timer(
-    current_sim_time: datetime,
-    target_time: datetime,
-    sim_rate: float
-) -> str:
-    """
-    Compute the countdown timer string and update its state.
-
-    Parameters:
-    - current_sim_time (datetime): Current simulator time.
-    - target_time (datetime): Target countdown time.
-    - sim_rate (float): Simulation rate.
+    Args:
+        function_name (str): The name of the global function to call.
 
     Returns:
-    - countdown_str (str): Formatted countdown string "HH:MM:SS".
+        Any:
+            - The function's return value if found and callable.
+            - "" (empty string) if `function_name` is empty.
+            - "Err-DE" if the function does not exist.
+            - "Err" if an exception occurs.
     """
-    # Early out if we have no current sim time
-    if current_sim_time == CONFIG.UNIX_EPOCH:
-        return "N/A"
-
-    # Calculate remaining time
-    remaining_time = target_time - current_sim_time
-
-    # Adjust for simulation rate
-    if sim_rate and sim_rate > 0:
-        adjusted_seconds = remaining_time.total_seconds() / sim_rate
-    else:
-        adjusted_seconds = remaining_time.total_seconds()
-
-    # Enforce allow_negative_timer setting
-    if state is not None and state.settings.simbrief_settings is not None:
-        if not state.settings.simbrief_settings.allow_negative_timer and adjusted_seconds < 0:
-            adjusted_seconds = 0
-
-    # Format the adjusted remaining time as HH:MM:SS
-    total_seconds = int(adjusted_seconds)
-    sign = "-" if total_seconds < 0 else ""
-    total_seconds = abs(total_seconds)
-    hours, remainder = divmod(total_seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    countdown_str = f"{sign}{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
-
-    return countdown_str
-
-def get_simulator_time_offset():
-    """
-    Calculate the offset between simulator time and real-world UTC time.
-    Returns a timedelta representing the difference (simulator time - real-world time).
-    """
-    try:
-        # Use a threshold for considering the offset as zero
-        threshold = timedelta(seconds=5)
-        simulator_time = get_simulator_datetime()
-
-        if simulator_time == CONFIG.UNIX_EPOCH:
-            print_debug("get_simulator_time_offset: skipping since time is == UNIX_EPOCH")
-            return timedelta()
-
-        real_world_time = datetime.now(timezone.utc)
-        offset = simulator_time - real_world_time
-
-        # Check if the offset is within the threshold
-        if abs(offset) <= threshold:
-            print_debug(f"Offset {offset} is within threshold, assuming zero offset.")
-            return timedelta(0)
-        print_debug(f"Simulator Time Offset: {offset}")
-        return offset
-    except Exception as e:
-        print_error(f"Error calculating simulator time offset: {e}")
-        return timedelta(0)  # Default to no offset if error occurs
-
-def convert_real_world_time_to_sim_time(real_world_time):
-    """
-    Convert a real-world datetime (UTC) to simulator time using the calculated offset.
-    """
-    try:
-        # Get the simulator time offset
-        offset = get_simulator_time_offset()
-
-        # Adjust the real-world time to simulator time
-        sim_time = real_world_time + offset
-        print_debug(f"Converted Real-World Time {real_world_time} to Sim Time {sim_time}")
-        return sim_time
-    except Exception as e:
-        print_error(f"Error converting real-world time to sim time: {e}")
-        return real_world_time  # Return the original time as fallback
-
-def set_future_time_internal(future_time_input, current_sim_time):
-    """Validates and sets a future time."""
-    try:
-        # Ensure all times are timezone-aware (UTC)
-        if current_sim_time.tzinfo is None:
-            current_sim_time = current_sim_time.replace(tzinfo=timezone.utc)
-
-        if isinstance(future_time_input, datetime):
-            # Validate that the future time is after the current simulator time
-            if future_time_input <= current_sim_time and \
-            not state.settings.simbrief_settings.allow_negative_timer:
-                raise ValueError("Future time must be later than the current simulator time.")
-
-            # Log successful setting of the timer
-            print(f"Timer set to: {future_time_input}")
-            return True
-        else:
-            raise TypeError("Unsupported future_time_input type. Must be a datetime object.")
-
-    except ValueError as ve:
-        print_error(f"Validation error in set_future_time_internal: {ve}")
-    except Exception as e:
-        print_error(f"Unexpected error in set_future_time_internal: {str(e)}")
-
-# --- Display Update  ----------------------------------------------------------------------------
-def get_dynamic_value(function_name):
-    """ Get a value dynamically from the function name. """
     try:
         if not function_name.strip():  # If function name is empty, return an empty string
             return ""
@@ -1261,9 +1217,10 @@ def get_dynamic_value(function_name):
             func = globals()[function_name]
             if callable(func):
                 return func()
-        return ""  # Return an empty string if the function doesn't exist
-    except Exception as e:
-        print_debug(f"get_dynamic_value exception [{type(e).__name__ }]: {e}")
+        print_warning(f"get_dynamic_value: {function_name} not found!")
+        return "Err-DE" # Error 'doesn't exist'
+    except Exception as e:  # pylint: disable=broad-except
+        print_error(f"get_dynamic_value: ({function_name}) exception [{type(e).__name__ }]: {e}")
         return "Err"
 
 class DisplayUpdater:
@@ -1336,7 +1293,21 @@ class DisplayUpdater:
             widget.pack(side=tk.LEFT, padx=0, pady=0)
 
     def process_block(self, block):
-        """Process one block from the parsed template."""
+        """
+        Processes a UI block by evaluating conditions, updating existing widgets, or creating
+        new ones.
+
+        If the block has a `condition`, it is evaluated, and the widget is removed if the condition
+        fails.
+
+        Otherwise, the function updates an existing widget or creates a new one if needed.
+
+        Args:
+            block (dict): Parsed template block containing type, label, function, and styling info.
+
+        Returns:
+            bool: True if a UI refresh is needed (widget added/removed), False otherwise.
+        """
         block_type = block["type"]
         block_id = block.get("label", f"block_{id(block)}")
         block_metadata = self.template_handler.parser.block_registry.get(block_type, {})
@@ -1356,12 +1327,12 @@ class DisplayUpdater:
 
         # Attempt to retrieve an existing widget
         widget = self.widget_pool.get_widget(block_id)
-        render_function = block_metadata.get("render")
+        render_data_function = block_metadata.get("render")
 
-        if widget:
-            # Use render function to get new configuration
-            if render_function:
-                render_config = render_function(block)
+        if widget: # Case: Widget exists, check for updates
+            # Use render data function to get new configuration
+            if render_data_function:
+                render_config = render_data_function(block)
 
                 # Check if the render function returned valid data
                 if render_config:
@@ -1372,10 +1343,9 @@ class DisplayUpdater:
                 else:
                     # Remove the widget if the config is invalid (e.g., condition failed)
                     self.widget_pool.remove_widget(block_id)
-        else:
-            # Create and register a new widget
-            if render_function:
-                render_config = render_function(block)
+        else: # Case: No existing widget, create a new one
+            if render_data_function:
+                render_config = render_data_function(block)
                 if render_config:
                     # Create a new widget based on the render function's config
                     widget = tk.Label( self.display_frame, text=render_config["text"],
@@ -1398,8 +1368,6 @@ class DisplayUpdater:
 # --- Simbrief functionality --------------------------------------------------------------------
 class SimBriefFunctions:
     """Contains grouping of static Simbrief Functions mainly for organizational purposes"""
-    last_simbrief_generated_time = None
-
     @staticmethod
     def get_latest_simbrief_ofp_json(username):
         """Fetch SimBrief OFP JSON data for the provided username."""
@@ -1482,9 +1450,7 @@ class SimBriefFunctions:
     @staticmethod
     def update_countdown_from_simbrief(simbrief_json, simbrief_settings,
                                        gate_out_entry_value=None, custom_time_option=None):
-        """
-        Update the countdown timer based on SimBrief data and optional manual gate-out time.
-        """
+        """Update the countdown timer based on SimBrief data and optional manual gate-out time."""
         try:
             # Adjust gate-out time
             gate_time_offset = SimBriefFunctions.adjust_gate_out_delta(
@@ -1522,14 +1488,11 @@ class SimBriefFunctions:
 
             # Set countdown timer
             current_sim_time = get_simulator_datetime()
-            if set_future_time_internal(future_time, current_sim_time):
-                countdown_state.set_target_time(future_time)
-                return True
+            return countdown_state.set_future_time(future_time, current_sim_time, simbrief_settings)
 
         except Exception as e:
             print_error(f"Exception in update_countdown_from_simbrief: {e}")
         return False
-
 
     @staticmethod
     def adjust_gate_out_delta(
@@ -1640,10 +1603,13 @@ def main():
 
         state = AppState()
         ui_manager = UIManager(state)
+
+        # Root is used for scheduling (after call)
         root = ui_manager.get_root()
+
         service_manager = ServiceManager(state, state.settings, root)
 
-        # Load template once all globals are initialize to ensure template file has proper scope
+        # Load template once all globals are initialized to ensure template file has proper scope
         ui_manager.template_handler.load_template_file()
 
         state.start(root)           # Clocks user updates
@@ -1972,13 +1938,14 @@ class CountdownTimerDialog(tk.Toplevel):
                 messagebox.showerror("Error", "Failed to set the countdown timer.")
                 return
 
+            # Save last entered time so it shows next time
+            countdown_state.last_entered_time = time_text
+
         # Close the dialog
         self.destroy()
 
     def pull_time(self):
-        """
-        Pull the selected time from SimBrief and update the countdown timer.
-        """
+        """Pull the selected time from SimBrief and update the countdown timer."""
         try:
             print_debug("pull_time started")
 
@@ -2081,14 +2048,11 @@ class CountdownTimerDialog(tk.Toplevel):
         return future_time
 
     def set_countdown_timer(self, future_time):
-        """
-        Set the countdown timer and update global state.
-        """
+        """Set the countdown timer and update global state."""
         current_sim_time = get_simulator_datetime()
-
-        if set_future_time_internal(future_time, current_sim_time):
+        simbrief_settings = self.app_state.settings.simbrief_settings
+        if countdown_state.set_future_time(future_time, current_sim_time, simbrief_settings):
             countdown_state.is_future_time_manually_set = True
-            countdown_state.set_target_time(future_time)
             return True
         return False
 
@@ -2162,6 +2126,63 @@ class CollapsibleSection(tk.Frame):
         self.content_frame.pack(fill="x", padx=2, pady=2)
         self.toggle_button.config(text="▲ " + self.toggle_button.cget("text")[2:])
 
+class TickManager:
+    """
+    Handles scheduling and notifying tick subscribers.
+    Used to handle timing for user calls and display update
+    """
+    UPDATE_INTERVAL = 33
+    SLOW_UPDATE_INTERVAL = 500
+    SLOW_UPDATE_TICKS = SLOW_UPDATE_INTERVAL // UPDATE_INTERVAL
+
+    def __init__(self):
+        """Initialize tick tracking and subscriber lists."""
+        self.tick_count = 0
+        self.root = None  # Assigned when `start()` is called
+
+        # Crate tick subscriber sets
+        self.tick_subscribers = set()
+        self.slow_tick_subscribers = set()
+
+    def start(self, root):
+        """Start ticking using Tkinter's scheduler."""
+        self.root = root
+        self.tick()
+
+    def tick(self):
+        """Called every `update_interval` to notify subscribers."""
+        self.tick_count += 1
+
+        # Notify fast tick subscribers
+        for subscriber in self.tick_subscribers:
+            subscriber.tick()
+
+        # If slow tick interval is reached
+        if self.tick_count >= self.SLOW_UPDATE_TICKS:
+            for subscriber in self.slow_tick_subscribers:
+                subscriber.slow_tick()
+            self.tick_count = 0  # Reset tick count
+
+        # Schedule the next tick
+        self.root.after(self.UPDATE_INTERVAL, self.tick)
+
+    def subscribe_to_tick(self, subscriber):
+        """Register a component for fast tick updates."""
+        self._validate_subscriber(subscriber, "tick")
+        self.tick_subscribers.add(subscriber)
+
+    def subscribe_to_slow_tick(self, subscriber):
+        """Register a component for slow tick updates."""
+        self._validate_subscriber(subscriber, "slow_tick")
+        self.slow_tick_subscribers.add(subscriber)
+
+    @staticmethod
+    def _validate_subscriber(subscriber, method_name):
+        """Ensure the subscriber implements the required method."""
+        if not hasattr(subscriber, method_name) or not callable(getattr(subscriber, method_name)):
+            raise TypeError(f"Subscriber {subscriber.__class__.__name__} "
+                            f"must implement '{method_name}()'")
+
 class WidgetPool:  # pylint: disable=missing-function-docstring
     """Manages Tkinter widgets and their order - used by DisplayUpdater"""
     def __init__(self):
@@ -2195,9 +2216,7 @@ class WidgetPool:  # pylint: disable=missing-function-docstring
 class TemplateHandler:
     """Class to manage the template file and selected template."""
     def __init__(self):
-        """
-        Initialize the TemplateHandler with the given settings.
-        """
+        """Initialize the TemplateHandler with the given settings."""
         self.parser = TemplateParser()  # Initialize the parser
 
         self.templates = self.load_templates()  # Load templates from file
@@ -2234,9 +2253,7 @@ class TemplateHandler:
             return {}
 
     def load_template_functions(self):
-        """
-        Dynamically import functions from the template file and inject only relevant globals.
-        """
+        """Dynamically import functions from the template file and inject only relevant globals."""
         try:
             spec = importlib.util.spec_from_file_location("status_bar_templates",
                                                           CONFIG.TEMPLATE_FILE)
@@ -2324,15 +2341,15 @@ class TemplateParser:
         self.block_registry = {
             "VAR": {
                 "keys": ["label", "function", "color"],
-                "render": self.render_var,
+                "render": self.get_var_data,
             },
             "VARIF": {
                 "keys": ["label", "function", "color", "condition"],
-                "render": self.render_varif,
+                "render": self.get_varif_data,
             },
             "STATIC_TEXT": {
                 "keys": ["value"],
-                "render": self.render_static_text,
+                "render": self.get_static_text_data,
             },
         }
 
@@ -2421,29 +2438,34 @@ class TemplateParser:
         except tk.TclError:
             return False
 
-    def render_var(self, block):
-        """Render a VAR block."""
+    def get_var_data(self, block):
+        """Obtain render data for a VAR block"""
         static_text = self.process_label_with_dynamic_functions(block["label"])
-        value = get_dynamic_value(block["function"])
+        value = str(get_dynamic_value(block["function"]))
+
         return {
             "text": f"{static_text} {value}",
             "color": block["color"]
         }
 
-    def render_varif(self, block):
-        """Render a VARIF block."""
-        condition = get_dynamic_value(block["condition"])
+    def get_varif_data(self, block):
+        """Obtain render data for a varif block"""
+        condition = bool(get_dynamic_value(block["condition"]))
         if condition:
             static_text = self.process_label_with_dynamic_functions(block["label"])
-            value = get_dynamic_value(block["function"])
+            # If function is not set then ignore it
+            if block["function"] == "''" or not block["function"].strip():
+                value = ""
+            else:
+                value = get_dynamic_value(block["function"])
             return {
                 "text": f"{static_text} {value}",
                 "color": block["color"]
             }
         return None
 
-    def render_static_text(self, block):
-        """Render a STATIC_TEXT block."""
+    def get_static_text_data(self, block):
+        """Obtain static text render data"""
         return {
             "text": block["value"],
             "color": "white"
