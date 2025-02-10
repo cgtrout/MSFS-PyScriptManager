@@ -1,3 +1,10 @@
+"""
+fenix_lights.py: Applies preset lighting to the cockpit lights on the Fenix A320
+Requires the Mobiflight Wasm module
+https://kb.fenixsim.com/example-of-how-to-use-lvars
+https://github.com/Koseng/MSFSPythonSimConnectMobiFlightExtension/
+"""
+
 import logging
 import os
 import json

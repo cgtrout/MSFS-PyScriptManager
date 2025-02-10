@@ -1,3 +1,8 @@
+"""
+fenix_disable_efb.py: Shows an example of how you can disable the Fenix A32x EFBs using a script
+ https://kb.fenixsim.com/example-of-how-to-use-lvars - use this tutorial to see how to find other lvars
+ - uses https://github.com/Koseng/MSFSPythonSimConnectMobiFlightExtension/ extension library for reading from Mobiflight
+"""
 import sys
 import time
 import logging
