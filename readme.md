@@ -40,6 +40,10 @@
 
    ![image](https://github.com/user-attachments/assets/05786688-b542-4050-95eb-1e85bf8d673d)
 
+## Notes on Mobiflight Integration
+- Several of the scripts listed below require the Mobiflight WASM module.  Each in the list below is marked if it requires this WASM module.
+- This WASM module can be downloaded here: https://github.com/MobiFlight/MobiFlight-WASM-Module/releases/tag/1.0.1.  Download the ZIP and extract to your community folder.  Alternatively, if you have MobiFlight Connector installed, you can install this module with the top menu command (Extras > Microsoft Flight Simulator > Install WASM Module)
+
 ## Other Scripts
 - **fbw_a380_checklist.py** Allows keyboard control of built in A380 checklist.  This script requires a [Mobiflight "WASM" module installation](https://github.com/MobiFlight/MobiFlight-Connector/wiki/Verifying-the-WASM-module-installation-and-locating-the-MSFS2020-community-folder).
 - **fenix_disable_efb.py:** Hides the EFBs on the Fenix A32x when run. (Requires Mobiflight "WASM" module installation).
