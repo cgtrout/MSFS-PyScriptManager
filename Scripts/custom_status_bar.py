@@ -2027,9 +2027,14 @@ class CountdownTimerDialog(tk.Toplevel):
                 self.gate_out_entry.get().strip() if self.gate_out_entry else None
             )
 
+            gate_out_datetime = None
+
             # Parse datetime
-            simbrief_gate_out = SimBriefFunctions.get_simbrief_ofp_gate_out_datetime(simbrief_json)
-            gate_out_datetime = SimBriefFunctions.parse_gate_out(gate_out_entry_value, simbrief_gate_out)
+            if gate_out_entry_value is not None and not gate_out_entry_value == "":
+                simbrief_gate_out = SimBriefFunctions \
+                                            .get_simbrief_ofp_gate_out_datetime(simbrief_json)
+                gate_out_datetime = SimBriefFunctions \
+                                            .parse_gate_out(gate_out_entry_value, simbrief_gate_out)
 
             # Update countdown timer using the shared method
             success = SimBriefFunctions.update_countdown_from_simbrief(
