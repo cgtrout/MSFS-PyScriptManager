@@ -9,6 +9,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from SimConnect import SimConnect, AircraftRequests
 import threading
 import tkinter as tk
+
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "1"
 import pygame
 import time
 
