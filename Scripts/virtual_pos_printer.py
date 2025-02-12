@@ -263,6 +263,8 @@ class VirtualPosPrinter:
         """Set spawn position based on current mouse position"""
         x, y = self.root.winfo_pointerx(), self.root.winfo_pointery()
         self.settings["spawn_position"] = (x, y)
+        self.spawn_position = (x, y)
+
         with open(SETTINGS_FILE, 'w', encoding="utf-8") as f:
             json.dump(self.settings, f, indent=4)
         messagebox.showinfo("Position Set", f"Spawn position set to: {x}, {y}")
