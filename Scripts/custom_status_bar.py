@@ -178,6 +178,7 @@ class SimBriefSettings:
     selected_time_option: Any = SimBriefTimeOption.EST_IN
     allow_negative_timer: bool = False
     auto_update_enabled: bool = False
+    gate_out_time: Optional[datetime] = None
 
     def to_dict(self):
         """Create dictionary from values"""
@@ -423,7 +424,7 @@ class SimBriefAutoTimer:
                 success = SimBriefFunctions.update_countdown_from_simbrief(
                     simbrief_json=self.last_simbrief_json,
                     simbrief_settings=simbrief_settings,
-                    gate_out_entry_value=None,  # TODO: should this take pre-entered gate
+                    gate_out_datetime=simbrief_settings.gate_out_time,
                     custom_time_option=user_setting
                 )
                 self.last_user_setting = user_setting
@@ -437,18 +438,22 @@ class SimBriefAutoTimer:
             print_error(f"SimBriefAutoTimer: Exception during auto-update: {e}")
 
     def update_simbrief_json(self) -> bool:
-        """
-        Fetch and store the latest SimBrief JSON data.
-        Returns True if successful, False otherwise.
-        """
-        simbrief_settings = self.app_state.settings.simbrief_settings
-        self.last_simbrief_json = SimBriefFunctions.get_latest_simbrief_ofp_json(simbrief_settings.username)
-        if self.last_simbrief_json:
-            print_info("SimBrief data fetched successfully.")
+        """Fetch SimBrief JSON and return True if 'time_generated' has changed."""
+        new_json = SimBriefFunctions.get_latest_simbrief_ofp_json(self.app_state.settings.simbrief_settings.username)
+
+        if not new_json:
+            print_warning("SimBrief JSON fetch failed or returned empty data.")
+            return False
+
+        new_time = new_json.get("params", {}).get("time_generated")
+        old_time = self.last_simbrief_json.get("params", {}).get("time_generated") if self.last_simbrief_json else None
+
+        if new_time and new_time != old_time:
+            self.last_simbrief_json = new_json
             return True
-        print_warning("SimBrief JSON fetch failed or returned empty data.")
-        self.last_simbrief_json = None
+
         return False
+
 
 class UIManager:
     """Manages UI-specific state, such as dragging and widget updates."""
@@ -670,7 +675,6 @@ class CountdownState:
 
     timer_source: Optional[TimerSource] = None  # Tracks the source of the timer
     last_entered_time: Optional[str] = None     # Last entered time in HHMM format
-    gate_out_time: Optional[datetime] = None    # Store last game out time
     countdown_target_time: datetime = field(default_factory=lambda: CONFIG.UNIX_EPOCH)
 
     def set_future_time(self, new_time: datetime, simulator_time: datetime, simbrief_settings,
@@ -1491,7 +1495,7 @@ class SimBriefFunctions:
 
     @staticmethod
     def update_countdown_from_simbrief(simbrief_json, simbrief_settings,
-                                       gate_out_entry_value=None, custom_time_option=None):
+                                       gate_out_datetime=None, custom_time_option=None):
         """Update the countdown timer based on SimBrief data and optional manual gate-out time."""
         try:
             timer_source = CountdownState.TimerSource.USER_SELECTED_PRESET
@@ -1499,7 +1503,7 @@ class SimBriefFunctions:
             # Adjust gate-out time
             gate_time_offset = SimBriefFunctions.adjust_gate_out_delta(
                 simbrief_json=simbrief_json,
-                gate_out_entry_value=gate_out_entry_value,
+                user_gate_time_dt=gate_out_datetime,
                 simbrief_settings=simbrief_settings,
             )
 
@@ -1533,6 +1537,7 @@ class SimBriefFunctions:
 
             # Set countdown timer
             current_sim_time = get_simulator_datetime()
+            print_debug(f"Simulator Datetime {current_sim_time}")
             return countdown_state.set_future_time(future_time, current_sim_time,
                                                    simbrief_settings, timer_source)
 
@@ -1542,7 +1547,7 @@ class SimBriefFunctions:
 
     @staticmethod
     def adjust_gate_out_delta(
-        simbrief_json, gate_out_entry_value: Optional[str], simbrief_settings: SimBriefSettings
+        simbrief_json, user_gate_time_dt: datetime, simbrief_settings: SimBriefSettings
     ) -> timedelta:
         """
         Adjust the gate-out time based on SimBrief data and user-provided input.
@@ -1566,19 +1571,8 @@ class SimBriefFunctions:
 
         print_debug(f"use_adjusted_time SimBrief Gate Time: {simbrief_gate_time}")
 
-        # Save SimBrief gate-out time as the default
-        countdown_state.gate_out_time = simbrief_gate_time
-
         # If user-provided gate-out time is available, calculate the offset
-        if gate_out_entry_value:
-            hours, minutes = int(gate_out_entry_value[:2]), int(gate_out_entry_value[2:])
-            current_sim_time = get_simulator_datetime()
-            user_gate_time_dt = current_sim_time.replace(hour=hours, minute=minutes,
-                                                         second=0, microsecond=0)
-
-            # Handle next-day adjustment
-            if user_gate_time_dt.time() < current_sim_time.time():
-                user_gate_time_dt += timedelta(days=1)
+        if user_gate_time_dt:
 
             adjusted_delta = user_gate_time_dt - simbrief_gate_time
 
@@ -1588,13 +1582,25 @@ class SimBriefFunctions:
             print_debug(f"adjusted_delta: {adjusted_delta}\n")
 
             # Save user-provided gate-out time
-            countdown_state.gate_out_time = user_gate_time_dt
+            simbrief_settings.gate_out_time = user_gate_time_dt
             return adjusted_delta
 
         # No user-provided gate-out time; use SimBrief defaults
         print_info("No user-provided gate-out time. Using SimBrief default gate-out time.")
-        countdown_state.gate_out_time = None
+        simbrief_settings.gate_out_time = None
         return timedelta(0)
+
+    @staticmethod
+    def parse_gate_out(gate_out_entry_value, simbrief_gate_time):
+        """Parse gate out datetime from text, based on simbrief_gate_time"""
+        hours, minutes = int(gate_out_entry_value[:2]), int(gate_out_entry_value[2:])
+        user_gate_time_dt = simbrief_gate_time.replace(hour=hours, minute=minutes,
+                                                        second=0, microsecond=0)
+        # Handle midnight crossover
+        if user_gate_time_dt < simbrief_gate_time:
+            user_gate_time_dt += timedelta(days=1)
+
+        return user_gate_time_dt
 
 # MAP SimBriefTimeOption to corresponding functions
 SIMBRIEF_TIME_OPTION_FUNCTIONS = {
@@ -1679,7 +1685,7 @@ class CountdownTimerDialog(tk.Toplevel):
         # Fetch times from global count_down_state
         if countdown_state is not None:
             self.initial_time = countdown_state.last_entered_time
-            self.gate_out_time = countdown_state.gate_out_time
+            self.gate_out_time = self.simbrief_settings.gate_out_time
         else:
             raise ValueError("CountdownTimerDialog: countdown_state not set!")
 
@@ -1821,7 +1827,7 @@ class CountdownTimerDialog(tk.Toplevel):
                 small_font,
                 self.simbrief_settings.username,
                 self.simbrief_settings.use_adjusted_time,
-                countdown_state.gate_out_time,  # Pass the current gate-out time
+                self.simbrief_settings.gate_out_time,
             ),
         )
         simbrief_section.pack(fill="x", padx=10, pady=5)
@@ -2021,11 +2027,15 @@ class CountdownTimerDialog(tk.Toplevel):
                 self.gate_out_entry.get().strip() if self.gate_out_entry else None
             )
 
+            # Parse datetime
+            simbrief_gate_out = SimBriefFunctions.get_simbrief_ofp_gate_out_datetime(simbrief_json)
+            gate_out_datetime = SimBriefFunctions.parse_gate_out(gate_out_entry_value, simbrief_gate_out)
+
             # Update countdown timer using the shared method
             success = SimBriefFunctions.update_countdown_from_simbrief(
                 simbrief_json=simbrief_json,
                 simbrief_settings=self.simbrief_settings,
-                gate_out_entry_value=gate_out_entry_value
+                gate_out_datetime=gate_out_datetime
             )
 
             if not success:
@@ -2053,6 +2063,8 @@ class CountdownTimerDialog(tk.Toplevel):
 
         self.simbrief_settings.allow_negative_timer = self.negative_timer_checkbox_var.get()
         self.simbrief_settings.auto_update_enabled = self.auto_update_var.get()
+
+        self.simbrief_settings.gate_out_time = self.gate_out_time
 
     def validate_simbrief_username(self):
         """Validate SimBrief username and show an error if invalid."""
