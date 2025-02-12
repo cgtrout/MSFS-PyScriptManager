@@ -2,15 +2,25 @@
 # support multiple clients
 # https://github.com/Koseng/MSFSPythonSimConnectMobiFlightExtension/blob/main/README.md
 
-from ctypes import sizeof
+from ctypes import c_void_p, sizeof
 import ctypes
 import struct
 import sys
 import time
 from ctypes.wintypes import FLOAT
+import copy
 from simconnect_mobiflight.mobiflight_variable_requests import MobiFlightVariableRequests
 from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
 from SimConnect.Enum import SIMCONNECT_CLIENT_DATA_PERIOD, SIMCONNECT_UNUSED
+import threading
+
+# Get the PyGILState_Ensure function from the Python C API
+PyGILState_Ensure = ctypes.pythonapi.PyGILState_Ensure
+PyGILState_Ensure.restype = c_void_p  # It returns a token (opaque pointer)
+
+# Get the PyGILState_Release function from the Python C API
+PyGILState_Release = ctypes.pythonapi.PyGILState_Release
+PyGILState_Release.argtypes = [c_void_p]
 
 try:
     from Lib.color_print import *
@@ -71,8 +81,10 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         self.initialize_client_data_areas(self.init_client)
         self.send_command("Do Nothing", self.init_client)
         self.send_command(("MF.Clients.Add." + client_name), self.init_client)
-        while not self.init_ready:
-           time.sleep(0.05)
+
+        # Wait until the init_ready_event is set by the callback
+        self.init_ready_event = threading.Event()
+        self.init_ready_event.wait()
 
     def get(self, variableString):
         client = self.my_client
@@ -129,29 +141,42 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
             size,
             dataBytes)
 
+
+
     def client_data_callback_handler(self, callback_data):
-        # SimVar Data
-        if callback_data.dwDefineID in self.sim_vars:
-            data_bytes = struct.pack("I", callback_data.dwData[0])
-            float_data = struct.unpack('<f', data_bytes)[0]   # unpack delivers a tuple -> [0]
-            self.sim_vars[callback_data.dwDefineID].float_value = round(float_data, 5)
-            #print("client_data_callback_handler: %s", self.sim_vars[callback_data.dwDefineID])
+        # Acquire the GIL and attach the thread if necessary
+        gil_state = PyGILState_Ensure()
 
-        # Response string of init_client
-        elif callback_data.dwDefineID == self.init_client.DATA_STRING_DEFINITION_ID:
-            response =  self._c_string_bytes_to_string(bytes(callback_data.dwData))
-            #print("client_data_callback_handler: init_client response string: %s", response)
-            # Check for response of registering new client
-            if (self.my_client.CLIENT_NAME in response):
-                self.initialize_client_data_areas(self.my_client)
-                self.init_ready = True
+        try:
+            # Deep copy the entire callback_data object to prevent threading issues
+            cb_copy = copy.deepcopy(callback_data)
 
-        # Response string of my_client
-        elif callback_data.dwDefineID == self.my_client.DATA_STRING_DEFINITION_ID:
-            response =  self._c_string_bytes_to_string(bytes(callback_data.dwData))
-            #print("client_data_callback_handler: get my_client response string: %s", response)
-        else:
-            print("client_data_callback_handler: DefinitionID %s not found!", callback_data.dwDefineID)
+            # SimVar Data
+            if cb_copy.dwDefineID in self.sim_vars:
+                data_bytes = struct.pack("I", cb_copy.dwData[0])
+                float_data = struct.unpack('<f', data_bytes)[0]   # unpack delivers a tuple -> [0]
+                self.sim_vars[cb_copy.dwDefineID].float_value = round(float_data, 5)
+                #print("client_data_callback_handler: %s", self.sim_vars[callback_data.dwDefineID])
+
+            # Response string of init_client
+            elif cb_copy.dwDefineID == self.init_client.DATA_STRING_DEFINITION_ID:
+                response =  self._c_string_bytes_to_string(bytes(cb_copy.dwData))
+                #print("client_data_callback_handler: init_client response string: %s", response)
+                # Check for response of registering new client
+                if (self.my_client.CLIENT_NAME in response):
+                    self.initialize_client_data_areas(self.my_client)
+                    self.init_ready_event.set()
+
+            # Response string of my_client
+            elif cb_copy.dwDefineID == self.my_client.DATA_STRING_DEFINITION_ID:
+                response =  self._c_string_bytes_to_string(bytes(cb_copy.dwData))
+                #print("client_data_callback_handler: get my_client response string: %s", response)
+            else:
+                print("client_data_callback_handler: DefinitionID %s not found!", cb_copy.dwDefineID)
+
+        finally:
+            # Release the GIL (and detach the thread if it was attached here)
+            PyGILState_Release(gil_state)
 
     def _c_string_bytes_to_string(self, data_bytes):
         return data_bytes[0:data_bytes.index(0)].decode(encoding='ascii') # index(0) for end of c string
