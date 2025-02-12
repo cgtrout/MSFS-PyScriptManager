@@ -2,7 +2,6 @@
 fenix_radio.py: shows draggable radio panel on screen showing currently set radio channels on RMP1.
 """
 import os
-print(f"Current Working Directory: {os.getcwd()}")
 
 import tkinter as tk
 import json
