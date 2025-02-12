@@ -1,5 +1,7 @@
 # Launcher.py - main launcher app script for MSFSPyScriptManager
 
+print("---Launcher.py STARTING---")
+
 import json
 import logging
 import os
