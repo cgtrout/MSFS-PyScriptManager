@@ -1977,6 +1977,11 @@ def main():
     args = sys.argv
     logging.debug("args=%s", args)
 
+    # Prime keyboard module
+    # This seems necessary or first hold of shift will not be registered
+    # Used for shift-click of "Restart All"
+    _ = keyboard.is_pressed("shift")
+
     # Parse the --shutdown-pipe argument
     shutdown_pipe = None
     if "--shutdown-pipe" in args:
