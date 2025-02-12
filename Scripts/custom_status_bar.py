@@ -1325,8 +1325,6 @@ class DisplayUpdater:
                 if self.root.state() != "normal":
                     print_warning("Restoring minimized window!")
                     self.root.deiconify()
-        else:
-            print_debug("Skipping since context menu open")
 
     def update_display(self):
         """Render and update the display based on the parsed template."""
