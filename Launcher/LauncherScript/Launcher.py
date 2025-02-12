@@ -61,7 +61,7 @@ TEXT_WIDGET_INSERT_COLOR = "#FFFFFF"
 FRAME_BG_COLOR = "#2E2E2E"
 
 # Configure logging globally
-logging = OrderedLogger(
+logger = OrderedLogger(
     filename="shutdown_log.txt",  # Specify the log file
     level=logging.DEBUG,
     log_format="%(asctime)s [%(levelname)s] %(message)s"
@@ -281,7 +281,7 @@ class TabManager:
     def close_tab(self, tab_id):
         """Close a tab and clean up resources."""
         def _close_tab():
-            logging.debug("close_tab inner")
+            logger.debug("close_tab inner")
             print(f"[DEBUG] Type of self.tabs: {type(self.tabs)}")
             tab = self.tabs.pop(tab_id, None)
             if not tab:
@@ -289,7 +289,7 @@ class TabManager:
                 return
             tab.close()
 
-        logging.debug("Schedule: _close_tab")
+        logger.debug("Schedule: _close_tab")
         self.scheduler(0, _close_tab)  # Schedule operation on the main thread
 
     def close_all_tabs(self):
@@ -1512,8 +1512,8 @@ class ScriptLauncherApp:
                 self.load_script_from_path(absolute_path)
 
     def on_shutdown(self):
-        logging.info("Shutdown signal received. Triggering shutdown_event.")
-        logging.debug(f"[DEBUG] on_shutdown shutdown_event ID: {id(self.shutdown_event)}")
+        logger.info("Shutdown signal received. Triggering shutdown_event.")
+        logger.debug(f"[DEBUG] on_shutdown shutdown_event ID: {id(self.shutdown_event)}")
 
         # Set shutdown_event which will trigger launcher shutdown
         self.shutdown_event.set()
@@ -1521,16 +1521,16 @@ class ScriptLauncherApp:
     def on_close(self, callback=None):
         """Handle application shutdown."""
         print("[INFO] Shutting down application.")
-        logging.info("Shutting down application")
+        logger.info("Shutting down application")
         self.tab_manager.close_all_tabs()
 
         def finalize_shutdown():
             print("[INFO] Application closed successfully.")
-            logging.info("finalize_shutdown()")
+            logger.info("finalize_shutdown()")
             if callback:
                 callback()  # Execute the callback after shutdown is fully complete.
 
-        logging.debug("Schedule: finalize shutdown")
+        logger.debug("Schedule: finalize shutdown")
         self.root.after(0, lambda: (self.root.destroy(), finalize_shutdown()))
 
     def on_key_press(self, event):
@@ -1740,7 +1740,7 @@ class ProcessTracker:
                 # Check if this process’s stop_event is set
                 if stop_event.is_set():
                     print("[INFO] Dispatcher stopping due to its own stop_event.")
-                    logging.debug("Dispatcher stopping due to its own stop_event.")
+                    logger.debug("Dispatcher stopping due to its own stop_event.")
                     break
                 continue
 
@@ -1790,7 +1790,7 @@ class ProcessTracker:
     def terminate_process(self, tab_id):
         """Terminate the process for a given tab ID."""
         print(f"[INFO] Attempting to terminate process for Tab ID: {tab_id}")
-        logging.info("[INFO] Attempting to terminate process for Tab ID: %s", tab_id)
+        logger.info("[INFO] Attempting to terminate process for Tab ID: %s", tab_id)
 
         # Remove metadata for this tab
         with self.lock:
@@ -1817,17 +1817,17 @@ class ProcessTracker:
             process.stderr.close()
 
         print(f"[INFO] Process for Tab ID {tab_id} terminated.")
-        logging.info("[INFO] Process for Tab ID %s terminated.", tab_id)
+        logger.info("[INFO] Process for Tab ID %s terminated.", tab_id)
 
     @staticmethod
     def terminate_process_tree(pid, timeout=5, force=True):
         """Terminate a process tree."""
         print(f"[INFO] Terminating process tree for PID: {pid}")
-        logging.info("[INFO] Terminating process tree for PID: %s", pid)
+        logger.info("[INFO] Terminating process tree for PID: %s", pid)
         try:
             parent = psutil.Process(pid)
         except psutil.NoSuchProcess:
-            logging.info(f"Process with PID {pid} already terminated. "
+            logger.info(f"Process with PID {pid} already terminated. "
                   "Checking for orphaned children.")
             # Attempt to clean up orphaned child processes
             self.terminate_orphaned_children(pid)
@@ -1838,33 +1838,33 @@ class ProcessTracker:
 
         try:
             children = parent.children(recursive=True)
-            logging.info(f"Found {len(children)} child processes for PID {pid}."
+            logger.info(f"Found {len(children)} child processes for PID {pid}."
                   f"Terminating children first.")
 
             for child in children:
                 try:
                     child.terminate()
                 except psutil.NoSuchProcess:
-                    logging.warning(f"NoSuchProcess {child.pid}.")
+                    logger.warning(f"NoSuchProcess {child.pid}.")
                     continue
                 except psutil.AccessDenied:
-                    logging.warning(f"Access denied to terminate child PID {child.pid}.")
+                    logger.warning(f"Access denied to terminate child PID {child.pid}.")
 
             # Wait for all children to terminate
             _, alive = psutil.wait_procs(children, timeout=timeout)
 
             if alive and force:
-                logging.info(f"[WARNING] {len(alive)} child processes did not terminate. "
+                logger.info(f"[WARNING] {len(alive)} child processes did not terminate. "
                       "Forcing termination.")
                 for proc in alive:
                     try:
-                        logging.info("proc.kill()")
+                        logger.info("proc.kill()")
                         proc.kill()
                     except psutil.NoSuchProcess:
-                        logging.warning(f"NoSuchProcess")
+                        logger.warning(f"NoSuchProcess")
                         continue
                     except psutil.AccessDenied:
-                        logging.info(f"[WARNING] Access denied to kill child PID {proc.pid}.")
+                        logger.info(f"[WARNING] Access denied to kill child PID {proc.pid}.")
 
             # Terminate the parent process
             parent.terminate()
@@ -1875,12 +1875,12 @@ class ProcessTracker:
                 for proc in alive:
                     try:
                         proc.kill()
-                        logging.info("proc.kill()")
+                        logger.info("proc.kill()")
                     except psutil.NoSuchProcess:
-                        logging.warning(f"NoSuchProcess")
+                        logger.warning(f"NoSuchProcess")
                         continue
                     except psutil.AccessDenied:
-                        logging.warning(f"Access denied to kill PID {proc.pid}.")
+                        logger.warning(f"Access denied to kill PID {proc.pid}.")
 
             #logging.info("Made it to end - terminate process tree")
 
@@ -1918,7 +1918,7 @@ class ProcessTracker:
 
 def monitor_shutdown_pipe(pipe_name, shutdown_event):
     """Monitor the named pipe for shutdown signals and heartbeats."""
-    logging.info("Monitoring shutdown pipe in subprocess. Pipe: %s", pipe_name)
+    logger.info("Monitoring shutdown pipe in subprocess. Pipe: %s", pipe_name)
 
     HEARTBEAT_TIMEOUT = 5  # Timeout in seconds to detect missed heartbeats
     last_heartbeat_time = time.time()  # Track the last heartbeat time
@@ -1928,29 +1928,29 @@ def monitor_shutdown_pipe(pipe_name, shutdown_event):
             nonlocal last_heartbeat_time
             try:
                 with open(pipe_name, "r", encoding="utf-8") as pipe:
-                    logging.info("Successfully connected to the shutdown pipe.")
+                    logger.info("Successfully connected to the shutdown pipe.")
                     while not shutdown_event.is_set():
                         try:
                             # Read line from pipe (blocking)
                             line = pipe.readline().strip()
                             if line:
                                 if line == "shutdown":
-                                    logging.info("Shutdown signal received in subprocess.")
+                                    logger.info("Shutdown signal received in subprocess.")
                                     shutdown_event.set()
                                     break
                                 elif line == "HEARTBEAT":
                                     #logging.debug("Heartbeat received.")
                                     last_heartbeat_time = time.time()  # Update last heartbeat time
                         except Exception as e:
-                            logging.error("Exception while reading pipe: %s", e)
+                            logger.error("Exception while reading pipe: %s", e)
                             break
 
                         # Sleep briefly to prevent tight loop
                         time.sleep(0.1)
             except Exception as e:
-                logging.error("Failed to monitor shutdown pipe: %s", e)
+                logger.error("Failed to monitor shutdown pipe: %s", e)
             finally:
-                logging.info("Exiting pipe_reader thread.")
+                logger.info("Exiting pipe_reader thread.")
 
     # Start the reader thread
     reader_thread = threading.Thread(target=pipe_reader, daemon=True)
@@ -1960,12 +1960,12 @@ def monitor_shutdown_pipe(pipe_name, shutdown_event):
     while not shutdown_event.is_set():
         # Check for heartbeat timeout
         if time.time() - last_heartbeat_time > HEARTBEAT_TIMEOUT:
-            logging.info("!=================== Heartbeat timeout detected ===================!")
+            logger.info("!=================== Heartbeat timeout detected ===================!")
             shutdown_event.set()
             break
         time.sleep(0.5)
 
-    logging.debug("join reader_thread")
+    logger.debug("join reader_thread")
     reader_thread.join(timeout=1)  # Allow the thread to exit
 
 def is_shift_held():
@@ -1975,7 +1975,7 @@ def is_shift_held():
 def main():
     """Main entry point for the script."""
     args = sys.argv
-    logging.debug("args=%s", args)
+    logger.debug("args=%s", args)
 
     # Prime keyboard module
     # This seems necessary or first hold of shift will not be registered
@@ -1986,17 +1986,17 @@ def main():
     shutdown_pipe = None
     if "--shutdown-pipe" in args:
         shutdown_pipe = args[args.index("--shutdown-pipe") + 1]
-        logging.debug("shutdown_pipe=%s", shutdown_pipe)
+        logger.debug("shutdown_pipe=%s", shutdown_pipe)
     else:
-        logging.info("No --shutdown-pipe argument provided. Skipping pipe-based shutdown logic.")
+        logger.info("No --shutdown-pipe argument provided. Skipping pipe-based shutdown logic.")
 
     # Add lib_path to PYTHONPATH
     lib_path = str((Path(__file__).resolve().parents[1] / "Lib").resolve())
     if lib_path not in os.environ.get("PYTHONPATH", "").split(";"):
         os.environ["PYTHONPATH"] = f"{lib_path};{os.environ.get('PYTHONPATH', '')}"
-        logging.info(f"Added '{lib_path}' to PYTHONPATH.")
+        logger.info(f"Added '{lib_path}' to PYTHONPATH.")
 
-    logging.info("Starting the application.")
+    logger.info("Starting the application.")
 
     # Start app
     root = ThemedTk(theme="black")
@@ -2018,13 +2018,13 @@ def main():
         monitor_process = Process(target=monitor_shutdown_pipe,
                                   args=(shutdown_pipe, app.shutdown_event))
         monitor_process.start()
-        logging.info("Started shutdown monitoring process.")
+        logger.info("Started shutdown monitoring process.")
 
     try:
         # Periodically check for the shutdown_event
         def check_shutdown():
             if app.shutdown_event.is_set():
-                logging.info("Shutdown event detected in main application.")
+                logger.info("Shutdown event detected in main application.")
                 app.on_close()
                 return
             root.after(100, check_shutdown)  # Recheck every 100ms
@@ -2035,22 +2035,22 @@ def main():
 
         root.mainloop()
 
-        logging.info("Tkinter main loop has exited.")
+        logger.info("Tkinter main loop has exited.")
     finally:
-        logging.info("Finalizing application shutdown...")
+        logger.info("Finalizing application shutdown...")
 
         # Ensure subprocess cleanup
         if monitor_process:
             app.shutdown_event.set()  # Ensure the subprocess knows to exit
-            logging.debug("Waiting for shutdown monitoring process to exit...")
+            logger.debug("Waiting for shutdown monitoring process to exit...")
             monitor_process.join(timeout=5)
-            logging.debug("Past monitor_process join")
+            logger.debug("Past monitor_process join")
             if monitor_process.is_alive():
-                logging.warning("Forcibly terminating the shutdown monitoring process.")
+                logger.warning("Forcibly terminating the shutdown monitoring process.")
                 monitor_process.terminate()
 
-        logging.info("Application closed successfully.")
-        logging.stop()
+        logger.info("Application closed successfully.")
+        logger.stop()
 
 if __name__ == "__main__":
     main()
