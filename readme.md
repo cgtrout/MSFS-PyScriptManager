@@ -6,10 +6,6 @@
 - [fenix_lights.py](#other-scripts) - pre-configures flight deck lighting in A32x and optionally binds joystick axis to screen brightness.
 - **No Python programming knowledge is required** to run the included scripts!
 
-# MSFS 2024 Update
- - All scripts should work with MSFS 2024, but please report any issues.
- - The community addon for the print-out toolbar works without modifications in MSFS 2024. The installation script has been updated for automated installation; however, it has not been tested with the Microsoft Store version.
-
 # Download
 - [Download MSFS-PyScriptManager(Release Page)](https://github.com/cgtrout/MSFS-PyScriptManager/releases/)
 - [Virus Total Malware Check](https://www.virustotal.com/gui/url/9f2aab0754a63dc92903b3c99db9cf5dde639241368af9c33f51053997d20333?nocache=1)
@@ -54,9 +50,13 @@
 - **plot_joystick.py:** Show visualization of joystick and trim values state. Will either show heli or plane trims dynamically.
 
 # Note On Included Script Behavior
-Currently, **not all of the included scripts will detect Simulator state**.  To ensure all of the scripts are initialized correctly for flight, please use **one** of the following methods:
+Currently, **most of the included scripts will detect Simulator state**.  However, in certain scenarios, such as starting a new flight (second+ flight of the session) may may need to restart some/all of the scripts.  Please use **one** of the following methods:
 1. Click "Reload All" in `MSFS-PyScriptManager.exe` after your aircraft has fully loaded in MSFS.
 2. Wait until you are loaded in the flight before opening `MSFS-PyScriptManager.exe`.  This will also ensure that scripts are able to connect and initialize as expected.
+
+# MSFS 2024 Update
+ - All scripts should work with MSFS 2024, but please report any issues.
+ - The community addon for the print-out toolbar works without modifications in MSFS 2024. The installation script has been updated for automated installation; however, it has not been tested with the Microsoft Store version.
 
 # Script Groups
 - "Script Groups" can be used to automate loading groups of scripts at once.
