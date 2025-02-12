@@ -288,6 +288,8 @@ class AppState:
         self.aircraft_requests = None
         self.sim_connected = False
 
+        self.template_menu_open = False
+
         # Load Settings
         self.settings_manager = SettingsManager()
         self.settings = self.settings_manager.load_settings()
@@ -508,17 +510,36 @@ class UIManager:
         self.root.wait_window(dialog)  # Wait for dialog to close
 
     def show_template_menu(self, event):
-        """Display a context menu to allow the user to select a template."""
-        menu = tk.Menu(self.root, tearoff=0)
+        """Display a context menu and track when it closes."""
+        self.app_state.template_menu_open = True
+
+        self.menu = tk.Menu(
+            self.root,
+            tearoff=0,
+            bg="#333333",
+            fg="white",
+            activebackground="#555555",
+            activeforeground="white"
+        )
 
         for template_name in self.template_handler.templates.keys():
-            menu.add_command(
+            self.menu.add_command(
                 label=template_name,
                 command=lambda name=template_name: self.switch_template(name)
             )
 
-        # Show the menu at the cursor position
-        menu.post(event.x_root, event.y_root)
+        # Post the menu
+        self.menu.post(event.x_root, event.y_root)
+
+        # Start polling to detect when the menu is gone
+        self.check_menu_closed()
+
+    def check_menu_closed(self):
+        """Repeatedly check if the menu is still open."""
+        if self.menu and not self.menu.winfo_ismapped():
+            self.app_state.template_menu_open = False
+        else:
+            self.root.after(100, self.check_menu_closed)  # Check again in 100ms
 
     def switch_template(self, new_template_name):
         """Switch to a new template and mark it for re-rendering in the next update cycle."""
@@ -1298,11 +1319,14 @@ class DisplayUpdater:
     def slow_tick(self):
         """Handles slow tick updates."""
         if self.update_display_frame_count == 0:
-            self.root.attributes("-topmost", False)
-            self.root.attributes("-topmost", True)
-            if self.root.state() != "normal":
-                print_warning("Restoring minimized window!")
-                self.root.deiconify()
+            if not self.state.template_menu_open:
+                self.root.attributes("-topmost", False)
+                self.root.attributes("-topmost", True)
+                if self.root.state() != "normal":
+                    print_warning("Restoring minimized window!")
+                    self.root.deiconify()
+        else:
+            print_debug("Skipping since context menu open")
 
     def update_display(self):
         """Render and update the display based on the parsed template."""
