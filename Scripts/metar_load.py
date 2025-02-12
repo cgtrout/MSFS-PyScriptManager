@@ -15,6 +15,7 @@ import win32print
 try:
     # Import all color print functions
     from Lib.color_print import *
+    from Lib.dark_mode import DarkmodeUtils
 
 except ImportError:
     print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
@@ -205,6 +206,8 @@ def show_metar_data(source_name, metar_dict):
     result_window.rowconfigure(2, weight=1)  # Text widget row expands
     result_window.columnconfigure(0, weight=1)
 
+    DarkmodeUtils.apply_dark_mode(result_window)
+
     # Title label
     try:
         simulator_time = get_simulator_datetime()
@@ -312,7 +315,7 @@ def show_metar_data(source_name, metar_dict):
 def gui_fetch_metar(root, airport_code):
     """Fetch METAR data with a non-blocking popup loading window."""
     if not airport_code:
-        print_warning("Error", "Please enter a valid airport ICAO code.")
+        print_warning("Please enter a valid airport ICAO code.")
         return
 
     print_info("Looking up metar. Please wait...")
@@ -427,6 +430,8 @@ def main():
         # Create a new Tkinter root for this iteration
         root = tk.Tk()
         root.withdraw()  # Hide the root window (we only use dialogs)
+
+
 
         try:
             # Fetch and display METAR data

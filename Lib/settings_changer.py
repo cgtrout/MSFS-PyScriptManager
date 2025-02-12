@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import json
+from Lib.dark_mode import DarkmodeUtils
 
 class JsonSaveEditor(tk.Tk):
     """A GUI-based JSON editor allowing users to edit values in a fixed JSON structure"""
@@ -18,6 +19,8 @@ class JsonSaveEditor(tk.Tk):
         super().__init__()
         self.title("Settings File Editor")
         self.geometry("600x400")
+
+        DarkmodeUtils.apply_dark_mode(self)
 
         self.file_path = file_path
         self.json_data = self.load_json()

@@ -17,6 +17,7 @@ import time
 try:
     # Import all color print functions
     from Lib.color_print import *
+    from Lib.dark_mode import DarkmodeUtils
 except ImportError:
     print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
     sys.exit(1)
@@ -213,7 +214,7 @@ class JoystickApp:
         self.root.bind("<ButtonRelease-1>", self._stop_drag)
         self.root.bind("<B1-Motion>", self._on_drag)
 
-        self.menu = tk.Menu(self.root, tearoff=0)
+        self.menu = tk.Menu(self.root, tearoff=0, bg="#333333", fg="white", activebackground="#555555", activeforeground="white")
         self.root.bind("<Button-3>", self._show_context_menu)
 
         self.fig, self.ax = plt.subplots(figsize=(self.graph_size_inches, self.graph_size_inches))

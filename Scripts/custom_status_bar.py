@@ -27,6 +27,7 @@ from SimConnect import SimConnect, AircraftRequests
 try:
     # Import all color print functions
     from Lib.color_print import *  # pylint: disable=unused-wildcard-import, wildcard-import
+    from Lib.dark_mode import DarkmodeUtils
 
 except ImportError:
     print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
@@ -510,7 +511,6 @@ class UIManager:
         """Display a context menu to allow the user to select a template."""
         menu = tk.Menu(self.root, tearoff=0)
 
-        # Add all templates to the menu
         for template_name in self.template_handler.templates.keys():
             menu.add_command(
                 label=template_name,
@@ -1280,6 +1280,7 @@ class DisplayUpdater:
         self.state = app_state
         self.template_handler = template_handler
         self.drag_handler = drag_handler
+
         self.display_frame = tk.Frame(root, bg=CONFIG.DARK_BG)
         self.display_frame.pack(padx=10, pady=5)
 
@@ -1663,6 +1664,8 @@ def main():
 
         # Load template once all globals are initialized to ensure template file has proper scope
         ui_manager.template_handler.load_template_file()
+
+        DarkmodeUtils.apply_dark_mode(root)
 
         state.start(root)           # Clocks user updates
         ui_manager.start()          # Clocks display updates

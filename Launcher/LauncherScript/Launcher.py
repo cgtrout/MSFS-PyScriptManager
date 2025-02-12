@@ -2026,7 +2026,7 @@ def main():
 
         # Start monitoring shutdown_event
         root.after(100, check_shutdown)
-        root.after(100, lambda: DarkmodeUtils.apply_dark_mode(root))
+        DarkmodeUtils.apply_dark_mode(root)
 
         root.mainloop()
 
