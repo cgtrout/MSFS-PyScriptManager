@@ -278,9 +278,11 @@ class JoystickApp:
 
     def _handle_joystick_selection(self, name):
         """Handle joystick selection from the context menu."""
+        self.desired_joystick_name = name
         self._save_settings(name)
         self._load_joysticks()  # Refresh joysticks and reinitialize selected joystick
         self._apply_plot_layout_adjustments()  # Ensure consistent plot layout
+
         print_info(f"Joystick '{name}' saved and reloaded.")
 
 if __name__ == "__main__":
