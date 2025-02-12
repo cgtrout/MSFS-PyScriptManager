@@ -99,7 +99,8 @@ def set_cockpit_lights(mf_requests):
     """Set all cockpit lighting LVARs to their default values."""
     for lvar_name, default_value in LIGHTING_LVARS.items():
         # First set to a known (max) value then to the default
-        set_and_verify_lvar(mf_requests, lvar_name, 1.0)
+        set_and_verify_lvar(mf_requests, lvar_name, 1)
+        set_and_verify_lvar(mf_requests, lvar_name, 0)
         set_and_verify_lvar(mf_requests, lvar_name, default_value)
 
 def propagate_lvars(mf_requests, co_value):
