@@ -37,14 +37,16 @@
    ![image](https://github.com/user-attachments/assets/05786688-b542-4050-95eb-1e85bf8d673d)
 
 ## Notes on Mobiflight Integration
-- Several of the scripts listed below require the Mobiflight WASM module.  Each in the list below is marked if it requires this WASM module.
+> ⚠️ Several of the scripts listed below require the Mobiflight WASM module.  ⚠️
 - This WASM module can be downloaded here: https://github.com/MobiFlight/MobiFlight-WASM-Module/releases/tag/1.0.1.  Download the ZIP and extract to your community folder.  Alternatively, if you have MobiFlight Connector installed, you can install this module with the top menu command (Extras > Microsoft Flight Simulator > Install WASM Module)
 
-## Other Scripts
-- **fbw_a380_checklist.py** Allows keyboard control of built in A380 checklist.  This script requires a [Mobiflight "WASM" module installation](https://github.com/MobiFlight/MobiFlight-Connector/wiki/Verifying-the-WASM-module-installation-and-locating-the-MSFS2020-community-folder).
-- **fenix_disable_efb.py:** Hides the EFBs on the Fenix A32x when run. (Requires Mobiflight "WASM" module installation).
-- **fenix_radio.py:** Shows a draggable radio panel that shows A32x RMP1 active/standby channels. (Requires Mobiflight "WASM" module installation).
-- **fenix_lights.py:** Preassign flight deck lighting knob values.  Also allows one knob to control all screen brightness or to optionally bind a joystick axis to control screen lighting. This will also reset all of the lights to get around the MSFS 2024 'full bright' lighting bug.  (Requires Mobiflight "WASM" module installation).
+## More Scripts - Mobiflight Required
+- **fbw_a380_checklist.py** Allows keyboard control of built in A380 checklist.
+- **fenix_disable_efb.py:** Hides the EFBs on the Fenix A32x when run.
+- **fenix_radio.py:** Shows a draggable radio panel that shows A32x RMP1 active/standby channels.
+- **fenix_lights.py:** Preassign flight deck lighting knob values.  Also allows one knob to control all screen brightness or to optionally bind a joystick axis to control screen lighting. This will also reset all of the lights to get around the MSFS 2024 'full bright' lighting bug.
+
+## More Scripts - No Mobiflight Required
 - **metar_load.py:** Load a historical metar based on Simulator or real world time - can print to virtual_pos_printer.
 - **plot_altitude.py:** Shows a draggable graph panel of altitude - can easily be changed to other SimConnect variables.  Can also export recorded data as CSV.
 - **plot_joystick.py:** Show visualization of joystick and trim values state. Will either show heli or plane trims dynamically.
