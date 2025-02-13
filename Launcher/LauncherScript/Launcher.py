@@ -903,19 +903,23 @@ class CommandLineTab(Tab):
             return
 
         try:
-            # Use the global paths defined earlier
+            # Use the predefined WinPython path
             scripts_dir = str(scripts_path.resolve())
 
-            # Create a pseudo-console process
-            self.process = winpty.PtyProcess.spawn(
-                "cmd",
-                cwd=scripts_dir,
-                env=os.environ
-            )
-            threading.Thread(target=self._read_output, daemon=True).start()
-            self.insert_output(f"[INFO] Shell started in {scripts_dir}. Type commands below.\n")
+            # Build a custom environment inheriting from os.environ
+            custom_env = os.environ.copy()
+            winpython_bin = str((project_root / "WinPython" / "python-3.13.0rc1.amd64").resolve())
 
-            # List Python files in the /Scripts directory
+            # Ensure the WinPython binary and scripts folder are in PATH
+            custom_env["PATH"] = f"{winpython_bin};{winpython_bin}\\Scripts;{custom_env.get('PATH', '')}"
+            custom_env["PYTHONPATH"] = f"{winpython_bin};{custom_env.get('PYTHONPATH', '')}"
+            custom_env["VIRTUAL_ENV"] = winpython_bin
+
+            # Spawn a pseudo-console with the correct environment
+            self.process = winpty.PtyProcess.spawn("cmd", cwd=scripts_dir, env=custom_env)
+            threading.Thread(target=self._read_output, daemon=True).start()
+
+            self.insert_output(f"[INFO] Shell started in {scripts_dir}. Type commands below.\n")
             self.run_shell_command("dir *.py")
         except Exception as e:
             self.insert_output(f"[ERROR] Failed to start shell: {e}\n")
@@ -1203,7 +1207,6 @@ class CommandLineTab(Tab):
 
         except Exception as e:
             self.insert_output(f"[ERROR] Failed to read console output: {e}\n")
-
 
     def insert_output(self, text):
         """Insert shell output into the output widget."""
