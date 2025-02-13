@@ -32,9 +32,9 @@ LIGHTING_LVARS = {
     "L:A_MIP_LIGHTING_FLOOD_MAIN": 0.1,     # Flood Light - Main Panel
     "L:A_MIP_LIGHTING_FLOOD_PEDESTAL": 0.1, # Flood Light - Pedestal
     "L:A_PED_LIGHTING_PEDESTAL": 1,         # Panel & Pedestal (button backlight)
-    "L:A_CHART_LIGHT_TEMP_FO": 0,           # FO window brightness knob
+    "L:A_CHART_LIGHT_TEMP_FO": 0.25,        # FO window brightness knob
     "L:S_CHART_LIGHT_TEMP_FO": 0,           # FO chart light switch
-    "L:A_CHART_LIGHT_TEMP_CAPT": 0,         # Capt window brightness knob
+    "L:A_CHART_LIGHT_TEMP_CAPT": 0.25,      # Capt window brightness knob
     "L:S_CHART_LIGHT_TEMP_CAPT": 0,         # Capt chart light switch
     "L:S_MIP_LIGHT_CONSOLEFLOOR_CAPT": 0,   # Console floor light (capt)
     "L:S_MIP_LIGHT_CONSOLEFLOOR_FO": 0      # Console floor light (FO)
