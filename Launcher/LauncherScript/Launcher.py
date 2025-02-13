@@ -656,7 +656,7 @@ class ScriptTab(Tab):
         except Exception as e:
             self.insert_output(f"Error opening script for editing: {e}\n")
 
-    def reload_script(self):
+    def reload_script(self, clear_text=True):
         """Reload the script by terminating and restarting the process."""
         print(f"[INFO] Reloading script for Tab ID: {self.tab_id}")
 
@@ -664,12 +664,13 @@ class ScriptTab(Tab):
             self.process_tracker.terminate_process(self.tab_id)
 
             # Clear the text widget (output page)
-            if self.text_widget and self.text_widget.winfo_exists():
-                self.text_widget.delete('1.0', tk.END)
+            if clear_text is True:
+                if self.text_widget and self.text_widget.winfo_exists():
+                    self.text_widget.delete('1.0', tk.END)
 
             self.run_script()
 
-        self.process_tracker.scheduler(0, _reload)  # Schedule the reload process
+        self.process_tracker.scheduler(SCRIPT_LOAD_DELAY_MS, _reload)  # Schedule the reload process
 
     def stop_script(self):
         """Stop the running of the script"""
@@ -1780,7 +1781,7 @@ class ProcessTracker:
                 return  # Process already cleaned up or not found
 
         process = metadata["process"]
-        script_tab = metadata.get("script_tab")
+        script_tab : ScriptTab = metadata.get("script_tab")
         script_name = metadata.get("script_name", "Unknown")
 
         if process.poll() is not None:  # Process has stopped
@@ -1793,6 +1794,16 @@ class ProcessTracker:
                         script_tab.insert_output(f"[INFO] Script '{script_name}' completed successfully.\n")
                     else:
                         script_tab.insert_output(f"[ERROR] Script '{script_name}' terminated unexpectedly with code {exit_code}.\n")
+                        script_tab.insert_output("\n\n\n\n\n")
+
+                        # AutoRestart on delay in case this is in a crash loop as this will limit
+                        # performance impact
+                        # TODO : this maybe should be based on a script meta-data settings on a
+                        # per script basis
+                        script_tab.insert_output("Restarting Script..\n")
+
+                        self.scheduler(SCRIPT_LOAD_DELAY_MS,
+                                       lambda: script_tab.reload_script(clear_text=False))
 
                 # Clean up process metadata
                 with self.lock:
