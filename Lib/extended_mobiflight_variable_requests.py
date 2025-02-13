@@ -52,7 +52,8 @@ class SimVariable:
 
 class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
     def __init__(self, simConnect, client_name=None):
-        self.init_ready = False
+        self.init_ready_event = threading.Event()
+
         self.sm = simConnect
         self.sim_vars = {}
         self.sim_var_name_to_id = {}
@@ -83,7 +84,6 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         self.send_command(("MF.Clients.Add." + client_name), self.init_client)
 
         # Wait until the init_ready_event is set by the callback
-        self.init_ready_event = threading.Event()
         self.init_ready_event.wait()
 
     def get(self, variableString):
@@ -141,26 +141,21 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
             size,
             dataBytes)
 
-
-
     def client_data_callback_handler(self, callback_data):
         # Acquire the GIL and attach the thread if necessary
         gil_state = PyGILState_Ensure()
 
         try:
-            # Deep copy the entire callback_data object to prevent threading issues
-            cb_copy = copy.deepcopy(callback_data)
-
             # SimVar Data
-            if cb_copy.dwDefineID in self.sim_vars:
-                data_bytes = struct.pack("I", cb_copy.dwData[0])
+            if callback_data.dwDefineID in self.sim_vars:
+                data_bytes = struct.pack("I", callback_data.dwData[0])
                 float_data = struct.unpack('<f', data_bytes)[0]   # unpack delivers a tuple -> [0]
-                self.sim_vars[cb_copy.dwDefineID].float_value = round(float_data, 5)
+                self.sim_vars[callback_data.dwDefineID].float_value = round(float_data, 5)
                 #print("client_data_callback_handler: %s", self.sim_vars[callback_data.dwDefineID])
 
             # Response string of init_client
-            elif cb_copy.dwDefineID == self.init_client.DATA_STRING_DEFINITION_ID:
-                response =  self._c_string_bytes_to_string(bytes(cb_copy.dwData))
+            elif callback_data.dwDefineID == self.init_client.DATA_STRING_DEFINITION_ID:
+                response =  self._c_string_bytes_to_string(bytes(callback_data.dwData))
                 #print("client_data_callback_handler: init_client response string: %s", response)
                 # Check for response of registering new client
                 if (self.my_client.CLIENT_NAME in response):
@@ -168,11 +163,11 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
                     self.init_ready_event.set()
 
             # Response string of my_client
-            elif cb_copy.dwDefineID == self.my_client.DATA_STRING_DEFINITION_ID:
-                response =  self._c_string_bytes_to_string(bytes(cb_copy.dwData))
+            elif callback_data.dwDefineID == self.my_client.DATA_STRING_DEFINITION_ID:
+                response =  self._c_string_bytes_to_string(bytes(callback_data.dwData))
                 #print("client_data_callback_handler: get my_client response string: %s", response)
             else:
-                print("client_data_callback_handler: DefinitionID %s not found!", cb_copy.dwDefineID)
+                print("client_data_callback_handler: DefinitionID %s not found!", callback_data.dwDefineID)
 
         finally:
             # Release the GIL (and detach the thread if it was attached here)
