@@ -273,7 +273,7 @@ int run_script(const char *pythonPath, const char *scriptPath)
     printf("-------------------------------------------------------------------------------------------\n\n");
 
     // Wait for the client to connect
-    printf("Waiting for Launcher...");
+    printf("Waiting for Launcher...\n");
     BOOL connected = ConnectNamedPipe(g_hCommandPipe, NULL) || GetLastError() == ERROR_PIPE_CONNECTED;
     if (!connected)
     {
@@ -282,7 +282,18 @@ int run_script(const char *pythonPath, const char *scriptPath)
         return -1;
     }
 
-    printf("Launcher connected");
+    // Now, explicitly connect the output pipe after launching the process:
+    BOOL connectedOutput = ConnectNamedPipe(hInboundPipe, NULL) ||
+                           (GetLastError() == ERROR_PIPE_CONNECTED);
+    if (!connectedOutput)
+    {
+        displayErrorAndRestoreConsole("Failed to connect to output named pipe.", hConsole, showWindow);
+        CloseHandle(hInboundPipe);
+        // Clean up shutdown pipe if needed...
+        return -1;
+    }
+
+    printf("Launcher connected\n");
 
     // Bring the console window to the foreground and minimize it
     setForegroundWindow(hConsole);

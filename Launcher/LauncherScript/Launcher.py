@@ -1,5 +1,7 @@
 # Launcher.py - main launcher app script for MSFSPyScriptManager
 
+print("---Launcher.py STARTING---")
+
 import json
 import logging
 import os
@@ -1263,9 +1265,6 @@ class ScriptLauncherApp:
         self.process_tracker = ProcessTracker(scheduler=self.root.after,
                                               shutdown_event=self.shutdown_event)
 
-        # Autoplay Scripts
-        self.autoplay_script_group()
-
         # Bind key press globally - for script keyboard input support
         self.root.bind("<Key>", self.on_key_press)
 
@@ -1273,6 +1272,11 @@ class ScriptLauncherApp:
         self.root.bind_all("<Control-`>", self.handle_control_tilde)
 
         self.root.bind_all("<Control-w>", lambda event: self.tab_manager.close_active_tab())
+
+    def start(self):
+        """Start the app"""
+        # Autoplay Scripts
+        self.autoplay_script_group()
 
     def handle_control_tilde(self, event=None):
         """Bring up the CommandLineTab: Select if exists, create if not."""
@@ -1998,6 +2002,8 @@ def main():
 
     logger.info("Starting the application.")
 
+    print("Starting Launcher.py -- main()")
+
     # Start app
     root = ThemedTk(theme="black")
     app = ScriptLauncherApp(root)
@@ -2033,6 +2039,7 @@ def main():
         root.after(100, check_shutdown)
         DarkmodeUtils.apply_dark_mode(root)
 
+        app.start()
         root.mainloop()
 
         logger.info("Tkinter main loop has exited.")
