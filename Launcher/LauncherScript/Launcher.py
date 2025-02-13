@@ -1800,6 +1800,7 @@ class ProcessTracker:
                         # performance impact
                         # TODO : this maybe should be based on a script meta-data settings on a
                         # per script basis
+                        # TODO: also should limit how often it can restart in a row?
                         script_tab.insert_output("Restarting Script..\n")
 
                         self.scheduler(SCRIPT_LOAD_DELAY_MS,
