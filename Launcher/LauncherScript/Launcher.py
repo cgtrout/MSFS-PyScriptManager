@@ -62,6 +62,9 @@ TEXT_WIDGET_FG_COLOR = "#FFFFFF"
 TEXT_WIDGET_INSERT_COLOR = "#FFFFFF"
 FRAME_BG_COLOR = "#2E2E2E"
 
+# Delay load between scripts - to avoid SimConnect (Mobiflight) initialization issues
+SCRIPT_LOAD_DELAY_MS = 200
+
 # Configure logging globally
 logger = OrderedLogger(
     filename="shutdown_log.txt",  # Specify the log file
@@ -330,7 +333,7 @@ class TabManager:
 
         # Schedule reloads with increasing delay
         for i, tab in enumerate(script_tabs):
-            delay = i * 50
+            delay = i * SCRIPT_LOAD_DELAY_MS
             print(f"delay")
             self.scheduler(delay, reload_script_with_delay, i)
 
@@ -1506,17 +1509,24 @@ class ScriptLauncherApp:
             return
 
         with open(file_path, 'r', encoding="utf-8") as f:
-            script_paths = [group_dir / Path(line.strip())
-                            for line in f.readlines() if line.strip()]
+            script_paths = [group_dir / Path(line.strip()) for line in f.readlines() if line.strip()]
 
         # Use a set to avoid loading duplicate scripts
         loaded_scripts = set()
+        script_paths = [script_path.resolve() for script_path in script_paths if script_path]
 
-        for script_path in script_paths:
-            absolute_path = script_path.resolve()
-            if str(absolute_path) not in loaded_scripts:
-                loaded_scripts.add(str(absolute_path))
-                self.load_script_from_path(absolute_path)
+        def load_script_with_delay(index):
+            """Load a script with a slight delay."""
+            script_path = script_paths[index]
+            if str(script_path) not in loaded_scripts:
+                loaded_scripts.add(str(script_path))
+                print(f"[INFO] Loading script '{script_path.name}' (Index: {index}).")
+                self.load_script_from_path(script_path)
+
+        # Schedule each script to load with an increasing delay
+        for i, script_path in enumerate(script_paths):
+            delay = i * SCRIPT_LOAD_DELAY_MS
+            self.root.after(delay, load_script_with_delay, i)
 
     def on_shutdown(self):
         logger.info("Shutdown signal received. Triggering shutdown_event.")
