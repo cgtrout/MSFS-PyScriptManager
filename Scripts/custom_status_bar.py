@@ -1616,14 +1616,27 @@ class SimBriefFunctions:
     @staticmethod
     def parse_gate_out(gate_out_entry_value, simbrief_gate_time):
         """Parse gate out datetime from text, based on simbrief_gate_time"""
-        hours, minutes = int(gate_out_entry_value[:2]), int(gate_out_entry_value[2:])
-        user_gate_time_dt = simbrief_gate_time.replace(hour=hours, minute=minutes,
-                                                        second=0, microsecond=0)
-        # Handle midnight crossover
-        if user_gate_time_dt < simbrief_gate_time:
-            user_gate_time_dt += timedelta(days=1)
 
-        return user_gate_time_dt
+        print_debug(f"parse_gate_out: Received gate_out_entry_value: {gate_out_entry_value}")
+        print_debug(f"parse_gate_out: SimBrief gate time: {simbrief_gate_time}")
+
+        # Parse the user input (HHMM format)
+        hours, minutes = int(gate_out_entry_value[:2]), int(gate_out_entry_value[2:])
+        print_debug(f"parse_gate_out: Parsed user-entered time: {hours:02}:{minutes:02}")
+
+        # Basic idea here is to check same day, prev day, next day and see which is closest to
+        # given simbrief_gate_time
+        candidate_same = simbrief_gate_time.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+        candidate_prev = candidate_same - timedelta(days=1)
+        candidate_next = candidate_same + timedelta(days=1)
+        print_debug(f"parse_gate_out: Candidate (Same Day): {candidate_same}")
+        print_debug(f"parse_gate_out: Candidate (Previous Day): {candidate_prev}")
+        print_debug(f"parse_gate_out: Candidate (Next Day): {candidate_next}")
+        candidates = [candidate_prev, candidate_same, candidate_next]
+        best_candidate = min(candidates, key=lambda candidate: abs(candidate - simbrief_gate_time))
+
+        print_debug(f"parse_gate_out: Best candidate selected: {best_candidate}")
+        return best_candidate
 
 # MAP SimBriefTimeOption to corresponding functions
 SIMBRIEF_TIME_OPTION_FUNCTIONS = {
