@@ -78,21 +78,29 @@ class LockManager:
 
     @staticmethod
     def remove_stale_lock(lock_path):
-        """
-        Check if a lock file exists and whether its process is still running- will remove it if it
-        is not found to be running
-        """
+        """Check if a lock file exists and whether its process is still running. Remove it if stale."""
         if not os.path.exists(lock_path):
-            return False
+            return False  # Nothing to remove
 
-        with open(lock_path, "r", encoding="utf-8") as f:
-            pid = int(f.read().strip())
-        if not psutil.pid_exists(pid):
-            print(f"Removing stale lock (PID {pid} not running).")
+        try:
+            with open(lock_path, "r", encoding="utf-8") as f:
+                pid = int(f.read().strip())
+
+            if not psutil.pid_exists(pid):
+                print(f"[INFO] Removing stale lock (PID {pid} not running).")
+                os.remove(lock_path)
+                return True
+
+        except FileNotFoundError:
+            # Catch potential races (ie multiscript calls to lock)
+            return True
+        except ValueError:
+            print(f"[WARNING] Lock file {lock_path} is corrupted. Removing it.")
             os.remove(lock_path)
             return True
 
         return False
+
 
 # Multiprocessing Worker Function (Standalone)
 # Used for testing
