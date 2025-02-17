@@ -6,10 +6,11 @@ import threading
 import multiprocessing
 import os
 import unittest
-
 import psutil
-
 from filelock import FileLock, Timeout
+
+class LockAcquisitionError(Exception):
+    """Raised when acquiring the initialization lock fails."""
 
 class LockManager:
     """File-based lock manager with a watchdog to prevent deadlocks."""
@@ -61,7 +62,7 @@ class LockManager:
                 return self.acquire_lock(retried=True)
 
             print("acquire_lock: Lock still active. Giving up.")
-            raise
+            raise LockAcquisitionError("Failed to acquire initialization lock after retry.")
 
     def release_lock(self, watchdog_triggered=False):
         """Manually release the lock and stop watchdog."""
