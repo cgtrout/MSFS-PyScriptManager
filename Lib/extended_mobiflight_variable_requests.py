@@ -17,6 +17,7 @@ import threading
 
 try:
     from Lib.color_print import *
+    from Lib.lock_manager import LockManager, LockAcquisitionError
 except ImportError:
     print("MSFS-PyScriptManager: Please ensure /Lib dir is present")
     sys.exit(1)
@@ -70,14 +71,28 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         self.my_client.CLIENT_DATA_AREA_RESPONSE = 5
         self.my_client.DATA_STRING_DEFINITION_ID = 1
 
-        # First add init_client
-        self.sm.register_client_data_handler(self.client_data_callback_handler)
-        self.initialize_client_data_areas(self.init_client)
-        self.send_command("Do Nothing", self.init_client)
-        self.send_command(("MF.Clients.Add." + client_name), self.init_client)
 
-        # Wait until the init_ready_event is set by the callback
-        self.init_ready_event.wait()
+        # Use file lock to serialize initialization
+        # Otherwise we can get rare crash on callback
+        try:
+            self.lock = LockManager(timeout=20, max_runtime=30, lock_name="ext_mobiflight.lock")
+            self.lock.acquire_lock()
+        except LockAcquisitionError as e:
+            print_error(f"extended_mobiflight: error acquiring file lock {e}")
+            sys.exit(2)
+
+        try:
+            # First add init_client
+            self.sm.register_client_data_handler(self.client_data_callback_handler)
+            self.initialize_client_data_areas(self.init_client)
+            self.send_command("Do Nothing", self.init_client)
+            self.send_command(("MF.Clients.Add." + client_name), self.init_client)
+
+            # Wait until the init_ready_event is set by the callback
+            self.init_ready_event.wait()
+        finally:
+            # Release the file lock
+            self.lock.release_lock()
 
     def get(self, variableString):
         client = self.my_client
