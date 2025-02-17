@@ -75,7 +75,8 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         # Use file lock to serialize initialization
         # Otherwise we can get rare crash on callback
         try:
-            self.lock = LockManager(timeout=20, max_runtime=30, lock_name="ext_mobiflight.lock")
+            print_info("extended_mobiflight: initializing file lock")
+            self.lock = LockManager(timeout=200, max_runtime=30, lock_name="ext_mobiflight.lock")
             self.lock.acquire_lock()
         except LockAcquisitionError as e:
             print_error(f"extended_mobiflight: error acquiring file lock {e}")
@@ -93,6 +94,7 @@ class ExtendedMobiFlightVariableRequests(MobiFlightVariableRequests):
         finally:
             # Release the file lock
             self.lock.release_lock()
+            print_info("extended_mobiflight: initializing released")
 
     def get(self, variableString):
         client = self.my_client
