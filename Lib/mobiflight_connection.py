@@ -1,9 +1,10 @@
 import logging
 import time
-from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
-from Lib.extended_mobiflight_variable_requests import ExtendedMobiFlightVariableRequests
-from Lib.color_print import print_info, print_error
 
+from Lib.MSFSPythonSimConnectMobiFlightExtension import SimConnectMobiFlight
+from Lib.MSFSPythonSimConnectMobiFlightExtension import MobiFlightVariableRequests
+
+from Lib.color_print import print_info, print_error
 # Disable warnings - still shows errors
 logging.getLogger("SimConnect.SimConnect").setLevel(logging.ERROR)
 
@@ -50,7 +51,7 @@ class MobiflightConnection:
             try:
                 print_info("Attempting to connect to Flight Simulator...")
                 self.sm = SimConnectMobiFlight()
-                self.mf_requests = ExtendedMobiFlightVariableRequests(self.sm, self.client_name)
+                self.mf_requests = MobiFlightVariableRequests(self.sm, self.client_name)
                 self.mf_requests.clear_sim_variables()
                 print_info("Successfully connected to Flight Simulator.")
                 return

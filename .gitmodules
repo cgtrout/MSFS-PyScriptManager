@@ -1,0 +1,4 @@
+[submodule "Lib/MSFSPythonSimConnectMobiFlightExtension"]
+	path = Lib/MSFSPythonSimConnectMobiFlightExtension
+	url = https://github.com/cgtrout/MSFSPythonSimConnectMobiFlightExtension.git
+	branch = multi-client-support
