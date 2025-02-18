@@ -45,9 +45,6 @@ def main():
         print_info("EFBs disabled successfully.")
         print_info("This script will now shut down - restart if if you need to disable again.")
 
-
-
-
     except Exception as e:
         print_error(f"Error detected, restarting script: {e}")
 
