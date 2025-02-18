@@ -40,6 +40,7 @@ class LockManager:
     def acquire_lock(self, retried=False):
         """Manually acquire the lock and start watchdog."""
         try:
+            print(f"Process {os.getpid()} trying to aquire the lock.")
             self.lock.acquire()
             self.lock_acquired = True
             print(f"Process {os.getpid()} acquired the lock.")
