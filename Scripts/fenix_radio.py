@@ -86,17 +86,20 @@ def fetch_values(mf_requests, label_active_value, label_stby_value):
         active_value_raw = mf_requests.get(RMP1_ACTIVE)
         standby_value_raw = mf_requests.get(RMP1_STDBY)
 
-        # Format the values as frequencies
-        active_value = f"{active_value_raw / 1000:.3f}"
-        standby_value = f"{standby_value_raw / 1000:.3f}"
+        if active_value_raw is None or standby_value_raw is None:
+            print("fetch_values: pulled values are invalid")
+        else:
+            # Format the values as frequencies
+            active_value = f"{active_value_raw / 1000:.3f}"
+            standby_value = f"{standby_value_raw / 1000:.3f}"
 
-        # Update the labels with the new images
-        active_image = create_lcd_text_image(active_value, font_size)
-        standby_image = create_lcd_text_image(standby_value, font_size)
-        label_active_value.config(image=active_image)
-        label_active_value.image = active_image
-        label_stby_value.config(image=standby_image)
-        label_stby_value.image = standby_image
+            # Update the labels with the new images
+            active_image = create_lcd_text_image(active_value, font_size)
+            standby_image = create_lcd_text_image(standby_value, font_size)
+            label_active_value.config(image=active_image)
+            label_active_value.image = active_image
+            label_stby_value.config(image=standby_image)
+            label_stby_value.image = standby_image
 
         # Delay before the next update
         sleep(1/60)
