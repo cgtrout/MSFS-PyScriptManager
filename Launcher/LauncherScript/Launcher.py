@@ -62,8 +62,8 @@ TEXT_WIDGET_FG_COLOR = "#FFFFFF"
 TEXT_WIDGET_INSERT_COLOR = "#FFFFFF"
 FRAME_BG_COLOR = "#2E2E2E"
 
-# Delay load between scripts - to avoid SimConnect (Mobiflight) initialization issues
-SCRIPT_LOAD_DELAY_MS = 200
+# Delay load between scripts
+SCRIPT_LOAD_DELAY_MS = 20
 
 # Configure logging globally
 logger = OrderedLogger(
