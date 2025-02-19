@@ -30,6 +30,8 @@ min_font_size = 10
 max_font_size = 100
 font_size = initial_font_size
 
+
+
 # Function to load settings from JSON file
 def load_settings():
     if not os.path.exists(SETTINGS_FILE):
@@ -81,6 +83,10 @@ def set_and_get_lvar(mf_requests, lvar, value):
 
 # Function to fetch and update frequency values for RMP1
 def fetch_values(mf_requests, label_active_value, label_stby_value):
+    # Keep track of the last displayed text values to avoid unnecessary updates
+    last_active_text = None
+    last_standby_text = None
+
     while True:
         # Fetch the active and standby values for RMP1
         active_value_raw = mf_requests.get(RMP1_ACTIVE)
@@ -93,16 +99,21 @@ def fetch_values(mf_requests, label_active_value, label_stby_value):
             active_value = f"{active_value_raw / 1000:.3f}"
             standby_value = f"{standby_value_raw / 1000:.3f}"
 
-            # Update the labels with the new images
-            active_image = create_lcd_text_image(active_value, font_size)
-            standby_image = create_lcd_text_image(standby_value, font_size)
-            label_active_value.config(image=active_image)
-            label_active_value.image = active_image
-            label_stby_value.config(image=standby_image)
-            label_stby_value.image = standby_image
+            # Update only if the displayed text has changed
+            if active_value != last_active_text:
+                active_image = create_lcd_text_image(active_value, font_size)
+                label_active_value.config(image=active_image)
+                label_active_value.image = active_image
+                last_active_text = active_value
+
+            if standby_value != last_standby_text:
+                standby_image = create_lcd_text_image(standby_value, font_size)
+                label_stby_value.config(image=standby_image)
+                label_stby_value.image = standby_image
+                last_standby_text = standby_value
 
         # Delay before the next update
-        sleep(1/60)
+        sleep(1/20)
 
 # Function to make the window draggable and save position on move
 def make_draggable(widget):
