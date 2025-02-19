@@ -1702,9 +1702,9 @@ def main():
 
         DarkmodeUtils.apply_dark_mode(root)
 
+        service_manager.start()     # Starts service tasks (background updater)
         state.start(root)           # Clocks user updates
         ui_manager.start()          # Clocks display updates
-        service_manager.start()     # Starts service tasks (background updater)
 
         root.mainloop()
     except ValueError as e:
