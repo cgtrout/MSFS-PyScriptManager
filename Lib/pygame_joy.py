@@ -109,7 +109,7 @@ class PygameJoy:
         Updates the Pygame event queue to refresh joystick state.
         This must be called periodically by the parent application.
         """
-        pygame.event.pump()
+        pygame.event.clear()
 
     def input_get_axis(self, msg="Move an axis to bind:"):
         """Detects the axis currently being moved on the joystick."""

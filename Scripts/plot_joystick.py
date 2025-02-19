@@ -55,6 +55,8 @@ class JoystickApp:
         self.menu = None
         self.fig, self.ax = None, None
 
+        self.last_joystick_pos = (0,0)
+
         # Load settings
         self.desired_joystick_name, self.window_position = self._load_settings()
 
@@ -165,6 +167,11 @@ class JoystickApp:
 
             self.scat.set_offsets([[x, y]])
 
+            # Cache previous joystick position to avoid redundant updates
+            if (x, y) != getattr(self, "last_joystick_pos", (None, None)):
+                self.scat.set_offsets([[x, y]])
+                self.last_joystick_pos = (x, y)
+
             # Get current trim values
             with self.cache_lock:
                 elevator_trim = self.cached_trim_values.get("elevator_trim", 0)
@@ -178,29 +185,47 @@ class JoystickApp:
                 abs(rotor_lateral_trim) > threshold or abs(rotor_longitudinal_trim) > threshold
             )
 
+            updated_elements = [self.scat]
+
             # Update visualization based on mode
             if is_helicopter:
-                # Helicopter mode: Show rotor trim
-                self.elevator_trim_marker.set_ydata([rotor_longitudinal_trim] * 2)
-                self.elevator_trim_marker.set_xdata([-1.01, 1.01])
-                self.elevator_trim_marker.set_visible(abs(rotor_longitudinal_trim) > threshold)
+                # Helicopter Mode - Update only if values change
+                if getattr(self, "last_rotor_longitudinal_trim", None) != rotor_longitudinal_trim:
+                    self.elevator_trim_marker.set_ydata([rotor_longitudinal_trim] * 2)
+                    self.last_rotor_longitudinal_trim = rotor_longitudinal_trim
+                    updated_elements.append(self.elevator_trim_marker)
 
-                self.aileron_trim_marker.set_xdata([rotor_lateral_trim] * 2)
-                self.aileron_trim_marker.set_ydata([-1.01, 1.01])
-                self.aileron_trim_marker.set_visible(abs(rotor_lateral_trim) > threshold)
+                if getattr(self, "last_rotor_lateral_trim", None) != rotor_lateral_trim:
+                    self.aileron_trim_marker.set_xdata([rotor_lateral_trim] * 2)
+                    self.last_rotor_lateral_trim = rotor_lateral_trim
+                    updated_elements.append(self.aileron_trim_marker)
             else:
-                # Airplane mode: Show elevator and aileron trim
-                self.elevator_trim_marker.set_ydata([elevator_trim] * 2)
-                self.elevator_trim_marker.set_xdata([-1.01, 1.01])
-                self.elevator_trim_marker.set_visible(abs(elevator_trim) > threshold)
+                # Airplane Mode - Update only if values change
+                if getattr(self, "last_elevator_trim", None) != elevator_trim:
+                    self.elevator_trim_marker.set_ydata([elevator_trim] * 2)
+                    self.last_elevator_trim = elevator_trim
+                    updated_elements.append(self.elevator_trim_marker)
 
-                self.aileron_trim_marker.set_xdata([aileron_trim] * 2)
-                self.aileron_trim_marker.set_ydata([-1.01, 1.01])
-                self.aileron_trim_marker.set_visible(abs(aileron_trim) > threshold)
+                if getattr(self, "last_aileron_trim", None) != aileron_trim:
+                    self.aileron_trim_marker.set_xdata([aileron_trim] * 2)
+                    self.last_aileron_trim = aileron_trim
+                    updated_elements.append(self.aileron_trim_marker)
 
-            # Update coordinates display
-            self.coord_text.set_text(f"X: {x:>5.2f} Y: {y:>5.2f}")
-            return self.scat, self.coord_text, self.elevator_trim_marker, self.aileron_trim_marker
+            # Ensure visibility updates only when necessary
+            def update_visibility(marker, condition):
+                if marker.get_visible() != condition:
+                    marker.set_visible(condition)
+                    updated_elements.append(marker)
+
+            update_visibility(self.elevator_trim_marker, is_helicopter and abs(rotor_longitudinal_trim) > threshold)
+            update_visibility(self.aileron_trim_marker, is_helicopter and abs(rotor_lateral_trim) > threshold)
+
+            # Update coordinates display only when joystick position changes
+            new_coord_text = f"X: {x:>5.2f} Y: {y:>5.2f}"
+            if self.coord_text.get_text() != new_coord_text:
+             self.coord_text.set_text(new_coord_text)
+
+            return updated_elements  # Return only updated elements
 
         except Exception as e:
             print_error(f"Joystick read failed: {e}")
