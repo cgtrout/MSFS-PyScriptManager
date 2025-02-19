@@ -719,6 +719,7 @@ class PerfTab(Tab):
         self.performance_metrics_open = True
         self.text_widget = None
         self.cpu_stats = {}
+        self.process_objects = {}
 
     def build_content(self):
         """Add widgets to the performance tab."""
@@ -739,8 +740,8 @@ class PerfTab(Tab):
         metrics_text = self.generate_metrics_text()
         self.refresh_performance_metrics(metrics_text)
 
-        # Schedule the next update after 1000 ms (1 second)
-        self.frame.after(1000, self.start_monitoring)
+        # Schedule the next update
+        self.frame.after(50, self.start_monitoring)
 
     def refresh_performance_metrics(self, text):
         """Refresh the performance metrics text widget."""
@@ -768,14 +769,19 @@ class PerfTab(Tab):
 
             if process and process.pid:
                 try:
-                    proc = psutil.Process(process.pid)
+                    # Reuse existing process object if available, else create a new one
+                    if tab_id not in self.process_objects:
+                        self.process_objects[tab_id] = psutil.Process(process.pid)
+
+                    proc = self.process_objects[tab_id]
+
                     if proc.is_running():
                         # Initialize stats for new processes
                         if tab_id not in self.cpu_stats:
                             self.cpu_stats[tab_id] = {"cumulative_cpu": 0, "count": 0}
 
-                        # Calculate current CPU usage (normalized as a percentage of total cores)
-                        cpu_usage = proc.cpu_percent(interval=0.1) / total_cores
+                        # Calculate current CPU usage (non-blocking, reusing process object)
+                        cpu_usage = proc.cpu_percent(interval=None) / total_cores
                         memory_usage = proc.memory_info().rss / (1024 ** 2)  # Convert to MB
 
                         # Update cumulative stats
@@ -785,7 +791,7 @@ class PerfTab(Tab):
                         # Calculate average CPU usage
                         avg_cpu_usage = (
                             self.cpu_stats[tab_id]["cumulative_cpu"]
-                                / self.cpu_stats[tab_id]["count"]
+                            / self.cpu_stats[tab_id]["count"]
                         )
 
                         # Add metrics to the output
@@ -798,12 +804,17 @@ class PerfTab(Tab):
                         )
                     else:
                         metrics.append(f"Script: {script_name}\n  Status: Not Running\n")
+                        if tab_id in self.process_objects:
+                            del self.process_objects[tab_id]
                 except psutil.NoSuchProcess:
                     metrics.append(f"Script: {script_name}\n  Status: Terminated\n")
+                    if tab_id in self.process_objects:
+                        del self.process_objects[tab_id]
             else:
                 metrics.append(f"Script: {script_name}\n  Status: Not Running\n")
 
         return "\n".join(metrics)
+
 
     def stop_performance_monitoring(self):
         """Stop monitoring performance metrics."""
