@@ -7,6 +7,7 @@ real-time flight simulator metrics like time, altitude, and temperature in a com
 
 import faulthandler
 import importlib
+from io import StringIO
 import json
 import os
 import sys
@@ -19,12 +20,12 @@ from datetime import datetime, timezone, timedelta
 from enum import Enum
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Optional
+import subprocess
 
 import csv
-import psutil
 import requests
 from SimConnect import SimConnect, AircraftRequests
-import subprocess
+
 
 try:
     # Import all color print functions
