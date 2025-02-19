@@ -18,8 +18,9 @@ try:
     # Import all color print functions
     from Lib.color_print import *
     from Lib.dark_mode import DarkmodeUtils
+    from Lib.gc_tweak import optimize_gc
 except ImportError:
-    print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
+    print("Failed to import 'Lib' directory. Please ensure Lib/* is present")
     sys.exit(1)
 
 class JoystickApp:
@@ -63,6 +64,8 @@ class JoystickApp:
 
         # Load and configure joysticks
         self._load_joysticks()
+
+        optimize_gc()
 
     def _load_joysticks(self):
         """Load joystick information and initialize the desired joystick."""
