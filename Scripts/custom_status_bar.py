@@ -1002,8 +1002,8 @@ def initialize_simconnect():
         state.aircraft_requests = AircraftRequests(state.sim_connect, _time=10, _attemps=2)
         state.sim_connected = True
         print_debug("Sim is Connected")
-    except Exception:
-        print_debug("Sim could not connect")
+    except Exception as e:
+        print_debug(f"Sim could not connect {e}")
         state.sim_connected = False
 
 def is_simconnect_available() -> bool:
