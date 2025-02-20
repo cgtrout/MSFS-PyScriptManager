@@ -31,9 +31,10 @@ try:
     # Import all color print functions
     from Lib.color_print import *  # pylint: disable=unused-wildcard-import, wildcard-import
     from Lib.dark_mode import DarkmodeUtils
+    from Lib.gc_tweak import optimize_gc
 
 except ImportError:
-    print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
+    print("Failed to import Lib directory. Please ensure /Lib/* is present")
     sys.exit(1)
 
 # Default templates file - this will be created if it doesn't exist
@@ -1721,6 +1722,7 @@ def main():
         ui_manager.template_handler.load_template_file()
 
         DarkmodeUtils.apply_dark_mode(root)
+        optimize_gc(allocs=10_000, show_data=True)
 
         service_manager.start()     # Starts service tasks (background updater)
         state.start(root)           # Clocks user updates
