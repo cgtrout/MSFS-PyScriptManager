@@ -414,35 +414,31 @@ class SimBriefAutoTimer:
         if not simbrief_settings.auto_update_enabled:
             return  # Exit if auto-update is disabled
 
-        try:
-            # Check if SimBrief needs to be updated (every 5 minutes)
-            elapsed_time = datetime.now(timezone.utc) - self.last_simbrief_load
-            if elapsed_time.total_seconds() > CONFIG.SIMBRIEF_AUTO_UPDATE_INTERVAL_SECONDS:
-                self.last_simbrief_load = datetime.now(timezone.utc)
-                print_debug("SimBriefAutoTimer: Checking SimBrief (elapsed time has passed)")
-                simbrief_updated = self.update_simbrief_json()
+        # Check if SimBrief needs to be updated (every 5 minutes)
+        elapsed_time = datetime.now(timezone.utc) - self.last_simbrief_load
+        if elapsed_time.total_seconds() > CONFIG.SIMBRIEF_AUTO_UPDATE_INTERVAL_SECONDS:
+            self.last_simbrief_load = datetime.now(timezone.utc)
+            print_debug("SimBriefAutoTimer: Checking SimBrief (elapsed time has passed)")
+            simbrief_updated = self.update_simbrief_json()
 
-            # Update countdown timer only if necessary
-            if ( user_setting != self.last_user_setting or simbrief_updated ) \
-              and not countdown_state.timer_source == CountdownState.TimerSource.USER_TIMER:
-                print_debug("SimBriefAutoTimer: updating timer user_setting:"
-                            f" {user_setting} simbrief_updated: {simbrief_updated}")
+        # Update countdown timer only if necessary
+        if ( user_setting != self.last_user_setting or simbrief_updated ) \
+            and not countdown_state.timer_source == CountdownState.TimerSource.USER_TIMER:
+            print_debug("SimBriefAutoTimer: updating timer user_setting:"
+                        f" {user_setting} simbrief_updated: {simbrief_updated}")
 
-                success = SimBriefFunctions.update_countdown_from_simbrief(
+            try:
+                SimBriefFunctions.update_countdown_from_simbrief(
                     simbrief_json=self.last_simbrief_json,
                     simbrief_settings=simbrief_settings,
                     gate_out_datetime=simbrief_settings.gate_out_time,
                     custom_time_option=user_setting
                 )
                 self.last_user_setting = user_setting
-
-                if success:
-                    print_info("Countdown timer updated successfully.")
-                else:
-                    print_warning("Failed to update countdown timer from SimBrief data.")
-
-        except Exception as e:
-            print_error(f"SimBriefAutoTimer: Exception during auto-update: {e}")
+            except RuntimeError as re:
+                print_warning(f"Failed to update countdown timer from SimBrief data - {re}")
+            except ValueError as e:
+                print_warning(f"Failed to update countdown timer from SimBrief data - {e}")
 
     def update_simbrief_json(self) -> bool:
         """Fetch SimBrief JSON and return True if 'time_generated' has changed."""
@@ -703,42 +699,30 @@ class CountdownState:
     countdown_target_time: datetime = field(default_factory=lambda: CONFIG.UNIX_EPOCH)
 
     def set_future_time(self, new_time: datetime, simulator_time: datetime, simbrief_settings,
-                        timer_source: TimerSource) -> bool:
+                        timer_source: TimerSource):
         """Set a new countdown target time"""
-        if not self._validate_future_time(new_time, simulator_time, simbrief_settings):
-            print_error(f"Failed to set countdown timer: {new_time} is invalid"
-                        f"(current sim time: {simulator_time})")
-            return False
-
+        self._validate_future_time(new_time, simulator_time, simbrief_settings)
         self.countdown_target_time = new_time
         self.timer_source = timer_source
         return True
 
     def _validate_future_time(self, future_time_input, current_sim_time, simbrief_settings) -> bool:
         """Validates a future time (countdown timer time)"""
-        try:
-            # Ensure all times are timezone-aware (UTC)
-            if current_sim_time.tzinfo is None:
-                current_sim_time = current_sim_time.replace(tzinfo=timezone.utc)
+        # Ensure all times are timezone-aware (UTC)
+        if current_sim_time.tzinfo is None:
+            current_sim_time = current_sim_time.replace(tzinfo=timezone.utc)
 
-            if isinstance(future_time_input, datetime):
-                # Validate that the future time is after the current simulator time
-                if future_time_input <= current_sim_time and \
-                not simbrief_settings.allow_negative_timer:
-                    raise ValueError("Future time must be later than the current simulator time.")
+        if isinstance(future_time_input, datetime):
+            # Validate that the future time is after the current simulator time
+            if future_time_input <= current_sim_time and \
+            not simbrief_settings.allow_negative_timer:
+                raise ValueError("Set timer time must be later than the current simulator time.")
 
-                # Log successful setting of the timer
-                print(f"Timer set to: {future_time_input}")
-                return True
-            else:
-                raise TypeError("Unsupported future_time_input type. Must be a datetime object.")
-
-        except ValueError as ve:
-            print_error(f"Validation error in set_future_time_internal: {ve}")
-            return False
-        except Exception as e:
-            print_error(f"Unexpected error in set_future_time_internal: {str(e)}")
-            return False
+            # Log successful setting of the timer
+            print(f"Timer set to: {future_time_input}")
+            return True
+        else:
+            raise TypeError("Unsupported future_time_input type. Must be a datetime object.")
 
 # --- SimConnect Template Functions --------------------------------------------------------------
 def get_sim_time():
@@ -1541,53 +1525,47 @@ class SimBriefFunctions:
     def update_countdown_from_simbrief(simbrief_json, simbrief_settings,
                                        gate_out_datetime=None, custom_time_option=None):
         """Update the countdown timer based on SimBrief data and optional manual gate-out time."""
-        try:
-            timer_source = CountdownState.TimerSource.USER_SELECTED_PRESET
+        timer_source = CountdownState.TimerSource.USER_SELECTED_PRESET
 
-            # Adjust gate-out time
-            gate_time_offset = SimBriefFunctions.adjust_gate_out_delta(
-                simbrief_json=simbrief_json,
-                user_gate_time_dt=gate_out_datetime,
-                simbrief_settings=simbrief_settings,
-            )
+        # Adjust gate-out time
+        gate_time_offset = SimBriefFunctions.adjust_gate_out_delta(
+            simbrief_json=simbrief_json,
+            user_gate_time_dt=gate_out_datetime,
+            simbrief_settings=simbrief_settings,
+        )
 
-            # Fetch selected SimBrief time
-            # If custom_time_option is provided use that, otherwise use saved simbrief setting
-            if custom_time_option is not None:
-                selected_time = custom_time_option
-                timer_source = CountdownState.TimerSource.AUTO_TIMER
-            else:
-                selected_time = simbrief_settings.selected_time_option
+        # Fetch selected SimBrief time
+        # If custom_time_option is provided use that, otherwise use saved simbrief setting
+        if custom_time_option is not None:
+            selected_time = custom_time_option
+            timer_source = CountdownState.TimerSource.AUTO_TIMER
+        else:
+            selected_time = simbrief_settings.selected_time_option
 
-            # Use mapping to fetch the corresponding function
-            function_to_call = SIMBRIEF_TIME_OPTION_FUNCTIONS.get(selected_time)
+        # Use mapping to fetch the corresponding function
+        function_to_call = SIMBRIEF_TIME_OPTION_FUNCTIONS.get(selected_time)
 
-            if function_to_call:
-                # Call the selected function
-                future_time = function_to_call(simbrief_json)
-                if not future_time:
-                    return False  # Handle the case where the function returns no time
-            else:
-                print_error(f"No function mapped for selected_time_option: {selected_time}")
-                return False
-
+        if function_to_call:
+            # Call the selected function
+            future_time = function_to_call(simbrief_json)
             if not future_time:
-                return False
+               raise ValueError(f"No function mapped for selected_time_option: {selected_time}")
+        else:
+            raise ValueError(f"No function mapped for selected_time_option: {selected_time}")
 
-            # Apply gate time offset and time adjustment
-            future_time += gate_time_offset
-            if simbrief_settings.use_adjusted_time:
-                future_time = convert_real_world_time_to_sim_time(future_time)
+        if not future_time:
+             raise ValueError(f"Failed to extract '{selected_time.name}' from SimBrief data.")
 
-            # Set countdown timer
-            current_sim_time = get_simulator_datetime()
-            print_debug(f"Simulator Datetime {current_sim_time}")
-            return countdown_state.set_future_time(future_time, current_sim_time,
-                                                   simbrief_settings, timer_source)
+        # Apply gate time offset and time adjustment
+        future_time += gate_time_offset
+        if simbrief_settings.use_adjusted_time:
+            future_time = convert_real_world_time_to_sim_time(future_time)
 
-        except Exception as e:
-            print_error(f"Exception in update_countdown_from_simbrief: {e}")
-        return False
+        # Set countdown timer
+        current_sim_time = get_simulator_datetime()
+        print_debug(f"Simulator Datetime {current_sim_time}")
+        countdown_state.set_future_time(future_time, current_sim_time,
+                                            simbrief_settings, timer_source)
 
     @staticmethod
     def adjust_gate_out_delta(
@@ -2097,21 +2075,20 @@ class CountdownTimerDialog(tk.Toplevel):
                                             .parse_gate_out(gate_out_entry_value, simbrief_gate_out)
 
             # Update countdown timer using the shared method
-            success = SimBriefFunctions.update_countdown_from_simbrief(
+            SimBriefFunctions.update_countdown_from_simbrief(
                 simbrief_json=simbrief_json,
                 simbrief_settings=self.simbrief_settings,
                 gate_out_datetime=gate_out_datetime
             )
 
-            if not success:
-                messagebox.showerror("Error", "Failed to update the countdown timer from SimBrief.")
-                print_error("Countdown timer update failed.")
-                return
-
             print_debug("Countdown timer updated successfully from SimBrief.")
 
             self.destroy()
-
+        except RuntimeError as re:
+            messagebox.showerror("Error", f"Failed to update the countdown timer from SimBrief. {re}")
+        except ValueError as ve:
+            messagebox.showerror("Error", f"Failed to update the countdown timer from SimBrief. {ve}")
+            print_error("Countdown timer update failed.")
         except Exception as e:
             messagebox.showerror("Error", f"An unexpected error occurred: {str(e)}")
             print_error(f"Exception in pull_time: {e}")
