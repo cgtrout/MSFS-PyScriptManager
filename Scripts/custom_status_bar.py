@@ -7,6 +7,7 @@ real-time flight simulator metrics like time, altitude, and temperature in a com
 
 import faulthandler
 import importlib
+from io import StringIO
 import json
 import os
 import sys
@@ -19,18 +20,21 @@ from datetime import datetime, timezone, timedelta
 from enum import Enum
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Optional
+import subprocess
 
-import psutil
+import csv
 import requests
 from SimConnect import SimConnect, AircraftRequests
+
 
 try:
     # Import all color print functions
     from Lib.color_print import *  # pylint: disable=unused-wildcard-import, wildcard-import
     from Lib.dark_mode import DarkmodeUtils
+    from Lib.gc_tweak import optimize_gc
 
 except ImportError:
-    print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
+    print("Failed to import Lib directory. Please ensure /Lib/* is present")
     sys.exit(1)
 
 # Default templates file - this will be created if it doesn't exist
@@ -952,23 +956,40 @@ def convert_real_world_time_to_sim_time(real_world_time):
 
 # --- SimConnect Lookup Functions ----------------------------------------------------------------
 def is_sim_running(min_runtime=120):
-    """Check if Microsoft Flight Simulator is running"""
-    now = time.time()  # Get current time
+    """Return True if an MSFS process has been running for at least min_runtime seconds."""
+    try:
+        cmd = (
+            'wmic process where "name like \'FlightSimulator%%.exe\'" '
+            'get Name,CreationDate,ProcessId /format:csv'
+        )
+        output = subprocess.check_output(cmd, shell=True).decode(errors="ignore").strip()
+    except subprocess.CalledProcessError:
+        return False
 
-    for process in psutil.process_iter(['name', 'create_time']):
-        process_name = process.info['name']
-        start_time = process.info.get('create_time', 0)
+    now = time.time()
+    reader = csv.DictReader(StringIO(output))
 
-        if process_name and process_name.lower().startswith("flightsimulator") \
-          and process_name.lower().endswith(".exe"):
-            runtime = now - start_time  # Calculate how long the process has been running
+    for row in reader:
+        name = row.get("Name", "").strip()
+        creation = row.get("CreationDate", "").split('.')[0].strip()
+        pid = row.get("ProcessId", "").strip()
 
-            if runtime >= min_runtime:
-                print_debug(f"Found MSFS process: {process_name} (Running for {runtime:.1f} sec)")
-                return True
-            else:
-                print_debug(f"Found MSFS process: {process_name}, "
-                            f"but only running for {runtime:.1f} sec (Waiting...)")
+        if not (name.startswith("FlightSimulator") and creation and pid.isdigit()):
+            continue
+
+        try:
+            start_time = time.mktime(time.strptime(creation, "%Y%m%d%H%M%S"))
+        except ValueError:
+            print(f"[ERROR] Could not parse creation time: {creation}")
+            continue
+
+        runtime = now - start_time
+        if runtime >= min_runtime:
+            print(f"Found MSFS process: {name} (PID: {pid}, Running for {runtime:.1f} sec)")
+            return True
+        else:
+            print(f"Found {name} (PID: {pid}), but only running for {runtime:.1f} sec (Waiting...)")
+            return False
 
     return False
 
@@ -983,8 +1004,8 @@ def initialize_simconnect():
         state.aircraft_requests = AircraftRequests(state.sim_connect, _time=10, _attemps=2)
         state.sim_connected = True
         print_debug("Sim is Connected")
-    except Exception:
-        print_debug("Sim could not connect")
+    except Exception as e:
+        print_debug(f"Sim could not connect {e}")
         state.sim_connected = False
 
 def is_simconnect_available() -> bool:
@@ -1701,10 +1722,11 @@ def main():
         ui_manager.template_handler.load_template_file()
 
         DarkmodeUtils.apply_dark_mode(root)
+        optimize_gc(allocs=10_000, show_data=True)
 
+        service_manager.start()     # Starts service tasks (background updater)
         state.start(root)           # Clocks user updates
         ui_manager.start()          # Clocks display updates
-        service_manager.start()     # Starts service tasks (background updater)
 
         root.mainloop()
     except ValueError as e:

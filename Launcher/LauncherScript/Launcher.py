@@ -19,6 +19,8 @@ import ctypes
 from threading import Lock
 
 import pstats
+
+import numpy as np
 from parse_ansi import AnsiParser
 
 import tkinter as tk
@@ -713,16 +715,22 @@ class ScriptTab(Tab):
 
 class PerfTab(Tab):
     """PerfTab - represents performance tab for monitoring performance of scripts"""
+
+    REFRESH_RATE_MS = 50
+    MA_WINDOW_SEC = 2
+    CALCULATED_MA_WINDOW = int((MA_WINDOW_SEC*1000) / REFRESH_RATE_MS)
+
     def __init__(self, title, process_tracker):
         super().__init__(title)
         self.process_tracker = process_tracker
         self.performance_metrics_open = True
         self.text_widget = None
         self.cpu_stats = {}
+        self.process_objects = {}
 
     def build_content(self):
         """Add widgets to the performance tab."""
-        self.text_widget = scrolledtext.ScrolledText(
+        self.text_widget = tk.Text(
             self.frame, wrap="word",
             bg=TEXT_WIDGET_BG_COLOR, fg=TEXT_WIDGET_FG_COLOR,
             insertbackground=TEXT_WIDGET_INSERT_COLOR
@@ -739,14 +747,20 @@ class PerfTab(Tab):
         metrics_text = self.generate_metrics_text()
         self.refresh_performance_metrics(metrics_text)
 
-        # Schedule the next update after 1000 ms (1 second)
-        self.frame.after(1000, self.start_monitoring)
+        # Schedule the next update
+        self.frame.after(self.REFRESH_RATE_MS, self.start_monitoring)
 
     def refresh_performance_metrics(self, text):
         """Refresh the performance metrics text widget."""
         if self.text_widget and self.text_widget.winfo_exists():
-            self.text_widget.delete('1.0', tk.END)
-            self.text_widget.insert(tk.END, text)
+            current_yview = self.text_widget.yview()  # Store current scroll position
+
+            # Replace all text but keep scroll position
+            self.text_widget.delete("1.0", tk.END)  # Clear old content
+            self.text_widget.insert("1.0", text)  # Insert new content at top
+
+            # Restore previous scroll position
+            self.text_widget.yview_moveto(current_yview[0])
 
     def generate_metrics_text(self):
         """Generate a text representation of performance metrics."""
@@ -755,8 +769,6 @@ class PerfTab(Tab):
 
         if not processes:
             return "No scripts are currently running."
-
-        total_cores = psutil.cpu_count(logical=True)
 
         # Ensure cpu_stats exists for tracking cumulative CPU stats
         if not hasattr(self, 'cpu_stats'):
@@ -768,38 +780,54 @@ class PerfTab(Tab):
 
             if process and process.pid:
                 try:
-                    proc = psutil.Process(process.pid)
+                    # Reuse existing process object if available, else create a new one
+                    if tab_id not in self.process_objects:
+                        self.process_objects[tab_id] = psutil.Process(process.pid)
+
+                    proc = self.process_objects[tab_id]
+
                     if proc.is_running():
                         # Initialize stats for new processes
                         if tab_id not in self.cpu_stats:
-                            self.cpu_stats[tab_id] = {"cumulative_cpu": 0, "count": 0}
+                            self.cpu_stats[tab_id] = {
+                                "cumulative_cpu": 0.0,
+                                "count": 0,
+                                "short_ma": RingMovingAverage(self.CALCULATED_MA_WINDOW)
+                            }
 
-                        # Calculate current CPU usage (normalized as a percentage of total cores)
-                        cpu_usage = proc.cpu_percent(interval=0.1) / total_cores
+                        # Calculate current CPU usage (non-blocking, reusing process object)
+                        cpu_usage = proc.cpu_percent(interval=None)
                         memory_usage = proc.memory_info().rss / (1024 ** 2)  # Convert to MB
 
                         # Update cumulative stats
                         self.cpu_stats[tab_id]["cumulative_cpu"] += cpu_usage
                         self.cpu_stats[tab_id]["count"] += 1
+                        self.cpu_stats[tab_id]["short_ma"].add(cpu_usage)
 
                         # Calculate average CPU usage
                         avg_cpu_usage = (
                             self.cpu_stats[tab_id]["cumulative_cpu"]
-                                / self.cpu_stats[tab_id]["count"]
+                            / self.cpu_stats[tab_id]["count"]
                         )
+
+                        short_ma = self.cpu_stats[tab_id]["short_ma"].get_average()
 
                         # Add metrics to the output
                         metrics.append(
                             f"Script: {script_name}\n"
                             f"  PID: {process.pid}\n"
-                            f"  Current CPU Usage: {cpu_usage:.2f}%\n"
+                            f"  Current CPU Usage: {short_ma:.2f}%\n"
                             f"  Average CPU Usage: {avg_cpu_usage:.2f}%\n"
                             f"  Memory Usage: {memory_usage:.2f} MB\n"
                         )
                     else:
                         metrics.append(f"Script: {script_name}\n  Status: Not Running\n")
+                        if tab_id in self.process_objects:
+                            del self.process_objects[tab_id]
                 except psutil.NoSuchProcess:
                     metrics.append(f"Script: {script_name}\n  Status: Terminated\n")
+                    if tab_id in self.process_objects:
+                        del self.process_objects[tab_id]
             else:
                 metrics.append(f"Script: {script_name}\n  Status: Not Running\n")
 
@@ -1944,6 +1972,24 @@ class ProcessTracker:
             }
             for tab_id, metadata in self.processes.items()
         }
+
+class RingMovingAverage:
+    """Used to calculate moving average with ring buffer"""
+    def __init__(self, window_size):
+        self.window_size = window_size
+        self.buffer = np.zeros(window_size, dtype=float)
+        self.index = 0
+        self.count = 0
+
+    def add(self, value):
+        """Add to moving average array"""
+        self.buffer[self.index] = value
+        self.index = (self.index + 1) % self.window_size
+        self.count = min(self.count + 1, self.window_size)
+
+    def get_average(self):
+        """Get calculated average"""
+        return np.mean(self.buffer[:self.count]) if self.count > 0 else 0.0
 
 def monitor_shutdown_pipe(pipe_name, shutdown_event):
     """Monitor the named pipe for shutdown signals and heartbeats."""

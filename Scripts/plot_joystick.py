@@ -18,8 +18,9 @@ try:
     # Import all color print functions
     from Lib.color_print import *
     from Lib.dark_mode import DarkmodeUtils
+    from Lib.gc_tweak import optimize_gc
 except ImportError:
-    print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
+    print("Failed to import 'Lib' directory. Please ensure Lib/* is present")
     sys.exit(1)
 
 class JoystickApp:
@@ -38,12 +39,22 @@ class JoystickApp:
         self.joystick_names = []
         self.joysticks = []
         self.trim_update_interval = 0.5
+        # Used to cache values from
         self.cached_trim_values = {
             "elevator_trim": 0,
             "aileron_trim": 0,
             "rotor_lateral_trim": 0,
             "rotor_longitudinal_trim": 0,
         }
+
+        # Used for comparison to prevent redraws
+        self.last_trim_values = {
+            "elevator_trim": 0.0,
+            "aileron_trim": 0.0,
+            "rotor_lateral_trim": 0.0,
+            "rotor_longitudinal_trim": 0.0,
+        }
+
         self.cache_lock = threading.Lock()
         self.scat = None
         self.elevator_trim_marker = None
@@ -54,6 +65,8 @@ class JoystickApp:
         self.menu = None
         self.fig, self.ax = None, None
 
+        self.last_joystick_pos = (0,0)
+
         # Load settings
         self.desired_joystick_name, self.window_position = self._load_settings()
 
@@ -63,6 +76,8 @@ class JoystickApp:
 
         # Load and configure joysticks
         self._load_joysticks()
+
+        optimize_gc(allocs=5000, gen1_factor=5, gen2_factor=5, freeze=False, show_data=True)
 
     def _load_joysticks(self):
         """Load joystick information and initialize the desired joystick."""
@@ -113,7 +128,7 @@ class JoystickApp:
         """Attempt to initialize SimConnect."""
         try:
             self.sm = SimConnect()
-            self.aq = AircraftRequests(self.sm)
+            self.aq = AircraftRequests(self.sm, _time=1, _attemps=2)
             print_info("Connected to SimConnect.")
         except Exception as e:
             print_error(f"SimConnect initialization failed: {e}")
@@ -149,59 +164,78 @@ class JoystickApp:
                     time.sleep(wait_interval+0.1)  # Sleep for the retry interval
             time.sleep(self.trim_update_interval)
 
-    def _update_plot(self, frame):
-        try:
-            if self.selected_joystick:
-                pygame.event.pump()
-                x = self.selected_joystick.get_axis(0)
-                y = self.selected_joystick.get_axis(1)
-            else:
-                x, y = 0, 0
-                self.coord_text.set_text("No Joy!\nRight-click to \nselect")
-                return self.scat, self.coord_text
+    def _update_plot(self):
+        # Capture the static background once
+        # If not already captured, do a full draw and save the background.
+        if not hasattr(self, 'static_background'):
+            self.fig.canvas.draw()  # full draw of static elements
+            self.static_background = self.fig.canvas.copy_from_bbox(self.fig.bbox)
 
-            self.scat.set_offsets([[x, y]])
+        # Get Input Data: joystick position
+        if self.selected_joystick:
+            pygame.event.pump()
+            new_x = self.selected_joystick.get_axis(0)
+            new_y = self.selected_joystick.get_axis(1)
+        else:
+            new_x, new_y = 0, 0
+            self.coord_text.set_text("No Joy!\nRight-click to \nselect")
+            self.fig.canvas.draw()
+            self.root.after(50, self._update_plot)
+            return
 
-            # Get current trim values
-            with self.cache_lock:
-                elevator_trim = self.cached_trim_values.get("elevator_trim", 0)
-                aileron_trim = self.cached_trim_values.get("aileron_trim", 0)
-                rotor_lateral_trim = self.cached_trim_values.get("rotor_lateral_trim", 0)
-                rotor_longitudinal_trim = self.cached_trim_values.get("rotor_longitudinal_trim", 0)
+        # Get Trim Values.
+        with self.cache_lock:
+            new_trim_values = {
+                "elevator_trim": self.cached_trim_values.get("elevator_trim", 0),
+                "aileron_trim": self.cached_trim_values.get("aileron_trim", 0),
+                "rotor_lateral_trim": self.cached_trim_values.get("rotor_lateral_trim", 0),
+                "rotor_longitudinal_trim": self.cached_trim_values.get("rotor_longitudinal_trim", 0),
+            }
 
-            # Determine mode (helicopter or airplane) based on trim values
-            threshold = 0.01
-            is_helicopter = (
-                abs(rotor_lateral_trim) > threshold or abs(rotor_longitudinal_trim) > threshold
-            )
+        # Skip update if nothing changed
+        if (new_x, new_y) == self.last_joystick_pos and new_trim_values == self.last_trim_values:
+            self.root.after(100, self._update_plot)
+            return
 
-            # Update visualization based on mode
-            if is_helicopter:
-                # Helicopter mode: Show rotor trim
-                self.elevator_trim_marker.set_ydata([rotor_longitudinal_trim] * 2)
-                self.elevator_trim_marker.set_xdata([-1.01, 1.01])
-                self.elevator_trim_marker.set_visible(abs(rotor_longitudinal_trim) > threshold)
+        # Save new state
+        self.last_joystick_pos = (new_x, new_y)
+        self.last_trim_values = new_trim_values.copy()
 
-                self.aileron_trim_marker.set_xdata([rotor_lateral_trim] * 2)
-                self.aileron_trim_marker.set_ydata([-1.01, 1.01])
-                self.aileron_trim_marker.set_visible(abs(rotor_lateral_trim) > threshold)
-            else:
-                # Airplane mode: Show elevator and aileron trim
-                self.elevator_trim_marker.set_ydata([elevator_trim] * 2)
-                self.elevator_trim_marker.set_xdata([-1.01, 1.01])
-                self.elevator_trim_marker.set_visible(abs(elevator_trim) > threshold)
+        # Update dynamic artists
+        # Update scatter for joystick position
+        self.scat.set_offsets([[new_x, new_y]])
 
-                self.aileron_trim_marker.set_xdata([aileron_trim] * 2)
-                self.aileron_trim_marker.set_ydata([-1.01, 1.01])
-                self.aileron_trim_marker.set_visible(abs(aileron_trim) > threshold)
+        # Determine aircraft mode based on trim values.
+        threshold = 0.01
+        is_helicopter = (abs(new_trim_values["rotor_lateral_trim"]) > threshold or
+                            abs(new_trim_values["rotor_longitudinal_trim"]) > threshold)
+        if is_helicopter:
+            self.elevator_trim_marker.set_ydata([new_trim_values["rotor_longitudinal_trim"]] * 2)
+            self.aileron_trim_marker.set_xdata([new_trim_values["rotor_lateral_trim"]] * 2)
+            self.elevator_trim_marker.set_visible(abs(new_trim_values["rotor_longitudinal_trim"]) > threshold)
+            self.aileron_trim_marker.set_visible(abs(new_trim_values["rotor_lateral_trim"]) > threshold)
+        else:
+            self.elevator_trim_marker.set_ydata([new_trim_values["elevator_trim"]] * 2)
+            self.aileron_trim_marker.set_xdata([new_trim_values["aileron_trim"]] * 2)
+            self.elevator_trim_marker.set_visible(abs(new_trim_values["elevator_trim"]) > threshold)
+            self.aileron_trim_marker.set_visible(abs(new_trim_values["aileron_trim"]) > threshold)
 
-            # Update coordinates display
-            self.coord_text.set_text(f"X: {x:>5.2f} Y: {y:>5.2f}")
-            return self.scat, self.coord_text, self.elevator_trim_marker, self.aileron_trim_marker
+        # Update coordinate text
+        new_coord_text = f"X: {new_x:>5.2f} Y: {new_y:>5.2f}"
+        self.coord_text.set_text(new_coord_text)
 
-        except Exception as e:
-            print_error(f"Joystick read failed: {e}")
-            return self.scat, self.coord_text
+        # Manual Blitting:
+        # Restore the static background
+        self.fig.canvas.restore_region(self.static_background)
+        # Redraw the updated dynamic artists
+        for artist in [self.scat, self.elevator_trim_marker, self.aileron_trim_marker, self.coord_text]:
+            self.fig.draw_artist(artist)
+        # Blit the updated region to the display
+        self.fig.canvas.blit(self.fig.bbox)
+        self.fig.canvas.flush_events()
+
+        # Schedule the next update.
+        self.root.after(50, self._update_plot)
 
     def _create_gui(self):
         self.root = tk.Tk()
@@ -246,8 +280,7 @@ class JoystickApp:
         self._initialize_simconnect()
         trim_thread = threading.Thread(target=self._fetch_trim_data, daemon=True)
         trim_thread.start()
-        ani = animation.FuncAnimation(self.fig, self._update_plot,
-                                      interval=50, blit=True, cache_frame_data=False)
+        self.root.after(50, self._update_plot)
         self.root.mainloop()
         pygame.quit()
 
