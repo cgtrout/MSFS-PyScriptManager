@@ -38,6 +38,8 @@ def optimize_gc(allocs: int = 50_000, gen1_factor: int = 2, gen2_factor: int = 2
     - gen1_factor (int): Multiplier for generation 1 threshold (default: 2x).
     - gen2_factor (int): Multiplier for generation 2 threshold (default: 2x).
     - freeze (bool): Whether to freeze the current GC state to avoid redundant checks.
+
+    Note: default Python GC values are 700, 10, 10
     """
     # Perform an initial garbage collection
     gc.collect(2)
