@@ -250,7 +250,7 @@ class VirtualPosPrinter:
             "spawn_position": (100, 100),
             "enable_popups": True,
             "play_sound": "../Data/receipt-printer-01-43872.mp3",
-            "play_volume": 0.25
+            "play_volume": 0.13
         }
 
         # Write default settings to file
