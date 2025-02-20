@@ -67,7 +67,7 @@ class JoystickApp:
         # Load and configure joysticks
         self._load_joysticks()
 
-        optimize_gc()
+        optimize_gc(allocs=5000, gen1_factor=5, gen2_factor=5, freeze=False, show_data=True)
 
     def _load_joysticks(self):
         """Load joystick information and initialize the desired joystick."""
