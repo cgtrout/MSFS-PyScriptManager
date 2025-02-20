@@ -181,7 +181,7 @@ class SimBriefSettings:
     username: str = ""
     use_adjusted_time: bool = False
     selected_time_option: Any = SimBriefTimeOption.EST_IN
-    allow_negative_timer: bool = False
+    allow_negative_timer: bool = True
     auto_update_enabled: bool = False
     gate_out_time: Optional[datetime] = None
 
