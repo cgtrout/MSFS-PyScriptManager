@@ -39,12 +39,22 @@ class JoystickApp:
         self.joystick_names = []
         self.joysticks = []
         self.trim_update_interval = 0.5
+        # Used to cache values from
         self.cached_trim_values = {
             "elevator_trim": 0,
             "aileron_trim": 0,
             "rotor_lateral_trim": 0,
             "rotor_longitudinal_trim": 0,
         }
+
+        # Used for comparison to prevent redraws
+        self.last_trim_values = {
+            "elevator_trim": 0.0,
+            "aileron_trim": 0.0,
+            "rotor_lateral_trim": 0.0,
+            "rotor_longitudinal_trim": 0.0,
+        }
+
         self.cache_lock = threading.Lock()
         self.scat = None
         self.elevator_trim_marker = None
@@ -118,7 +128,7 @@ class JoystickApp:
         """Attempt to initialize SimConnect."""
         try:
             self.sm = SimConnect()
-            self.aq = AircraftRequests(self.sm)
+            self.aq = AircraftRequests(self.sm, _time=1, _attemps=2)
             print_info("Connected to SimConnect.")
         except Exception as e:
             print_error(f"SimConnect initialization failed: {e}")
@@ -154,87 +164,74 @@ class JoystickApp:
                     time.sleep(wait_interval+0.1)  # Sleep for the retry interval
             time.sleep(self.trim_update_interval)
 
-    def _update_plot(self, frame):
+    def _update_plot(self):
         try:
             # Get joystick coordinates or show a message if no joystick is selected.
             if self.selected_joystick:
                 pygame.event.pump()
-                x = self.selected_joystick.get_axis(0)
-                y = self.selected_joystick.get_axis(1)
+                new_x = self.selected_joystick.get_axis(0)
+                new_y = self.selected_joystick.get_axis(1)
             else:
-                x, y = 0, 0
+                new_x, new_y = 0, 0
                 self.coord_text.set_text("No Joy!\nRight-click to \nselect")
-                return [self.scat, self.coord_text]
-
-            # Update scatter plot if the joystick position has changed.
-            if (x, y) != getattr(self, "last_joystick_pos", (None, None)):
-                self.scat.set_offsets([[x, y]])
-                self.last_joystick_pos = (x, y)
+                self.fig.canvas.draw_idle()
+                self.root.after(50, self._update_plot)
+                return
 
             # Get current trim values
             with self.cache_lock:
-                elevator_trim = self.cached_trim_values.get("elevator_trim", 0)
-                aileron_trim = self.cached_trim_values.get("aileron_trim", 0)
-                rotor_lateral_trim = self.cached_trim_values.get("rotor_lateral_trim", 0)
-                rotor_longitudinal_trim = self.cached_trim_values.get("rotor_longitudinal_trim", 0)
+                new_trim_values = {
+                    "elevator_trim": self.cached_trim_values.get("elevator_trim", 0),
+                    "aileron_trim": self.cached_trim_values.get("aileron_trim", 0),
+                    "rotor_lateral_trim": self.cached_trim_values.get("rotor_lateral_trim", 0),
+                    "rotor_longitudinal_trim": self.cached_trim_values.get("rotor_longitudinal_trim", 0),
+                }
+
+            # Skip update if nothing changed
+            if (new_x, new_y) == self.last_joystick_pos and new_trim_values == self.last_trim_values:
+                self.root.after(50, self._update_plot)
+                return
+
+            # Store the new state
+            self.last_joystick_pos = (new_x, new_y)
+            self.last_trim_values = new_trim_values.copy()
+
+            # Update scatter plot for joystick movement
+            self.scat.set_offsets([[new_x, new_y]])
 
             # Determine mode (helicopter or airplane) based on trim values
             threshold = 0.01
             is_helicopter = (
-                abs(rotor_lateral_trim) > threshold or abs(rotor_longitudinal_trim) > threshold
+                abs(new_trim_values["rotor_lateral_trim"]) > threshold or
+                abs(new_trim_values["rotor_longitudinal_trim"]) > threshold
             )
 
-            updated_elements = [self.scat]
-
-            # Update visualization based on mode
+            # Update markers based on mode and update their visibility
             if is_helicopter:
-                # Helicopter Mode - Update only if values change
-                if getattr(self, "last_rotor_longitudinal_trim", None) != rotor_longitudinal_trim:
-                    self.elevator_trim_marker.set_ydata([rotor_longitudinal_trim] * 2)
-                    self.last_rotor_longitudinal_trim = rotor_longitudinal_trim
-                    updated_elements.append(self.elevator_trim_marker)
-
-                if getattr(self, "last_rotor_lateral_trim", None) != rotor_lateral_trim:
-                    self.aileron_trim_marker.set_xdata([rotor_lateral_trim] * 2)
-                    self.last_rotor_lateral_trim = rotor_lateral_trim
-                desired_elevator_visible = abs(rotor_longitudinal_trim) > threshold
-                desired_aileron_visible = abs(rotor_lateral_trim) > threshold
+                # Helicopter Mode: use rotor trim values
+                self.elevator_trim_marker.set_ydata([new_trim_values["rotor_longitudinal_trim"]] * 2)
+                self.aileron_trim_marker.set_xdata([new_trim_values["rotor_lateral_trim"]] * 2)
+                self.elevator_trim_marker.set_visible(abs(new_trim_values["rotor_longitudinal_trim"]) > threshold)
+                self.aileron_trim_marker.set_visible(abs(new_trim_values["rotor_lateral_trim"]) > threshold)
             else:
-                if getattr(self, "last_elevator_trim", None) != elevator_trim:
-                    self.elevator_trim_marker.set_ydata([elevator_trim] * 2)
-                    self.last_elevator_trim = elevator_trim
-                if getattr(self, "last_aileron_trim", None) != aileron_trim:
-                    self.aileron_trim_marker.set_xdata([aileron_trim] * 2)
-                    self.last_aileron_trim = aileron_trim
-                desired_elevator_visible = abs(elevator_trim) > threshold
-                desired_aileron_visible = abs(aileron_trim) > threshold
+                # Airplane Mode: use standard trim values
+                self.elevator_trim_marker.set_ydata([new_trim_values["elevator_trim"]] * 2)
+                self.aileron_trim_marker.set_xdata([new_trim_values["aileron_trim"]] * 2)
+                self.elevator_trim_marker.set_visible(abs(new_trim_values["elevator_trim"]) > threshold)
+                self.aileron_trim_marker.set_visible(abs(new_trim_values["aileron_trim"]) > threshold)
 
-            # Helper function to update visibility.
-            def update_visibility(marker, desired_visible):
-                if marker.get_visible() != desired_visible:
-                    marker.set_visible(desired_visible)
-                # Always return the marker if it's visible.
-                return marker if marker.get_visible() else None
+            # Update coordinate text.
+            new_coord_text = f"X: {new_x:>5.2f} Y: {new_y:>5.2f}"
+            self.coord_text.set_text(new_coord_text)
 
-            e_marker = update_visibility(self.elevator_trim_marker, desired_elevator_visible)
-            a_marker = update_visibility(self.aileron_trim_marker, desired_aileron_visible)
-            if e_marker is not None and e_marker not in updated_elements:
-                updated_elements.append(e_marker)
-            if a_marker is not None and a_marker not in updated_elements:
-                updated_elements.append(a_marker)
-
-            # Update the coordinate text.
-            new_coord_text = f"X: {x:>5.2f} Y: {y:>5.2f}"
-            if self.coord_text.get_text() != new_coord_text:
-                self.coord_text.set_text(new_coord_text)
-            if self.coord_text not in updated_elements:
-                updated_elements.append(self.coord_text)
-
-            return updated_elements
+            # Manually trigger a redraw of the canvas
+            self.fig.canvas.draw_idle()
 
         except Exception as e:
             print_error(f"Joystick read failed: {e}")
-            return [self.scat, self.coord_text]
+
+        # Schedule the next update call
+        self.root.after(50, self._update_plot)
 
     def _create_gui(self):
         self.root = tk.Tk()
@@ -281,6 +278,7 @@ class JoystickApp:
         trim_thread.start()
         ani = animation.FuncAnimation(self.fig, self._update_plot,
                                       interval=50, blit=True, cache_frame_data=False)
+        self.root.after(50, self._update_plot)
         self.root.mainloop()
         pygame.quit()
 
