@@ -265,6 +265,9 @@ class VirtualPosPrinter:
         self.settings["spawn_position"] = (x, y)
         self.spawn_position = (x, y)
 
+        # Reset active windows to ensure cascading starts from new position
+        self.active_windows.clear()
+
         with open(SETTINGS_FILE, 'w', encoding="utf-8") as f:
             json.dump(self.settings, f, indent=4)
         messagebox.showinfo("Position Set", f"Spawn position set to: {x}, {y}")
@@ -310,7 +313,8 @@ class VirtualPosPrinter:
         def on_close():
             """Close the popup window on right-click."""
             window.focus_force()
-            self.active_windows.remove((new_x, new_y))
+            if (new_x, new_y) in self.active_windows:
+                self.active_windows.remove((new_x, new_y))
             window.destroy()
 
         window.bind("<ButtonRelease-3>", lambda event: on_close())
