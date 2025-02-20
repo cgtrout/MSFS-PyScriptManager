@@ -276,8 +276,6 @@ class JoystickApp:
         self._initialize_simconnect()
         trim_thread = threading.Thread(target=self._fetch_trim_data, daemon=True)
         trim_thread.start()
-        ani = animation.FuncAnimation(self.fig, self._update_plot,
-                                      interval=50, blit=True, cache_frame_data=False)
         self.root.after(50, self._update_plot)
         self.root.mainloop()
         pygame.quit()
