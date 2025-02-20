@@ -165,72 +165,76 @@ class JoystickApp:
             time.sleep(self.trim_update_interval)
 
     def _update_plot(self):
-        try:
-            # Get joystick coordinates or show a message if no joystick is selected.
-            if self.selected_joystick:
-                pygame.event.pump()
-                new_x = self.selected_joystick.get_axis(0)
-                new_y = self.selected_joystick.get_axis(1)
-            else:
-                new_x, new_y = 0, 0
-                self.coord_text.set_text("No Joy!\nRight-click to \nselect")
-                self.fig.canvas.draw_idle()
-                self.root.after(50, self._update_plot)
-                return
+        # Capture the static background once
+        # If not already captured, do a full draw and save the background.
+        if not hasattr(self, 'static_background'):
+            self.fig.canvas.draw()  # full draw of static elements
+            self.static_background = self.fig.canvas.copy_from_bbox(self.fig.bbox)
 
-            # Get current trim values
-            with self.cache_lock:
-                new_trim_values = {
-                    "elevator_trim": self.cached_trim_values.get("elevator_trim", 0),
-                    "aileron_trim": self.cached_trim_values.get("aileron_trim", 0),
-                    "rotor_lateral_trim": self.cached_trim_values.get("rotor_lateral_trim", 0),
-                    "rotor_longitudinal_trim": self.cached_trim_values.get("rotor_longitudinal_trim", 0),
-                }
+        # Get Input Data: joystick position
+        if self.selected_joystick:
+            pygame.event.pump()
+            new_x = self.selected_joystick.get_axis(0)
+            new_y = self.selected_joystick.get_axis(1)
+        else:
+            new_x, new_y = 0, 0
+            self.coord_text.set_text("No Joy!\nRight-click to \nselect")
+            self.fig.canvas.draw()
+            self.root.after(50, self._update_plot)
+            return
 
-            # Skip update if nothing changed
-            if (new_x, new_y) == self.last_joystick_pos and new_trim_values == self.last_trim_values:
-                self.root.after(50, self._update_plot)
-                return
+        # Get Trim Values.
+        with self.cache_lock:
+            new_trim_values = {
+                "elevator_trim": self.cached_trim_values.get("elevator_trim", 0),
+                "aileron_trim": self.cached_trim_values.get("aileron_trim", 0),
+                "rotor_lateral_trim": self.cached_trim_values.get("rotor_lateral_trim", 0),
+                "rotor_longitudinal_trim": self.cached_trim_values.get("rotor_longitudinal_trim", 0),
+            }
 
-            # Store the new state
-            self.last_joystick_pos = (new_x, new_y)
-            self.last_trim_values = new_trim_values.copy()
+        # Skip update if nothing changed
+        if (new_x, new_y) == self.last_joystick_pos and new_trim_values == self.last_trim_values:
+            self.root.after(100, self._update_plot)
+            return
 
-            # Update scatter plot for joystick movement
-            self.scat.set_offsets([[new_x, new_y]])
+        # Save new state
+        self.last_joystick_pos = (new_x, new_y)
+        self.last_trim_values = new_trim_values.copy()
 
-            # Determine mode (helicopter or airplane) based on trim values
-            threshold = 0.01
-            is_helicopter = (
-                abs(new_trim_values["rotor_lateral_trim"]) > threshold or
-                abs(new_trim_values["rotor_longitudinal_trim"]) > threshold
-            )
+        # Update dynamic artists
+        # Update scatter for joystick position
+        self.scat.set_offsets([[new_x, new_y]])
 
-            # Update markers based on mode and update their visibility
-            if is_helicopter:
-                # Helicopter Mode: use rotor trim values
-                self.elevator_trim_marker.set_ydata([new_trim_values["rotor_longitudinal_trim"]] * 2)
-                self.aileron_trim_marker.set_xdata([new_trim_values["rotor_lateral_trim"]] * 2)
-                self.elevator_trim_marker.set_visible(abs(new_trim_values["rotor_longitudinal_trim"]) > threshold)
-                self.aileron_trim_marker.set_visible(abs(new_trim_values["rotor_lateral_trim"]) > threshold)
-            else:
-                # Airplane Mode: use standard trim values
-                self.elevator_trim_marker.set_ydata([new_trim_values["elevator_trim"]] * 2)
-                self.aileron_trim_marker.set_xdata([new_trim_values["aileron_trim"]] * 2)
-                self.elevator_trim_marker.set_visible(abs(new_trim_values["elevator_trim"]) > threshold)
-                self.aileron_trim_marker.set_visible(abs(new_trim_values["aileron_trim"]) > threshold)
+        # Determine aircraft mode based on trim values.
+        threshold = 0.01
+        is_helicopter = (abs(new_trim_values["rotor_lateral_trim"]) > threshold or
+                            abs(new_trim_values["rotor_longitudinal_trim"]) > threshold)
+        if is_helicopter:
+            self.elevator_trim_marker.set_ydata([new_trim_values["rotor_longitudinal_trim"]] * 2)
+            self.aileron_trim_marker.set_xdata([new_trim_values["rotor_lateral_trim"]] * 2)
+            self.elevator_trim_marker.set_visible(abs(new_trim_values["rotor_longitudinal_trim"]) > threshold)
+            self.aileron_trim_marker.set_visible(abs(new_trim_values["rotor_lateral_trim"]) > threshold)
+        else:
+            self.elevator_trim_marker.set_ydata([new_trim_values["elevator_trim"]] * 2)
+            self.aileron_trim_marker.set_xdata([new_trim_values["aileron_trim"]] * 2)
+            self.elevator_trim_marker.set_visible(abs(new_trim_values["elevator_trim"]) > threshold)
+            self.aileron_trim_marker.set_visible(abs(new_trim_values["aileron_trim"]) > threshold)
 
-            # Update coordinate text.
-            new_coord_text = f"X: {new_x:>5.2f} Y: {new_y:>5.2f}"
-            self.coord_text.set_text(new_coord_text)
+        # Update coordinate text
+        new_coord_text = f"X: {new_x:>5.2f} Y: {new_y:>5.2f}"
+        self.coord_text.set_text(new_coord_text)
 
-            # Manually trigger a redraw of the canvas
-            self.fig.canvas.draw_idle()
+        # Manual Blitting:
+        # Restore the static background
+        self.fig.canvas.restore_region(self.static_background)
+        # Redraw the updated dynamic artists
+        for artist in [self.scat, self.elevator_trim_marker, self.aileron_trim_marker, self.coord_text]:
+            self.fig.draw_artist(artist)
+        # Blit the updated region to the display
+        self.fig.canvas.blit(self.fig.bbox)
+        self.fig.canvas.flush_events()
 
-        except Exception as e:
-            print_error(f"Joystick read failed: {e}")
-
-        # Schedule the next update call
+        # Schedule the next update.
         self.root.after(50, self._update_plot)
 
     def _create_gui(self):
