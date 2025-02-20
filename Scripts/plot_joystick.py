@@ -156,6 +156,7 @@ class JoystickApp:
 
     def _update_plot(self, frame):
         try:
+            # Get joystick coordinates or show a message if no joystick is selected.
             if self.selected_joystick:
                 pygame.event.pump()
                 x = self.selected_joystick.get_axis(0)
@@ -163,11 +164,9 @@ class JoystickApp:
             else:
                 x, y = 0, 0
                 self.coord_text.set_text("No Joy!\nRight-click to \nselect")
-                return self.scat, self.coord_text
+                return [self.scat, self.coord_text]
 
-            self.scat.set_offsets([[x, y]])
-
-            # Cache previous joystick position to avoid redundant updates
+            # Update scatter plot if the joystick position has changed.
             if (x, y) != getattr(self, "last_joystick_pos", (None, None)):
                 self.scat.set_offsets([[x, y]])
                 self.last_joystick_pos = (x, y)
@@ -198,38 +197,44 @@ class JoystickApp:
                 if getattr(self, "last_rotor_lateral_trim", None) != rotor_lateral_trim:
                     self.aileron_trim_marker.set_xdata([rotor_lateral_trim] * 2)
                     self.last_rotor_lateral_trim = rotor_lateral_trim
-                    updated_elements.append(self.aileron_trim_marker)
+                desired_elevator_visible = abs(rotor_longitudinal_trim) > threshold
+                desired_aileron_visible = abs(rotor_lateral_trim) > threshold
             else:
-                # Airplane Mode - Update only if values change
                 if getattr(self, "last_elevator_trim", None) != elevator_trim:
                     self.elevator_trim_marker.set_ydata([elevator_trim] * 2)
                     self.last_elevator_trim = elevator_trim
-                    updated_elements.append(self.elevator_trim_marker)
-
                 if getattr(self, "last_aileron_trim", None) != aileron_trim:
                     self.aileron_trim_marker.set_xdata([aileron_trim] * 2)
                     self.last_aileron_trim = aileron_trim
-                    updated_elements.append(self.aileron_trim_marker)
+                desired_elevator_visible = abs(elevator_trim) > threshold
+                desired_aileron_visible = abs(aileron_trim) > threshold
 
-            # Ensure visibility updates only when necessary
-            def update_visibility(marker, condition):
-                if marker.get_visible() != condition:
-                    marker.set_visible(condition)
-                    updated_elements.append(marker)
+            # Helper function to update visibility.
+            def update_visibility(marker, desired_visible):
+                if marker.get_visible() != desired_visible:
+                    marker.set_visible(desired_visible)
+                # Always return the marker if it's visible.
+                return marker if marker.get_visible() else None
 
-            update_visibility(self.elevator_trim_marker, is_helicopter and abs(rotor_longitudinal_trim) > threshold)
-            update_visibility(self.aileron_trim_marker, is_helicopter and abs(rotor_lateral_trim) > threshold)
+            e_marker = update_visibility(self.elevator_trim_marker, desired_elevator_visible)
+            a_marker = update_visibility(self.aileron_trim_marker, desired_aileron_visible)
+            if e_marker is not None and e_marker not in updated_elements:
+                updated_elements.append(e_marker)
+            if a_marker is not None and a_marker not in updated_elements:
+                updated_elements.append(a_marker)
 
-            # Update coordinates display only when joystick position changes
+            # Update the coordinate text.
             new_coord_text = f"X: {x:>5.2f} Y: {y:>5.2f}"
             if self.coord_text.get_text() != new_coord_text:
-             self.coord_text.set_text(new_coord_text)
+                self.coord_text.set_text(new_coord_text)
+            if self.coord_text not in updated_elements:
+                updated_elements.append(self.coord_text)
 
-            return updated_elements  # Return only updated elements
+            return updated_elements
 
         except Exception as e:
             print_error(f"Joystick read failed: {e}")
-            return self.scat, self.coord_text
+            return [self.scat, self.coord_text]
 
     def _create_gui(self):
         self.root = tk.Tk()
