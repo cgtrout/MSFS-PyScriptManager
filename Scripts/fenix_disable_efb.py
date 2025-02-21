@@ -27,11 +27,6 @@ def main():
         # Initialize Mobiflight connection
         mobiflight = MobiflightConnection(client_name="fenix_disable_efb")
         mobiflight.connect()
-        mf_requests = mobiflight.get_request_handler()
-
-        # Prime the library
-        altitude = mf_requests.get("(A:PLANE ALTITUDE,Feet)")
-        print_info(f"Primed with altitude: {altitude}")
 
         # Wait for the required LVAR before proceeding
         mobiflight.wait_for_lvar("L:S_OH_ELEC_EXT_PWR")

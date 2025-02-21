@@ -170,10 +170,6 @@ def main():
         mobiflight = MobiflightConnection(client_name="fenix_set_lighting_defaults")
         mobiflight.connect()
 
-        # Prime the library by reading the altitude
-        altitude = mobiflight.get("(A:PLANE ALTITUDE,Feet)")
-        print_info(f"Primed with altitude: {altitude}")
-
         # Wait for the required LVAR (ground power) to be active
         mobiflight.wait_for_lvar(DEFAULT_WAIT_LVAR, DEFAULT_WAIT_VALUE)
 

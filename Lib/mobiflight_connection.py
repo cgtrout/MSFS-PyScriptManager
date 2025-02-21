@@ -25,6 +25,10 @@ class MobiflightConnection:
                 self.sm = SimConnectMobiFlight()
                 self.mf_requests = MobiFlightVariableRequests(self.sm, self.client_name)
                 self.mf_requests.clear_sim_variables()
+
+                # Prime the library - possibly necessary to ensure the connection works properly
+                altitude = self.mf_requests.get("(A:PLANE ALTITUDE,Feet)")
+                print(f"Primed with altitude: {altitude}")
                 print_info("Successfully connected to Flight Simulator.")
                 return
             except ConnectionError as e:
