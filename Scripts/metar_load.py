@@ -369,7 +369,7 @@ def find_best_metar(metar_dict):
     # Sort METARs by timestamp
     sorted_metars = sorted(metar_dict.items(), key=lambda item: item[0])
 
-    print_color("METAR List (Sorted):", color="yellow")
+    print_debug("METAR List (Sorted):")
     for metar_time, metar in sorted_metars:
         print_debug(f"METAR: {metar_time} - {metar}")
 
@@ -390,7 +390,7 @@ def find_best_metar(metar_dict):
         time: metar for time, metar in metar_dict.items() if time <= simulator_time + grace_period
     }
 
-    print_color("Valid METAR List (Filtered):", color="cyan")
+    print_debug("Valid METAR List (Filtered):")
     for metar_time, metar in valid_metars.items():
         print_debug(f"Valid METAR: {metar_time} - {metar}")
 
@@ -402,8 +402,8 @@ def find_best_metar(metar_dict):
     closest_time = max(valid_metars.keys())  # The closest valid METAR will have the largest timestamp <= simulator_time
     closest_metar = valid_metars[closest_time]
 
-    print_color("Closest METAR Found:", color="green")
-    print_debug(f"METAR: {closest_metar} at {closest_time}")
+    print_info("Closest METAR Found:")
+    print_info(f"METAR: {closest_metar} at {closest_time}")
 
     return closest_metar
 
