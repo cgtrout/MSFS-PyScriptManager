@@ -2373,7 +2373,7 @@ class TemplateHandler:
             }
 
             # Debug: Log the filtered globals being injected, grouping functions properly
-            self._print_sorted_globals(relevant_globals)
+            #self._print_sorted_globals(relevant_globals)
 
             # Inject filtered globals into the template module
             templates_module.__dict__.update(relevant_globals)
