@@ -1700,7 +1700,7 @@ def main():
         ui_manager.template_handler.load_template_file()
 
         DarkmodeUtils.apply_dark_mode(root)
-        optimize_gc(allocs=10_000, show_data=True)
+        optimize_gc(allocs=10_000, show_data=False)
 
         service_manager.start()     # Starts service tasks (background updater)
         state.start(root)           # Clocks user updates
