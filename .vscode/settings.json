@@ -1,0 +1,6 @@
+{
+    "python.envFile": "${workspaceFolder}/.vscode/.env",
+    "terminal.integrated.env.windows": {
+        "PATH": "${workspaceFolder}/WinPython/python-3.13.0rc1.amd64;${env:PATH}"
+    }
+}

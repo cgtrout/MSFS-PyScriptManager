@@ -1,14 +1,18 @@
-# fenix_radio.py: shows draggable radio panel on screen showing currently set radio channels on RMP1.  
+"""
+fenix_radio.py: shows draggable radio panel on screen showing currently set radio channels on RMP1.
+"""
+import os
 
 import tkinter as tk
 import json
 import os
 from time import sleep
 from PIL import Image, ImageDraw, ImageFont, ImageTk
-from simconnect_mobiflight.mobiflight_variable_requests import MobiFlightVariableRequests
-from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
-import logging
 from threading import Thread
+import logging
+
+# Import the new connection library instead of doing manual connection below
+from Lib.mobiflight_connection import MobiflightConnection
 
 # Set the SimConnect logging level to ERROR to suppress warnings
 logging.getLogger("SimConnect.SimConnect").setLevel(logging.ERROR)
@@ -25,6 +29,8 @@ font_increment = 1
 min_font_size = 10
 max_font_size = 100
 font_size = initial_font_size
+
+
 
 # Function to load settings from JSON file
 def load_settings():
@@ -64,30 +70,50 @@ def create_lcd_text_image(text, font_size, fg_color="#FFDDAA", bg_color="#0D0705
     draw.rounded_rectangle([(0, 0), (text_width + padding * 2, text_height + padding)], radius=radius, fill=bg_color)
     y_offset = padding // 2
     draw.text((padding, y_offset), text, font=font, fill=fg_color)
-    
+
     return ImageTk.PhotoImage(image)
+
+def set_and_get_lvar(mf_requests, lvar, value):
+    """Sets an LVAR to a specified value and retrieves the updated value."""
+    req_str = f"{value} (> {lvar})"
+    mf_requests.set(req_str)
+    result = mf_requests.get(f"{lvar}")
+    print(f"{lvar} set to {value}. Current value: {result}")
+    return result
 
 # Function to fetch and update frequency values for RMP1
 def fetch_values(mf_requests, label_active_value, label_stby_value):
+    # Keep track of the last displayed text values to avoid unnecessary updates
+    last_active_text = None
+    last_standby_text = None
+
     while True:
         # Fetch the active and standby values for RMP1
         active_value_raw = mf_requests.get(RMP1_ACTIVE)
         standby_value_raw = mf_requests.get(RMP1_STDBY)
 
-        # Format the values as frequencies
-        active_value = f"{active_value_raw / 1000:.3f}"
-        standby_value = f"{standby_value_raw / 1000:.3f}"
+        if active_value_raw is None or standby_value_raw is None:
+            print("fetch_values: pulled values are invalid")
+        else:
+            # Format the values as frequencies
+            active_value = f"{active_value_raw / 1000:.3f}"
+            standby_value = f"{standby_value_raw / 1000:.3f}"
 
-        # Update the labels with the new images
-        active_image = create_lcd_text_image(active_value, font_size)
-        standby_image = create_lcd_text_image(standby_value, font_size)
-        label_active_value.config(image=active_image)
-        label_active_value.image = active_image
-        label_stby_value.config(image=standby_image)
-        label_stby_value.image = standby_image
+            # Update only if the displayed text has changed
+            if active_value != last_active_text:
+                active_image = create_lcd_text_image(active_value, font_size)
+                label_active_value.config(image=active_image)
+                label_active_value.image = active_image
+                last_active_text = active_value
+
+            if standby_value != last_standby_text:
+                standby_image = create_lcd_text_image(standby_value, font_size)
+                label_stby_value.config(image=standby_image)
+                label_stby_value.image = standby_image
+                last_standby_text = standby_value
 
         # Delay before the next update
-        sleep(1/60)
+        sleep(1/20)
 
 # Function to make the window draggable and save position on move
 def make_draggable(widget):
@@ -118,70 +144,66 @@ def resize(event, window, labels):
     labels['label_arrow'].config(font=("Arial", int(font_size / 3), "bold"))
     labels['label_stby'].config(font=("Arial", int(font_size / 3), "bold"))
 
-    active_value = labels['label_active_value'].cget("text")
-    standby_value = labels['label_stby_value'].cget("text")
-    labels['label_active_value'].config(image=create_lcd_text_image(active_value, font_size))
-    labels['label_stby_value'].config(image=create_lcd_text_image(standby_value, font_size))
-
+    # The images will be updated on the next fetch_values cycle.
     save_settings(font_size, {"x": window.winfo_x(), "y": window.winfo_y()})
 
 # Main function to set up SimConnect and the GUI window
 def main():
-    global font_size
+    try:
+        settings = load_settings()
+        # Retrieve saved font size and window position
+        global font_size
+        font_size = settings.get("font_size", initial_font_size)
+        position = settings.get("position", {"x": 0, "y": 0})
 
-    settings = load_settings()
-    font_size = settings.get("font_size", initial_font_size)
-    position = settings.get("position", {"x": 0, "y": 0})
+        # Use the new connection library to initialize SimConnect and the Mobiflight variable requests
+        mobiflight = MobiflightConnection(client_name="fenix_radio")
+        mobiflight.connect()
+        mf_requests = mobiflight.get_request_handler()
 
-    # Initialize SimConnect and MobiFlightVariableRequests
-    sm = SimConnectMobiFlight()
-    mf_requests = MobiFlightVariableRequests(sm)
+        # Set up the tkinter window
+        window = tk.Tk()
+        window.overrideredirect(True)
+        window.configure(bg="black")
+        window.attributes("-topmost", True)
 
-    # Altitude priming step
-    altitude = mf_requests.get("(A:PLANE ALTITUDE,Feet)")
+        # Active and Standby labels to resemble panel style
+        label_active = tk.Label(window, text="ACTIVE", fg="#FFD700", bg="black", font=("Arial", int(font_size / 3), "bold"))
+        label_arrow = tk.Label(window, text="↔", fg="green", bg="black", font=("Arial", int(font_size / 3), "bold"))
+        label_stby = tk.Label(window, text="STBY/CRS", fg="#FFD700", bg="black", font=("Arial", int(font_size / 3), "bold"))
+        label_active_value = tk.Label(window, bg="black")
+        label_stby_value = tk.Label(window, bg="black")
 
-    # Set up the tkinter window
-    window = tk.Tk()
-    window.overrideredirect(True)
-    window.configure(bg="black")
-    window.attributes("-topmost", True)
+        # Arrange labels in grid to mimic the panel layout
+        label_active.grid(row=0, column=0, padx=1, pady=1)
+        label_active_value.grid(row=1, column=0, padx=1, pady=1)
+        label_arrow.grid(row=1, column=1, padx=1, pady=1)
+        label_stby.grid(row=0, column=2, padx=1, pady=1)
+        label_stby_value.grid(row=1, column=2, padx=1, pady=1)
 
-    # Active and Standby labels to resemble panel style
-    label_active = tk.Label(window, text="ACTIVE", fg="#FFD700", bg="black", font=("Arial", int(font_size / 3), "bold"))
-    label_arrow = tk.Label(window, text="↔", fg="green", bg="black", font=("Arial", int(font_size / 3), "bold"))
-    label_stby = tk.Label(window, text="STBY/CRS", fg="#FFD700", bg="black", font=("Arial", int(font_size / 3), "bold"))
+        labels = {
+            'label_active': label_active,
+            'label_active_value': label_active_value,
+            'label_arrow': label_arrow,
+            'label_stby': label_stby,
+            'label_stby_value': label_stby_value
+        }
 
-    label_active_value = tk.Label(window, bg="black")
-    label_stby_value = tk.Label(window, bg="black")
+        # Position the window based on saved settings
+        window.geometry(f"+{position['x']}+{position['y']}")
+        make_draggable(window)
 
-    # Arrange labels in grid to mimic the panel layout
-    label_active.grid(row=0, column=0, padx=1, pady=1)
-    label_active_value.grid(row=1, column=0, padx=1, pady=1)
-    label_arrow.grid(row=1, column=1, padx=1, pady=1)
-    label_stby.grid(row=0, column=2, padx=1, pady=1)
-    label_stby_value.grid(row=1, column=2, padx=1, pady=1)
+        # Bind mouse wheel for resizing and right-click to close the window
+        window.bind("<MouseWheel>", lambda event: resize(event, window, labels))
+        window.bind("<Button-3>", lambda event: window.destroy())
 
-    labels = {
-        'label_active': label_active,
-        'label_active_value': label_active_value,
-        'label_arrow': label_arrow,
-        'label_stby': label_stby,
-        'label_stby_value': label_stby_value
-    }
+        # Start a thread to continuously update the radio frequency values
+        fetch_thread = Thread(target=fetch_values, args=(mf_requests, label_active_value, label_stby_value), daemon=True)
+        fetch_thread.start()
 
-    # Position the window based on saved position
-    window.geometry(f"+{position['x']}+{position['y']}")
-    make_draggable(window)
-
-    # Bind mouse wheel for resizing and right-click for closing
-    window.bind("<MouseWheel>", lambda event: resize(event, window, labels))
-    window.bind("<Button-3>", lambda event: window.destroy())  # Right-click to close
-
-    # Start a thread to continuously update values without blocking the GUI
-    fetch_thread = Thread(target=fetch_values, args=(mf_requests, label_active_value, label_stby_value), daemon=True)
-    fetch_thread.start()
-
-    window.mainloop()
+        window.mainloop()
+    except Exception as e:
+        print(f"fenix_radio ERROR: {e}")
 
 if __name__ == "__main__":
     main()

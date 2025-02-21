@@ -1,8 +1,13 @@
+# fbw_a380_checklist - allows control of FBW A380 ECAM checklist using shift+arrow keys
+
+import logging
 import keyboard  # For global key detection
 import pygetwindow as gw  # For window detection
-from simconnect_mobiflight.mobiflight_variable_requests import MobiFlightVariableRequests
-from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
+from Lib.mobiflight_connection import MobiflightConnection
 from time import sleep
+
+# Disable warnings - still shows errors
+logging.getLogger("SimConnect.SimConnect").setLevel(logging.ERROR)
 
 # Constants for LVARs (Logical Variables)
 LVAR_CHECKLIST_CONFIRM = "L:A32NX_BTN_CHECK_LH"  # Confirms checklist item
@@ -34,9 +39,12 @@ def is_msfs_active():
 
 def main():
     try:
-        # Initialize the SimConnect connection
-        sm = SimConnectMobiFlight()
-        mf_requests = MobiFlightVariableRequests(sm)
+        mobiflight = MobiflightConnection(client_name="fbw_a380_checklist")
+        mobiflight.connect()
+        mf_requests = mobiflight.get_request_handler()
+
+        # Wait for the required LVAR before proceeding
+        mobiflight.wait_for_lvar("A:EXTERNAL POWER ON:1, Bool")
 
         # Prime the library - possibly necessary to ensure the connection works properly
         altitude = mf_requests.get("(A:PLANE ALTITUDE,Feet)")
