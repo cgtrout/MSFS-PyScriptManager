@@ -268,6 +268,8 @@ class JoystickApp:
         canvas = FigureCanvasTkAgg(self.fig, master=self.root)
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
+        self.fig.canvas.draw()
+
     def _apply_plot_layout_adjustments(self):
         """Ensure consistent layout settings for the plot."""
         self.fig.subplots_adjust(left=0, right=1, top=1, bottom=0)  # Remove extra padding
