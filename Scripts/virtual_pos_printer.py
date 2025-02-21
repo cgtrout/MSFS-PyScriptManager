@@ -342,6 +342,7 @@ class VirtualPosPrinter:
         # Allow font resizing via Ctrl + Mouse Wheel
         def scale_font(event):
             if event.state & 0x0004:  # Detect if Control key is pressed
+                window.focus_force()
                 current_size = window_font.cget("size")
                 new_size = current_size + 2 if event.delta > 0 else max(6, current_size - 2)
                 window_font.config(size=new_size)
