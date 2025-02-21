@@ -1,10 +1,37 @@
 **MSFS-PyScriptManager** is a tool designed for running custom Python scripts tailored for Microsoft Flight Simulator (MSFS). This tool leverages the [WinPython](https://github.com/winpython) portable Python environment for an easy installation.  Simply download the release and extract it — no further installation is required to run the included scripts!
 
+![image](https://github.com/user-attachments/assets/afea8bd1-8e31-434f-b655-908882052df9)
+
+
 **Comes with several useful scripts, such as:**
 - [virtual_pos_printer.py](#virtual-pos-printer-for-fenix-a32x---virtual_pos_printerpy)- displays print jobs as popups on the screen from the Fenix A32x printer.
 - [custom_status_bar.py](#custom-status-bar---custom_status_barpy)- shows a status bar that can dynamically pull information from the sim and Simbrief.
-- [fenix_lights.py](#other-scripts) - pre-configures flight deck lighting in A32x and optionally binds joystick axis to screen brightness.
-- **No Python programming knowledge is required** to run the included scripts!
+- [fenix_lights.py](Docs/fenix_lights.md) - pre-configures flight deck lighting in A32x and optionally binds joystick axis to screen brightness.
+
+**No Python programming knowledge is required** to run the included scripts!
+
+# Table of Contents
+- [Download](#download)
+- [Installation Instructions](#installation-instructions)
+- [How to Use the Launcher](#how-to-use-the-launcher)
+- [Included Scripts - Showcase](#included-scripts---showcase)
+  - [Virtual Pos Printer for Fenix A32x (`virtual_pos_printer.py`)](#virtual-pos-printer-for-fenix-a32x---virtual_pos_printerpy)
+  - [Custom Status Bar (`custom_status_bar.py`)](#custom-status-bar---custom_status_barpy)
+- [More Scripts](#more-scripts)
+  - [Historical METAR Loader (`metar_load.py`)](#more-scripts)
+  - [Altitude Plotter (`plot_altitude.py`)](#more-scripts)
+  - [Joystick & Trim Visualizer (`plot_joystick.py`)](#more-scripts)
+- [Notes on Mobiflight Integration](#notes-on-mobiflight-integration)
+- [More Scripts - Mobiflight Required](#More-Scripts---Mobiflight-Required)
+  - [FBW A380 Checklist (`fbw_a380_checklist.py`)](#More-Scripts---Mobiflight-Required)
+  - [Fenix Disable EFB (`fenix_disable_efb.py`)](#More-Scripts---Mobiflight-Required)
+  - [Fenix Radio Panel (`fenix_radio.py`)](#More-Scripts---Mobiflight-Required)
+  - [Fenix Lights (`fenix_lights.py`)](#More-Scripts---Mobiflight-Required)
+- [Note On Included Script Behavior](#note-on-included-script-behavior)
+- [MSFS 2024 Update](#msfs-2024-update)
+- [Script Groups](#script-groups)
+- [Technical Notes](#technical-notes)
+- [Additional Credits](#additional-credits)
 
 # Download
 - [Download MSFS-PyScriptManager(Release Page)](https://github.com/cgtrout/MSFS-PyScriptManager/releases/)
@@ -23,7 +50,7 @@
 - For more information on how to use the Launcher see: [Launcher Guide](Docs/Launcher_guide.md)
 ![image](https://github.com/user-attachments/assets/b8e12084-afad-4cd8-9b4c-2ea9cbb59ff1)
 
-# Included Scripts
+# Included Scripts - Showcase
 ## **Virtual Pos Printer for Fenix A32x - virtual_pos_printer.py:**
    - Allows print jobs from the Fenix A32x to show as popup 'notes' on the screen.
    - [Virtual Printer Guide](Docs/virtual_pos_printer.md) - please read this guide for further instructions on how to use.
@@ -36,23 +63,27 @@
 
    ![image](https://github.com/user-attachments/assets/05786688-b542-4050-95eb-1e85bf8d673d)
 
-## Notes on Mobiflight Integration
-- Several of the scripts listed below require the Mobiflight WASM module.  Each in the list below is marked if it requires this WASM module.
-- This WASM module can be downloaded here: https://github.com/MobiFlight/MobiFlight-WASM-Module/releases/tag/1.0.1.  Download the ZIP and extract to your community folder.  Alternatively, if you have MobiFlight Connector installed, you can install this module with the top menu command (Extras > Microsoft Flight Simulator > Install WASM Module)
-
-## Other Scripts
-- **fbw_a380_checklist.py** Allows keyboard control of built in A380 checklist.  This script requires a [Mobiflight "WASM" module installation](https://github.com/MobiFlight/MobiFlight-Connector/wiki/Verifying-the-WASM-module-installation-and-locating-the-MSFS2020-community-folder).
-- **fenix_disable_efb.py:** Hides the EFBs on the Fenix A32x when run. (Requires Mobiflight "WASM" module installation).
-- **fenix_radio.py:** Shows a draggable radio panel that shows A32x RMP1 active/standby channels. (Requires Mobiflight "WASM" module installation).
-- **fenix_lights.py:** Preassign flight deck lighting knob values.  Also allows one knob to control all screen brightness or to optionally bind a joystick axis to control screen lighting. This will also reset all of the lights to get around the MSFS 2024 'full bright' lighting bug.  (Requires Mobiflight "WASM" module installation).
+## More Scripts
 - **metar_load.py:** Load a historical metar based on Simulator or real world time - can print to virtual_pos_printer.
 - **plot_altitude.py:** Shows a draggable graph panel of altitude - can easily be changed to other SimConnect variables.  Can also export recorded data as CSV.
 - **plot_joystick.py:** Show visualization of joystick and trim values state. Will either show heli or plane trims dynamically.
 
+## Notes on MobiFlight Integration
+> ⚠️ Several of the scripts listed below require the Mobiflight WASM module.  ⚠️
+- This module is required to facilitate communication between the scripts and MSFS for those that need to access LVARS (for Fenix).
+- This WASM module can be downloaded here: https://github.com/MobiFlight/MobiFlight-WASM-Module/releases/tag/1.0.1.  Download the ZIP and extract to your community folder.  Alternatively, if you have MobiFlight Connector installed, you can install this module with the top menu command (Extras > Microsoft Flight Simulator > Install WASM Module)
+
+## More Scripts - Mobiflight Required
+- **fbw_a380_checklist.py** Allows keyboard control of built in A380 checklist.
+- **fenix_disable_efb.py:** Hides the EFBs on the Fenix A32x when run.
+- **fenix_radio.py:** Shows a draggable radio panel that shows A32x RMP1 active/standby channels.
+- **fenix_lights.py:** Preassign flight deck lighting knob values.  Also allows one knob to control all screen brightness or to optionally bind a joystick axis to control screen lighting. This will also reset all of the lights to get around the MSFS 2024 'full bright' lighting bug. For more info see the documentation for this: [Docs/fenix_lights](Docs/fenix_lights.md).
+
+
 # Note On Included Script Behavior
-Currently, **most of the included scripts will detect Simulator state**.  However, in certain scenarios, such as starting a new flight (second+ flight of the session) may may need to restart some/all of the scripts.  Please use **one** of the following methods:
-1. Click "Reload All" in `MSFS-PyScriptManager.exe` after your aircraft has fully loaded in MSFS.
-2. Wait until you are loaded in the flight before opening `MSFS-PyScriptManager.exe`.  This will also ensure that scripts are able to connect and initialize as expected.
+Currently, **most of the included scripts will detect Simulator state**.  However, in certain scenarios, such as starting a new flight (second+ flight of the session) you may need to restart some/all of the scripts.  Please use the following method:
+- Click "Restart All" in `MSFS-PyScriptManager.exe` after your aircraft has fully loaded in MSFS.
+
 
 # MSFS 2024 Update
  - All scripts should work with MSFS 2024, but please report any issues.
