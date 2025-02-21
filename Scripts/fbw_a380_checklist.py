@@ -3,8 +3,7 @@
 import logging
 import keyboard  # For global key detection
 import pygetwindow as gw  # For window detection
-from simconnect_mobiflight.simconnect_mobiflight import SimConnectMobiFlight
-from Lib.extended_mobiflight_variable_requests import ExtendedMobiFlightVariableRequests
+from Lib.mobiflight_connection import MobiflightConnection
 from time import sleep
 
 # Disable warnings - still shows errors
@@ -40,9 +39,12 @@ def is_msfs_active():
 
 def main():
     try:
-        # Initialize the SimConnect connection
-        sm = SimConnectMobiFlight()
-        mf_requests = ExtendedMobiFlightVariableRequests(sm, "fbw_a380_checklist")
+        mobiflight = MobiflightConnection(client_name="fbw_a380_checklist")
+        mobiflight.connect()
+        mf_requests = mobiflight.get_request_handler()
+
+        # Wait for the required LVAR before proceeding
+        mobiflight.wait_for_lvar("A:EXTERNAL POWER ON:1, Bool")
 
         # Prime the library - possibly necessary to ensure the connection works properly
         altitude = mf_requests.get("(A:PLANE ALTITUDE,Feet)")

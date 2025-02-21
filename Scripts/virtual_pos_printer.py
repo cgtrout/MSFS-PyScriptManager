@@ -250,7 +250,7 @@ class VirtualPosPrinter:
             "spawn_position": (100, 100),
             "enable_popups": True,
             "play_sound": "../Data/receipt-printer-01-43872.mp3",
-            "play_volume": 0.25
+            "play_volume": 0.13
         }
 
         # Write default settings to file
@@ -264,6 +264,9 @@ class VirtualPosPrinter:
         x, y = self.root.winfo_pointerx(), self.root.winfo_pointery()
         self.settings["spawn_position"] = (x, y)
         self.spawn_position = (x, y)
+
+        # Reset active windows to ensure cascading starts from new position
+        self.active_windows.clear()
 
         with open(SETTINGS_FILE, 'w', encoding="utf-8") as f:
             json.dump(self.settings, f, indent=4)
@@ -310,7 +313,8 @@ class VirtualPosPrinter:
         def on_close():
             """Close the popup window on right-click."""
             window.focus_force()
-            self.active_windows.remove((new_x, new_y))
+            if (new_x, new_y) in self.active_windows:
+                self.active_windows.remove((new_x, new_y))
             window.destroy()
 
         window.bind("<ButtonRelease-3>", lambda event: on_close())
@@ -338,6 +342,7 @@ class VirtualPosPrinter:
         # Allow font resizing via Ctrl + Mouse Wheel
         def scale_font(event):
             if event.state & 0x0004:  # Detect if Control key is pressed
+                window.focus_force()
                 current_size = window_font.cget("size")
                 new_size = current_size + 2 if event.delta > 0 else max(6, current_size - 2)
                 window_font.config(size=new_size)

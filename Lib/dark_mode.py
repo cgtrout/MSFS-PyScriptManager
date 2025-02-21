@@ -55,7 +55,6 @@ class DarkmodeUtils:
                     top_level_hwnd = DarkmodeUtils.get_top_level_hwnd(int(root.winfo_id()))
 
                     if DarkmodeUtils.is_valid_window(top_level_hwnd):
-                        print(f"Applying dark mode to Top-Level HWND: {top_level_hwnd}")
                         DarkmodeUtils.dark_title_bar(top_level_hwnd)
 
                         # Force a redraw to apply changes immediately

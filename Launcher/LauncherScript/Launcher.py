@@ -1524,7 +1524,8 @@ class ScriptLauncherApp:
         """Prompt the user to select a .script_group file and load scripts from it."""
         file_path = filedialog.askopenfilename(
             title="Select Script Group",
-            filetypes=[("Script Group Files", "*.script_group")]
+            filetypes=[("Script Group Files", "*.script_group")],
+            initialdir=str(scripts_path)
         )
         if file_path:
             self.load_script_group_from_path(Path(file_path))

@@ -65,7 +65,7 @@ class JoystickApp:
         self.menu = None
         self.fig, self.ax = None, None
 
-        self.last_joystick_pos = (0,0)
+        self.last_joystick_pos = None
 
         # Load settings
         self.desired_joystick_name, self.window_position = self._load_settings()
@@ -77,7 +77,7 @@ class JoystickApp:
         # Load and configure joysticks
         self._load_joysticks()
 
-        optimize_gc(allocs=5000, gen1_factor=5, gen2_factor=5, freeze=False, show_data=True)
+        optimize_gc(allocs=5000, gen1_factor=5, gen2_factor=5, freeze=False, show_data=False)
 
     def _load_joysticks(self):
         """Load joystick information and initialize the desired joystick."""
@@ -268,6 +268,8 @@ class JoystickApp:
         canvas = FigureCanvasTkAgg(self.fig, master=self.root)
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
+        self.fig.canvas.draw()
+
     def _apply_plot_layout_adjustments(self):
         """Ensure consistent layout settings for the plot."""
         self.fig.subplots_adjust(left=0, right=1, top=1, bottom=0)  # Remove extra padding
@@ -318,6 +320,10 @@ class JoystickApp:
         self._save_settings(name)
         self._load_joysticks()  # Refresh joysticks and reinitialize selected joystick
         self._apply_plot_layout_adjustments()  # Ensure consistent plot layout
+
+        # Reset last known values to force an update
+        self.last_joystick_pos = (None, None)
+        self.last_trim_values = {}
 
         print_info(f"Joystick '{name}' saved and reloaded.")
 

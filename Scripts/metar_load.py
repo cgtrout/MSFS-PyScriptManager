@@ -52,6 +52,10 @@ class OgimetSource(MetarSource):
 class NoaaSource(MetarSource):
     name = "NOAA"
 
+    def __init__(self):
+        self.airport_code = None
+        super().__init__()
+
     def fetch(self, airport_code):
         url = "https://aviationweather.gov/api/data/metar"
         params = {
@@ -62,14 +66,26 @@ class NoaaSource(MetarSource):
         headers = {"Accept": "application/json"}
         response = requests.get(url, params=params, headers=headers, timeout=10)
         response.raise_for_status()
+        self.airport_code = airport_code
         return response.json()
 
     def parse(self, raw_data):
         metar_lines = []
+        invalid_airports = set()
         for metar in raw_data:
             raw_observation = metar.get("rawOb")
+            station_id = metar.get("stationId")
+            if station_id != self.airport_code.upper():
+                invalid_airports.add(station_id)
             if raw_observation:
                 metar_lines.append(raw_observation)
+
+        if invalid_airports:
+            raise ValueError(
+                f"NOAA returned METARs for unexpected airports: {', '.join(invalid_airports)}. "
+                f"Expected only {self.airport_code.upper()}."
+            )
+
         return metar_lines
 
 class AviationWeatherSource(MetarSource):
@@ -353,7 +369,7 @@ def find_best_metar(metar_dict):
     # Sort METARs by timestamp
     sorted_metars = sorted(metar_dict.items(), key=lambda item: item[0])
 
-    print_color("METAR List (Sorted):", color="yellow")
+    print_debug("METAR List (Sorted):")
     for metar_time, metar in sorted_metars:
         print_debug(f"METAR: {metar_time} - {metar}")
 
@@ -374,7 +390,7 @@ def find_best_metar(metar_dict):
         time: metar for time, metar in metar_dict.items() if time <= simulator_time + grace_period
     }
 
-    print_color("Valid METAR List (Filtered):", color="cyan")
+    print_debug("Valid METAR List (Filtered):")
     for metar_time, metar in valid_metars.items():
         print_debug(f"Valid METAR: {metar_time} - {metar}")
 
@@ -386,8 +402,8 @@ def find_best_metar(metar_dict):
     closest_time = max(valid_metars.keys())  # The closest valid METAR will have the largest timestamp <= simulator_time
     closest_metar = valid_metars[closest_time]
 
-    print_color("Closest METAR Found:", color="green")
-    print_debug(f"METAR: {closest_metar} at {closest_time}")
+    print_info("Closest METAR Found:")
+    print_info(f"METAR: {closest_metar} at {closest_time}")
 
     return closest_metar
 
