@@ -35,7 +35,7 @@
 
 # Download
 - [Download MSFS-PyScriptManager(Release Page)](https://github.com/cgtrout/MSFS-PyScriptManager/releases/)
-- [Virus Total Malware Check](https://www.virustotal.com/gui/url/9f2aab0754a63dc92903b3c99db9cf5dde639241368af9c33f51053997d20333?nocache=1)
+- [Virus Total Malware Check](https://www.virustotal.com/gui/url/68f6f554bab721ca62f3fe49416ad7ee02d4aedc524904a61062eb73b54490ce)
 
 # Installation Instructions
 - Download the ZIP file from the newest release (Releases).
