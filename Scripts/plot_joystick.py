@@ -65,7 +65,7 @@ class JoystickApp:
         self.menu = None
         self.fig, self.ax = None, None
 
-        self.last_joystick_pos = (0,0)
+        self.last_joystick_pos = None
 
         # Load settings
         self.desired_joystick_name, self.window_position = self._load_settings()
@@ -320,6 +320,10 @@ class JoystickApp:
         self._save_settings(name)
         self._load_joysticks()  # Refresh joysticks and reinitialize selected joystick
         self._apply_plot_layout_adjustments()  # Ensure consistent plot layout
+
+        # Reset last known values to force an update
+        self.last_joystick_pos = (None, None)
+        self.last_trim_values = {}
 
         print_info(f"Joystick '{name}' saved and reloaded.")
 
