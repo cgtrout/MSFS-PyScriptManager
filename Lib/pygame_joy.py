@@ -126,7 +126,7 @@ class PygameJoy:
 
             if changes:
                 selected_axis = max(changes, key=changes.get)
-                print(f"Axis {selected_axis} activated with value {self.get_axis_value(selected_axis):.2f}.")
+                #print(f"Axis {selected_axis} activated with value {self.get_axis_value(selected_axis):.2f}.")
                 return selected_axis
 
     def input_get_button(self, msg="Press a button to bind:"):
