@@ -14,7 +14,7 @@ from time import sleep
 from queue import Queue
 import threading
 
-from Lib.mobiflight_connection import MobiflightConnection, set_and_verify_lvar
+from Lib.mobiflight_connection import MobiflightConnection
 from Lib.color_print import print_info, print_error
 from Lib.pygame_joy import PygameJoy
 
@@ -95,22 +95,22 @@ def setup():
 
 # --- Lighting & Joystick Functions ---
 
-def set_cockpit_lights(mf_requests):
+def set_cockpit_lights(mobiflight):
     """Set all cockpit lighting LVARs to their default values."""
     for lvar_name, default_value in LIGHTING_LVARS.items():
         # First set to a known (max) value then to the default
-        set_and_verify_lvar(mf_requests, lvar_name, 1)
-        set_and_verify_lvar(mf_requests, lvar_name, 0)
-        set_and_verify_lvar(mf_requests, lvar_name, default_value)
+        mobiflight.set_and_verify_lvar(lvar_name, 1)
+        mobiflight.set_and_verify_lvar(lvar_name, 0)
+        mobiflight.set_and_verify_lvar(lvar_name, default_value)
 
-def propagate_lvars(mf_requests, co_value):
+def propagate_lvars(mobiflight, co_value):
     """
     Propagate the 'L:A_DISPLAY_BRIGHTNESS_CO' value to other display LVARs.
     This ensures all screen brightness values are synchronized.
     """
     for lvar in DISPLAY_LVARS:
         if lvar != "L:A_DISPLAY_BRIGHTNESS_CO":  # Skip the master variable
-            set_and_verify_lvar(mf_requests, lvar, co_value, tolerance=None, max_retries=1, retry_delay=0)
+            mobiflight.set_and_verify_lvar(lvar, co_value, tolerance=None, max_retries=1, retry_delay=0)
 
 def joystick_init(settings):
     """Initialize joystick control if enabled."""
@@ -124,13 +124,13 @@ def joystick_init(settings):
         print_info("Joystick control is disabled in settings.")
     return joystick, axis_to_use
 
-def main_screen_update_loop(mf_requests, joystick, axis_to_use, settings):
+def main_screen_update_loop(mobiflight, joystick, axis_to_use, settings):
     """Continuously update cockpit screen brightness based on joystick or knob changes."""
     previous_axis_value = None
     previous_co_value = None
     while True:
         try:
-            current_co_value = mf_requests.get("(L:A_DISPLAY_BRIGHTNESS_CO)")
+            current_co_value = mobiflight.get("(L:A_DISPLAY_BRIGHTNESS_CO)")
 
             if settings["joystick_enabled"]:
                 joystick.update()
@@ -140,15 +140,15 @@ def main_screen_update_loop(mf_requests, joystick, axis_to_use, settings):
 
             # If the joystick value has changed, update the master LVAR and propagate
             if settings["joystick_enabled"] and (previous_axis_value is None or scaled_value != previous_axis_value):
-                set_and_verify_lvar(mf_requests, "L:A_DISPLAY_BRIGHTNESS_CO", scaled_value,
+                mobiflight.set_and_verify_lvar("L:A_DISPLAY_BRIGHTNESS_CO", scaled_value,
                                     tolerance=None, max_retries=1, retry_delay=0)
-                propagate_lvars(mf_requests, scaled_value)
+                propagate_lvars(mobiflight, scaled_value)
                 previous_axis_value = scaled_value
                 previous_co_value = scaled_value
 
             # If the master LVAR has been independently changed, propagate that change
             elif previous_co_value is None or current_co_value != previous_co_value:
-                propagate_lvars(mf_requests, current_co_value)
+                propagate_lvars(mobiflight, current_co_value)
                 previous_co_value = current_co_value
 
             sleep(0.1)
@@ -169,24 +169,23 @@ def main():
         # Create a MobiflightConnection instance and connect
         mobiflight = MobiflightConnection(client_name="fenix_set_lighting_defaults")
         mobiflight.connect()
-        mf_requests = mobiflight.get_request_handler()
 
         # Prime the library by reading the altitude
-        altitude = mf_requests.get("(A:PLANE ALTITUDE,Feet)")
+        altitude = mobiflight.get("(A:PLANE ALTITUDE,Feet)")
         print_info(f"Primed with altitude: {altitude}")
 
         # Wait for the required LVAR (ground power) to be active
         mobiflight.wait_for_lvar(DEFAULT_WAIT_LVAR, DEFAULT_WAIT_VALUE)
 
         print_info("Setting interior light values...")
-        set_cockpit_lights(mf_requests)
+        set_cockpit_lights(mobiflight)
         print_info("Setting interior light values... DONE")
 
         # Initialize joystick if enabled
         joystick, axis_to_use = joystick_init(settings)
 
         # Enter the main update loop for cockpit display brightness
-        main_screen_update_loop(mf_requests, joystick, axis_to_use, settings)
+        main_screen_update_loop(mobiflight, joystick, axis_to_use, settings)
 
     except Exception as e:
         print_error(f"An unexpected error occurred: {e}")

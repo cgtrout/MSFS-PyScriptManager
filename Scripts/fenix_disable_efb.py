@@ -6,7 +6,7 @@ fenix_disable_efb.py: Shows an example of how you can disable the Fenix A32x EFB
 import sys
 import time
 import logging
-from Lib.mobiflight_connection import MobiflightConnection, set_and_verify_lvar
+from Lib.mobiflight_connection import MobiflightConnection
 from Lib.color_print import print_info, print_error
 
 # Disable warnings - still shows errors
@@ -37,10 +37,10 @@ def main():
         mobiflight.wait_for_lvar("L:S_OH_ELEC_EXT_PWR")
 
         # Disable EFBs
-        set_and_verify_lvar(mf_requests, EFB_VISIBLE_CAPT, 0)
-        set_and_verify_lvar(mf_requests, EFB_CHARGING_CAPT, 0)
-        set_and_verify_lvar(mf_requests, EFB_VISIBLE_FO, 0)
-        set_and_verify_lvar(mf_requests, EFB_CHARGING_FO, 0)
+        mobiflight.set_and_verify_lvar(EFB_VISIBLE_CAPT, 0)
+        mobiflight.set_and_verify_lvar(EFB_CHARGING_CAPT, 0)
+        mobiflight.set_and_verify_lvar(EFB_VISIBLE_FO, 0)
+        mobiflight.set_and_verify_lvar(EFB_CHARGING_FO, 0)
 
         print_info("EFBs disabled successfully.")
         print_info("This script will now shut down - restart if if you need to disable again.")

@@ -3,38 +3,10 @@ import time
 
 from Lib.MSFSPythonSimConnectMobiFlightExtension import SimConnectMobiFlight
 from Lib.MSFSPythonSimConnectMobiFlightExtension import MobiFlightVariableRequests
-
 from Lib.color_print import print_info, print_error
+
 # Disable warnings - still shows errors
 logging.getLogger("SimConnect.SimConnect").setLevel(logging.ERROR)
-
-def set_and_verify_lvar(mf_requests, lvar, value, tolerance=0.01, max_retries=5, retry_delay=0.1):
-    """
-    Sets an LVAR to a specified value and verifies it within a tolerance. Retries if necessary.
-    If tolerance is None, disables the verification step entirely.
-    """
-    for attempt in range(1, max_retries + 1):
-        # Attempt to set the LVAR
-        req_str = f"{value} (> {lvar})"
-        mf_requests.set(req_str)
-
-        # Skip verification if tolerance is None
-        if tolerance is None:
-            return True
-
-        time.sleep(retry_delay)  # Allow time for the simulator to apply the value
-
-        # Check if the value was successfully applied within the tolerance
-        current_value = mf_requests.get(f"({lvar})")
-        if abs(current_value - value) <= tolerance:
-            return True
-
-    # Enhanced error message with actual vs expected values
-    print_error(
-        f"[FAILURE] Could not set {lvar} to {value} (current value: {current_value}) "
-        f"within tolerance {tolerance} after {max_retries} attempts."
-    )
-    return False
 
 class MobiflightConnection:
     """Handles the connection and reconnection to Mobiflight and MSFS."""
@@ -77,3 +49,35 @@ class MobiflightConnection:
             except Exception as e:
                 print_error(f"Error reading LVAR '{lvar}': {e}")
             time.sleep(check_interval)
+
+    def set_and_verify_lvar(self, lvar, value, tolerance=0.01, max_retries=5, retry_delay=0.1):
+        """
+        Sets an LVAR to a specified value and verifies it within a tolerance. Retries if necessary.
+        If tolerance is None, disables the verification step entirely.
+        """
+        for attempt in range(1, max_retries + 1):
+            # Attempt to set the LVAR
+            req_str = f"{value} (> {lvar})"
+            self.mf_requests.set(req_str)
+
+            # Skip verification if tolerance is None
+            if tolerance is None:
+                return True
+
+            time.sleep(retry_delay)  # Allow time for the simulator to apply the value
+
+            # Check if the value was successfully applied within the tolerance
+            current_value = self.mf_requests.get(f"({lvar})")
+            if abs(current_value - value) <= tolerance:
+                return True
+
+        # Enhanced error message with actual vs expected values
+        print_error(
+            f"[FAILURE] Could not set {lvar} to {value} (current value: {current_value}) "
+            f"within tolerance {tolerance} after {max_retries} attempts."
+        )
+        return False
+
+    def get(self, variable_string):
+        """Calls mf_requests.get()"""
+        return self.mf_requests.get(variable_string)
