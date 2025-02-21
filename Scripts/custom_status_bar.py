@@ -946,7 +946,13 @@ def is_sim_running(min_runtime=120):
             'wmic process where "name like \'FlightSimulator%%.exe\'" '
             'get Name,CreationDate,ProcessId /format:csv'
         )
-        output = subprocess.check_output(cmd, shell=True).decode(errors="ignore").strip()
+        raw_output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
+        output = raw_output.decode(errors="ignore").strip()
+        if "No Instance(s) Available" in output:
+            output = ""
+
+        if output:
+            print_debug("MSFS is running")
     except subprocess.CalledProcessError:
         return False
 
