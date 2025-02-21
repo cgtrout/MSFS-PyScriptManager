@@ -975,10 +975,10 @@ def is_sim_running(min_runtime=120):
 
         runtime = now - start_time
         if runtime >= min_runtime:
-            print(f"Found MSFS process: {name} (PID: {pid}, Running for {runtime:.1f} sec)")
+            print_info(f"Found MSFS process: {name} (PID: {pid}, Running for {runtime:.1f} sec)")
             return True
         else:
-            print(f"Found {name} (PID: {pid}), but only running for {runtime:.1f} sec (Waiting...)")
+            print_info(f"Found {name} (PID: {pid}), but only running for {runtime:.1f} sec (Waiting...)")
             return False
 
     return False
