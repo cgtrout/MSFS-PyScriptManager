@@ -11,6 +11,30 @@ import threading
 
 _print_lock = threading.Lock()
 
+# Debug level mapping
+DEBUG_LEVELS = {
+    "ERROR": 1,
+    "WARNING": 2,
+    "INFO": 3,
+    "DEBUG": 4
+}
+# Global debug level (default: don't show DEBUG messages)
+_current_debug_level = DEBUG_LEVELS["INFO"]
+
+def set_debug_level(level):
+    """
+    Sets the global debug level.
+
+    Args:
+        level (str): One of ["ERROR", "WARNING", "INFO", "DEBUG"] (case insensitive).
+    """
+    global _current_debug_level
+    level = level.upper()
+    if level in DEBUG_LEVELS:
+        _current_debug_level = DEBUG_LEVELS[level]
+    else:
+        raise ValueError(f"Invalid debug level: {level}. Choose from {list(DEBUG_LEVELS.keys())}")
+
 def print_color(text, color=None, bold=False):
     """
     Parses and prints text with optional ANSI color codes and custom tags.
@@ -62,16 +86,15 @@ def print_color(text, color=None, bold=False):
     with _print_lock:
         print("".join(output))
 
-
-def print_warning(message):
+def print_debug(message):
     """
-    Prints a warning message with a yellow `[WARNING]` prefix.
+    Prints a debug message with a cyan `[DEBUG]` prefix.
 
     Args:
         message (str): The message to print.
     """
-    print_color(f"[WARNING] {message}", color="yellow", bold=True)
-
+    if _current_debug_level >= DEBUG_LEVELS["DEBUG"]:
+        print_color(f"[cyan(][DEBUG][)] {message}", bold=False)
 
 def print_info(message):
     """
@@ -80,18 +103,18 @@ def print_info(message):
     Args:
         message (str): The message to print.
     """
-    print_color(f"[green(][INFO][)] {message}", bold=False)
+    if _current_debug_level >= DEBUG_LEVELS["INFO"]:
+        print_color(f"[green(][INFO][)] {message}", bold=False)
 
-
-def print_debug(message):
+def print_warning(message):
     """
-    Prints a debug message with a cyan `[DEBUG]` prefix.
+    Prints a warning message with a yellow `[WARNING]` prefix.
 
     Args:
         message (str): The message to print.
     """
-    print_color(f"[cyan(][DEBUG][)] {message}", bold=False)
-
+    if _current_debug_level >= DEBUG_LEVELS["WARNING"]:
+        print_color(f"[WARNING] {message}", color="yellow", bold=True)
 
 def print_error(message):
     """
