@@ -9,7 +9,7 @@ This guide explains how to use the MSFS-PyScriptManager launcher to load Python 
 - Each loaded script will be run in a separate tab.
 - Right-click a tab to close it.
 - Click "Run Script" to load a script.
-- Consult the main readme for more info on the scripts: [Main Readme](readme.md#Included Scripts)
+- Consult the main readme for more info on the scripts: [Main Readme](readme.md)
 
 ![image](https://github.com/user-attachments/assets/b8e12084-afad-4cd8-9b4c-2ea9cbb59ff1)
 
