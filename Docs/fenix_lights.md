@@ -14,6 +14,7 @@ All screen brightness knobs are bound to left-most screen brightness knob.
 ![image](https://github.com/user-attachments/assets/0cae8eb6-c8f7-4d23-b5e1-217e059d4e73)
 
 - If you ever need to rebind, delete the "fenix_lights.json" file in the /Settings dir and restart the script ("Restart Script" button).
+- Note: script will wait until ground power switch is enabled to start the light change sequence.
 
 ## MobiFlight WASM Module Installation is Required!
 > ⚠️ Requires Mobiflight WASM module.  ⚠️
