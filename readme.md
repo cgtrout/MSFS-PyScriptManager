@@ -74,6 +74,7 @@
 - This WASM module can be downloaded here: https://github.com/MobiFlight/MobiFlight-WASM-Module/releases/tag/1.0.1.  Download the ZIP and extract to your community folder.  Alternatively, if you have MobiFlight Connector installed, you can install this module with the top menu command (Extras > Microsoft Flight Simulator > Install WASM Module)
 
 ## More Scripts - Mobiflight Required
+**Note:** most of these will wait until ground power is enabled before the logic is triggered.
 - **fbw_a380_checklist.py** Allows keyboard control of built in A380 checklist.
 - **fenix_disable_efb.py:** Hides the EFBs on the Fenix A32x when run.
 - **fenix_radio.py:** Shows a draggable radio panel that shows A32x RMP1 active/standby channels.
