@@ -9,7 +9,7 @@ This script accomplishes several tasks:
 All screen brightness knobs are bound to left-most screen brightness knob.
 
 ## How To Use
-- On first run it will present a prompt.  If you wish to bind a joystick axis, type 'y' and hit enter to bind.  Follow the subsequent prompts to select a joystick and axis.
+- On first run it will present a prompt.  If you wish to bind a joystick axis, type 'y' and hit enter to bind.  Follow the subsequent prompts to select a joystick and axis. **Enter 'n' if you do not want to bind a joystick axis.**
 
 ![image](https://github.com/user-attachments/assets/0cae8eb6-c8f7-4d23-b5e1-217e059d4e73)
 
