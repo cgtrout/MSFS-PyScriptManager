@@ -17,7 +17,7 @@ All screen brightness knobs are bound to left-most screen brightness knob.
 
 ## MobiFlight WASM Module Installation is Required!
 > ⚠️ Requires Mobiflight WASM module.  ⚠️
-- Note that this requires a MobiFlight WASM installation: see [Notes on Mobiflight Integration](readme.md#notes-on-mobiflight-integration). 
+- Note that this requires a MobiFlight WASM installation: see [Notes on Mobiflight Integration](../readme.md#notes-on-mobiflight-integration). 
 
 ## How to Change the Preset Brightness Values
 - At the moment for this you will need to edit the script directly.  This section dictates the starting values:
