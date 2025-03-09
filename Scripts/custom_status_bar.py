@@ -948,11 +948,15 @@ def is_sim_running(min_runtime=120):
         )
         raw_output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
         output = raw_output.decode(errors="ignore").strip()
+
+        print_debug("\nRaw WMIC Output:\n" + output + "\n")
+
         if "No Instance(s) Available" in output:
             output = ""
 
         if output:
             print_debug("MSFS is running")
+
     except subprocess.CalledProcessError:
         return False
 
@@ -961,19 +965,46 @@ def is_sim_running(min_runtime=120):
 
     for row in reader:
         name = row.get("Name", "").strip()
-        creation = row.get("CreationDate", "").split('.')[0].strip()
+        creation = row.get("CreationDate", "").strip()
         pid = row.get("ProcessId", "").strip()
+
+        print_debug(f"Process Found: Name={name}, PID={pid}, CreationDate={creation}")
 
         if not (name.startswith("FlightSimulator") and creation and pid.isdigit()):
             continue
 
+        # Extract main timestamp and timezone offset (if available)
+        creation_parts = creation.split('.')
+        creation_time_str = creation_parts[0].strip()
+        timezone_offset_str = creation_parts[-1].strip()[-4:]  # Extract last 4 chars for timezone
+
         try:
-            start_time = time.mktime(time.strptime(creation, "%Y%m%d%H%M%S"))
+            print_debug(f"Parsing creation time: {creation_time_str}")
+
+            # Convert to UTC datetime
+            start_dt = datetime.strptime(creation_time_str, "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+
+            # Adjust for timezone offset if present
+            if timezone_offset_str.lstrip("+-").isdigit():  # Ensure it's a valid number
+                offset_minutes = int(timezone_offset_str)  # Convert offset to minutes
+                offset_seconds = offset_minutes * 60
+                start_dt -= timedelta(seconds=offset_seconds)  # Adjust time
+
+                print_debug(f"Applying timezone offset: {offset_minutes} minutes "
+                            f"({-offset_seconds} seconds)")
+
+            # Convert to epoch timestamp
+            start_time = start_dt.timestamp()
+
+            print_debug(f"Parsed start time (UTC epoch): {start_time}")
+
         except ValueError:
-            print(f"[ERROR] Could not parse creation time: {creation}")
+            print_error(f"[ERROR] Could not parse creation time: {creation}")
             continue
 
         runtime = now - start_time
+        print_debug(f"Calculated runtime: {runtime:.1f} seconds")
+
         if runtime >= min_runtime:
             print_info(f"Found MSFS process: {name} (PID: {pid}, Running for {runtime:.1f} sec)")
             return True
