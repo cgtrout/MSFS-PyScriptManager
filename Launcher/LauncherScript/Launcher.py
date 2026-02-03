@@ -49,11 +49,13 @@ def read_launcher_config():
     else:
         print(f"[INFO] launcher.ini not found at {ini_path}. Using default paths.")
 
-    # Derive VS Code path from Python directory (go up one level)
-    # e.g., WinPython/Winpython64-3.13.0.1dotrc1/python-3.13.0rc1.amd64
-    #    -> WinPython/Winpython64-3.13.0.1dotrc1/VS Code.exe
+    # Derive VS Code launch script from Python directory
+    # winvscode.bat properly forwards arguments to the real code.exe;
+    # "VS Code.exe" in the same directory is a WinPython GUI launcher that does not.
+    # e.g., WinPython/WPy64-313110/python
+    #    -> WinPython/WPy64-313110/scripts/winvscode.bat
     python_path_obj = Path(python_dir)
-    vscode_path_str = str(python_path_obj.parent / "VS Code.exe")
+    vscode_path_str = str(python_path_obj.parent / "scripts" / "winvscode.bat")
 
     return python_dir, vscode_path_str
 
@@ -836,7 +838,7 @@ class ScriptTab(Tab):
     def edit_script(self):
         """Open the script in VSCode for editing."""
         try:
-            subprocess.Popen([str(vscode_path.resolve()), str(self.script_path)])
+            subprocess.Popen(["cmd", "/c", str(vscode_path.resolve()), str(self.script_path.resolve())])
             self.insert_output(f"Opening script {self.script_path} for editing in VS Code...\n")
         except Exception as e:
             self.insert_output(f"Error opening script for editing: {e}\n")
