@@ -1733,9 +1733,31 @@ class ProcessTracker:
                 name=f"DispatcherStdout-{tab_id}"
             ).start()
 
+            # Warning redirect for pkg_resource warning (pygame)
+            # This is a issue present in current version of pygame that hasn't yet been fixed
+            warn_followup = {"pending": False}
+
+            def _forward_pkg_resources_warning(line):
+                # Emit to launcher.c (stdout) and log, but do not show in script tab.
+                print(line, end="")
+                logger.warning(line.rstrip("\n"))
+
+            def _stderr_wrapper(text):
+                if "pkg_resources is deprecated as an API" in text:
+                    warn_followup["pending"] = True
+                    _forward_pkg_resources_warning(text)
+                    return
+                if warn_followup["pending"]:
+                    if "from pkg_resources import" in text:
+                        _forward_pkg_resources_warning(text)
+                        warn_followup["pending"] = False
+                        return
+                    warn_followup["pending"] = False
+                stderr_callback(text)
+
             threading.Thread(
                 target=self._dispatch_queue,
-                args=(stderr_queue, stderr_callback, stop_event),
+                args=(stderr_queue, _stderr_wrapper, stop_event),
                 daemon=True,
                 name=f"DispatcherStderr-{tab_id}"
             ).start()

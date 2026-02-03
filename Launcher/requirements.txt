@@ -5,6 +5,9 @@ keyboard
 pygetwindow
 requests
 matplotlib
+
+# Pin older version of setuptools to avoid pkg_resources deprecation warning from pygame
+setuptools<81
 pygame
 Pillow
 SimConnect
