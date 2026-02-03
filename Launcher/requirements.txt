@@ -1,3 +1,5 @@
+--prefer-binary
+
 numpy
 psutil
 ttkthemes
@@ -8,8 +10,15 @@ matplotlib
 
 # Pin older version of setuptools to avoid pkg_resources deprecation issue
 setuptools<81
-pygame
-Pillow
+
+# pygame wheels don't cover Python 3.14+; use pygame-ce which ships cp314 wheels
+pygame==2.6.1; python_version < "3.14"
+pygame-ce==2.5.6; python_version >= "3.14"
+
+# Pillow: force a cp314-compatible wheel on Python 3.14+
+Pillow>=12.1.0; python_version >= "3.14"
+Pillow>=10.4.0; python_version < "3.14"
+
 SimConnect
 pywin32
 pywinpty
