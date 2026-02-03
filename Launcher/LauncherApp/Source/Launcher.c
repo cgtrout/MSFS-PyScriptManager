@@ -1,6 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0601  // Windows 7+
+#endif
 #include <windows.h>
+#ifndef LOAD_LIBRARY_SEARCH_SYSTEM32
+#define LOAD_LIBRARY_SEARCH_SYSTEM32 0x00000800
+#endif
 #include <time.h>
 
 // Define types for function pointers to dynamically load Windows API functions.
@@ -13,7 +19,7 @@ typedef BOOL (*SetForegroundWindow_t)(HWND);
 BOOL loadConsoleFunctions(GetConsoleWindow_t *getConsoleWindow, ShowWindow_t *showWindow, SetForegroundWindow_t *setForegroundWindow)
 {
     HMODULE kernel32 = GetModuleHandle("kernel32.dll");
-    HMODULE user32 = LoadLibrary("user32.dll");
+    HMODULE user32 = LoadLibraryExA("user32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
 
     // Check if the DLLs were successfully loaded
     if (!kernel32 || !user32)
@@ -48,7 +54,8 @@ BOOL WINAPI ConsoleHandler(DWORD dwCtrlType)
         {
             const char *shutdownMessage = "shutdown\n";
             DWORD bytesWritten;
-            WriteFile(g_hCommandPipe, shutdownMessage, strlen(shutdownMessage), &bytesWritten, NULL);
+            OVERLAPPED ol = {0};
+            WriteFile(g_hCommandPipe, shutdownMessage, strlen(shutdownMessage), &bytesWritten, &ol);
             CloseHandle(g_hCommandPipe);
             g_hCommandPipe = NULL;
         }
@@ -89,9 +96,11 @@ void processPipeDataLoop(HANDLE hInboundPipe, HANDLE hCommandPipe, PROCESS_INFOR
         if (currentTime - lastHeartbeatTime >= heartbeatInterval)
         {
             DWORD bytesWritten;
-            if (!WriteFile(g_hCommandPipe, heartbeatMessage, strlen(heartbeatMessage), &bytesWritten, NULL))
+            OVERLAPPED writeOl = {0};
+            if (!WriteFile(g_hCommandPipe, heartbeatMessage, strlen(heartbeatMessage), &bytesWritten, &writeOl))
             {
-                printf("[ERROR] Failed to send heartbeat. Error: %lu\n", GetLastError());
+                if (GetLastError() != ERROR_IO_PENDING)
+                    printf("[ERROR] Failed to send heartbeat. Error: %lu\n", GetLastError());
             }
             lastHeartbeatTime = currentTime;
         }
@@ -141,6 +150,184 @@ HANDLE createNamedPipe(
     }
 
     return pipeHandle;
+}
+
+// Read Python path from launcher.ini configuration file
+// Returns 1 on success, 0 on failure
+int readPythonPathFromIni(char *pythonPath, size_t maxLen) {
+    char iniPath[512];
+    char line[512];
+    char pythonDir[512] = {0};
+    FILE *iniFile;
+
+    snprintf(iniPath, sizeof(iniPath), ".\\Launcher\\launcher.ini");
+    iniFile = fopen(iniPath, "r");
+    if (!iniFile) {
+        return 0;
+    }
+
+    int inPythonSection = 0;
+    while (fgets(line, sizeof(line), iniFile)) {
+        char *trimmed = line;
+        while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+
+        size_t len = strlen(trimmed);
+        if (len > 0 && (trimmed[len-1] == '\n' || trimmed[len-1] == '\r')) {
+            trimmed[len-1] = '\0';
+            if (len > 1 && trimmed[len-2] == '\r') {
+                trimmed[len-2] = '\0';
+            }
+        }
+
+        if (trimmed[0] == '\0' || trimmed[0] == ';' || trimmed[0] == '#') {
+            continue;
+        }
+
+        if (strcmp(trimmed, "[Python]") == 0) {
+            inPythonSection = 1;
+            continue;
+        }
+
+        if (trimmed[0] == '[') {
+            inPythonSection = 0;
+            continue;
+        }
+
+        if (inPythonSection && strncmp(trimmed, "PythonDir=", 10) == 0) {
+            strncpy(pythonDir, trimmed + 10, sizeof(pythonDir) - 1);
+            pythonDir[sizeof(pythonDir) - 1] = '\0';
+
+            size_t dirLen = strlen(pythonDir);
+            if (dirLen == 0) {
+                printf("[ERROR] Invalid Python path in config (empty)\n");
+                fclose(iniFile);
+                return 0;
+            }
+
+            // Reject UNC and drive-absolute paths before normalization
+            if ((dirLen >= 2 && ((pythonDir[0] == '\\' && pythonDir[1] == '\\') ||
+                                 (pythonDir[0] == '/' && pythonDir[1] == '/'))) ||
+                (dirLen >= 2 && ((pythonDir[0] >= 'A' && pythonDir[0] <= 'Z') ||
+                                 (pythonDir[0] >= 'a' && pythonDir[0] <= 'z')) &&
+                 pythonDir[1] == ':')) {
+                printf("[ERROR] Invalid Python path in config (absolute paths not allowed)\n");
+                fclose(iniFile);
+                return 0;
+            }
+
+            // Reject parent-directory traversal
+            if (strstr(pythonDir, "..") != NULL) {
+                printf("[ERROR] Invalid Python path in config (parent paths not allowed)\n");
+                fclose(iniFile);
+                return 0;
+            }
+
+            // Strip leading slash/backslash (user might write \WinPython\... instead of WinPython\...)
+            char *dirStart = pythonDir;
+            while (*dirStart == '\\' || *dirStart == '/') dirStart++;
+            if (dirStart != pythonDir) {
+                memmove(pythonDir, dirStart, strlen(dirStart) + 1);
+            }
+
+            if (pythonDir[0] == '\0') {
+                printf("[ERROR] Invalid Python path in config (empty after normalization)\n");
+                fclose(iniFile);
+                return 0;
+            }
+
+            break;
+        }
+    }
+
+    fclose(iniFile);
+
+    if (pythonDir[0] != '\0') {
+        snprintf(pythonPath, maxLen, ".\\%s\\pythonw.exe", pythonDir);
+        return 1;
+    }
+
+    return 0;
+}
+
+#define MAX_PYTHON_DIRS 16
+
+// Scan .\WinPython\<distro>\<subdir> for directories containing pythonw.exe.
+// dirs[][] receives relative paths like "WinPython\WPy64-313110\python".
+// Returns the number of directories found (up to maxDirs).
+int scanForPythonDirs(char dirs[][512], int maxDirs)
+{
+    int count = 0;
+    WIN32_FIND_DATA findDataL1;
+    char searchPath[512];
+
+    snprintf(searchPath, sizeof(searchPath), ".\\WinPython\\*");
+    HANDLE hFindL1 = FindFirstFile(searchPath, &findDataL1);
+    if (hFindL1 == INVALID_HANDLE_VALUE)
+        return 0;
+
+    do {
+        if (!(findDataL1.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+            continue;
+        if (findDataL1.cFileName[0] == '.')
+            continue;
+
+        // Second level: enumerate subdirs inside this distro folder
+        WIN32_FIND_DATA findDataL2;
+        char searchPath2[512];
+        snprintf(searchPath2, sizeof(searchPath2), ".\\WinPython\\%s\\*", findDataL1.cFileName);
+        HANDLE hFindL2 = FindFirstFile(searchPath2, &findDataL2);
+        if (hFindL2 == INVALID_HANDLE_VALUE)
+            continue;
+
+        do {
+            if (!(findDataL2.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+                continue;
+            if (findDataL2.cFileName[0] == '.')
+                continue;
+
+            // Does pythonw.exe live here?
+            char candidate[512];
+            snprintf(candidate, sizeof(candidate), ".\\WinPython\\%s\\%s\\pythonw.exe",
+                     findDataL1.cFileName, findDataL2.cFileName);
+
+            DWORD attrs = GetFileAttributes(candidate);
+            if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY))
+            {
+                if (count < maxDirs)
+                {
+                    snprintf(dirs[count], 512, "WinPython\\%s\\%s",
+                             findDataL1.cFileName, findDataL2.cFileName);
+                    count++;
+                }
+            }
+        } while (FindNextFile(hFindL2, &findDataL2));
+        FindClose(hFindL2);
+
+    } while (FindNextFile(hFindL1, &findDataL1));
+    FindClose(hFindL1);
+
+    return count;
+}
+
+// Write (or overwrite) launcher.ini with the given PythonDir value.
+// Returns 1 on success, 0 on failure.
+int writePythonDirToIni(const char *pythonDir)
+{
+    FILE *f = fopen(".\\Launcher\\launcher.ini", "w");
+    if (!f)
+        return 0;
+
+    fprintf(f, "# MSFS PyScript Manager - Launcher Configuration\n");
+    fprintf(f, "# This file configures which Python installation the launcher uses\n");
+    fprintf(f, "\n");
+    fprintf(f, "[Python]\n");
+    fprintf(f, "# Path to the Python installation directory (relative to project root)\n");
+    fprintf(f, "# The launcher will look for python.exe and pythonw.exe in this directory\n");
+    fprintf(f, "# VS Code.exe will be located in the parent directory\n");
+    fprintf(f, "PythonDir=%s\n", pythonDir);
+
+    fclose(f);
+    return 1;
 }
 
 // Execute a Python script using the specified interpreter path and script file path
@@ -208,12 +395,12 @@ int run_script(const char *pythonPath, const char *scriptPath)
         return -1; // Exit if the pipe couldn't be created
     }
 
-    // Create shutdown pipe
+    // Create shutdown pipe (overlapped so ConnectNamedPipe can be non-blocking)
     g_hCommandPipe = createNamedPipe(
         "PythonShutdownPipe",      // Pipe prefix
         pid,                       // Process ID
         randomSuffix,              // Random suffix
-        PIPE_ACCESS_OUTBOUND,      // Write-only access
+        PIPE_ACCESS_OUTBOUND | FILE_FLAG_OVERLAPPED,  // Write-only, overlapped
         scriptCommandPipeName,     // Output: pipe name
         sizeof(scriptCommandPipeName),
         &sa,                       // Pass SECURITY_ATTRIBUTES
@@ -272,25 +459,91 @@ int run_script(const char *pythonPath, const char *scriptPath)
     printf("NOTE: Closing this window will close MSFS-PyScriptManager\n");
     printf("-------------------------------------------------------------------------------------------\n\n");
 
-    // Wait for the client to connect
-    printf("Waiting for Launcher...\n");
-    BOOL connected = ConnectNamedPipe(g_hCommandPipe, NULL) || GetLastError() == ERROR_PIPE_CONNECTED;
-    if (!connected)
-    {
-        displayErrorAndRestoreConsole("Failed to connect to shutdown named pipe.", hConsole, showWindow);
-        CloseHandle(hInboundPipe);
-        return -1;
-    }
-
-    // Now, explicitly connect the output pipe after launching the process:
+    // IMPORTANT: Connect to output pipe FIRST so we can see Python errors during startup
+    printf("Connecting to output pipe...\n");
     BOOL connectedOutput = ConnectNamedPipe(hInboundPipe, NULL) ||
                            (GetLastError() == ERROR_PIPE_CONNECTED);
     if (!connectedOutput)
     {
         displayErrorAndRestoreConsole("Failed to connect to output named pipe.", hConsole, showWindow);
         CloseHandle(hInboundPipe);
-        // Clean up shutdown pipe if needed...
+        CloseHandle(g_hCommandPipe);
         return -1;
+    }
+    printf("Output pipe connected\n");
+
+    // Use overlapped ConnectNamedPipe so we can read Python output while waiting.
+    // If Python crashes before connecting, we see the error instead of hanging.
+    printf("Waiting for Launcher...\n");
+    {
+        OVERLAPPED connectOl = {0};
+        connectOl.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+        BOOL connected = ConnectNamedPipe(g_hCommandPipe, &connectOl);
+        if (!connected && GetLastError() != ERROR_IO_PENDING)
+        {
+            displayErrorAndRestoreConsole("Failed to connect to shutdown named pipe.", hConsole, showWindow);
+            CloseHandle(connectOl.hEvent);
+            CloseHandle(hInboundPipe);
+            CloseHandle(g_hCommandPipe);
+            return -1;
+        }
+
+        // Poll: read output pipe, check connect completion, check process exit
+        while (!connected)
+        {
+            char buffer[4096];
+            DWORD bytesAvailable = 0;
+            DWORD bytesRead;
+            DWORD dummy;
+
+            // Read any output Python has written so far
+            if (PeekNamedPipe(hInboundPipe, NULL, 0, NULL, &bytesAvailable, NULL) && bytesAvailable > 0)
+            {
+                if (ReadFile(hInboundPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0)
+                {
+                    buffer[bytesRead] = '\0';
+                    printf("%s", buffer);
+                }
+            }
+
+            // Did the shutdown pipe finish connecting?
+            if (GetOverlappedResult(g_hCommandPipe, &connectOl, &dummy, FALSE))
+            {
+                connected = TRUE;
+                break;
+            }
+
+            // Did Python exit before it could connect?
+            if (WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0)
+            {
+                // Drain whatever is left in the output pipe
+                while (PeekNamedPipe(hInboundPipe, NULL, 0, NULL, &bytesAvailable, NULL) && bytesAvailable > 0)
+                {
+                    if (ReadFile(hInboundPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0)
+                    {
+                        buffer[bytesRead] = '\0';
+                        printf("%s", buffer);
+                    }
+                }
+
+                DWORD exitCode;
+                GetExitCodeProcess(pi.hProcess, &exitCode);
+                showWindow(hConsole, SW_RESTORE);
+                printf("\n[ERROR] Python process exited (code %lu) before connecting to shutdown pipe.\n", exitCode);
+
+                CloseHandle(connectOl.hEvent);
+                CloseHandle(hInboundPipe);
+                CloseHandle(g_hCommandPipe);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+                return (int)exitCode;
+            }
+
+            Sleep(10);
+        }
+
+        CloseHandle(connectOl.hEvent);
     }
 
     printf("Launcher connected\n");
@@ -300,11 +553,8 @@ int run_script(const char *pythonPath, const char *scriptPath)
     Sleep(100);
     showWindow(hConsole, SW_MINIMIZE);
 
-    // MAIN LOOP - Process data from inbound and outbound pipes
+    // MAIN LOOP - Read output, send heartbeats, monitor Python process
     processPipeDataLoop(hInboundPipe, g_hCommandPipe, &pi);
-
-    // Wait for the Python process to complete
-    WaitForSingleObject(pi.hProcess, INFINITE);
     DWORD exitCode;
     GetExitCodeProcess(pi.hProcess, &exitCode);
 
@@ -332,8 +582,85 @@ int run_script(const char *pythonPath, const char *scriptPath)
 
 int main()
 {
-    // Specify the path to the Python interpreter and the script to be executed.
-    const char *pythonPath = ".\\WinPython\\python-3.13.0rc1.amd64\\pythonw.exe";
+    char pythonPathBuffer[512];
+    const char *pythonPath = NULL;
+
+    // --- Try the path from launcher.ini first ---
+    if (readPythonPathFromIni(pythonPathBuffer, sizeof(pythonPathBuffer)))
+    {
+        // Validate that pythonw.exe actually exists at the configured path
+        DWORD attrs = GetFileAttributes(pythonPathBuffer);
+        if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY))
+        {
+            pythonPath = pythonPathBuffer;
+            printf("[INFO] Using Python path from launcher.ini: %s\n", pythonPath);
+        }
+        else
+        {
+            printf("[INFO] Previously saved path no longer exists, will scan for options.\n");
+        }
+    }
+
+    // --- Fallback: scan and let the user pick ---
+    if (!pythonPath)
+    {
+        char dirs[MAX_PYTHON_DIRS][512];
+        int count = scanForPythonDirs(dirs, MAX_PYTHON_DIRS);
+
+        if (count == 0)
+        {
+            printf("\n[ERROR] MSFS PyScript Manager requires a Python installation (WinPython)\n");
+            printf("        to run, but none were found in the WinPython\\ folder.\n");
+            printf("        Please install WinPython there and try again.\n\n");
+            printf("Press any key to exit...\n");
+            getchar();
+            return -1;
+        }
+
+        int selection = 0; // index into dirs[]
+
+        printf("\nMSFS PyScript Manager needs a Python installation to run.\n");
+        printf("The following Python installations were found -- please pick one.\n");
+        printf("Your choice will be remembered so you won't be asked again.\n\n");
+        for (int i = 0; i < count; i++)
+        {
+            printf("  [%d] %s\n", i + 1, dirs[i]);
+        }
+        printf("\nEnter selection (1-%d): ", count);
+        fflush(stdout);
+
+        if (scanf("%d", &selection) != 1)
+        {
+            printf("\n[ERROR] Invalid input.\n\n");
+            printf("Press any key to exit...\n");
+            getchar();
+            return -1;
+        }
+        selection--; // convert to 0-based
+
+        if (selection < 0 || selection >= count)
+        {
+            printf("[ERROR] Selection out of range.\n\n");
+            printf("Press any key to exit...\n");
+            getchar();
+            return -1;
+        }
+
+        // Persist the choice so next launch is silent
+        if (writePythonDirToIni(dirs[selection]))
+        {
+            printf("[INFO] Selection saved -- you won't be prompted again unless the path changes.\n");
+        }
+        else
+        {
+            printf("[WARNING] Could not save selection (will still work this session).\n");
+        }
+
+        snprintf(pythonPathBuffer, sizeof(pythonPathBuffer), ".\\%s\\pythonw.exe", dirs[selection]);
+        pythonPath = pythonPathBuffer;
+        printf("[INFO] Using: %s\n\n", pythonPath);
+    }
+
     const char *scriptPath = ".\\Launcher\\LauncherScript\\launcher.py";
 
     // Register the console control handler
