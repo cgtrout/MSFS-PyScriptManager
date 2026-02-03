@@ -36,7 +36,12 @@ def read_launcher_config():
         try:
             config.read(ini_path)
             if config.has_option('Python', 'PythonDir'):
-                python_dir = config.get('Python', 'PythonDir').replace('\\', '/')
+                python_dir = config.get('Python', 'PythonDir').strip().replace('\\', '/')
+                # Treat leading slash as a mistaken "rooted relative" path and normalize it.
+                # Example: "\WinPython\WPy64-313110\python" -> "WinPython/WPy64-313110/python"
+                python_dir_path = Path(python_dir)
+                if (python_dir.startswith(("/", "\\")) and not python_dir_path.drive):
+                    python_dir = python_dir.lstrip("/\\")
             print(f"[INFO] Loaded configuration from {ini_path}")
         except Exception as e:
             print(f"[WARNING] Error reading launcher.ini: {e}. Using defaults.")
