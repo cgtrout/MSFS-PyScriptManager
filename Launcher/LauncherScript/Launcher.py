@@ -62,9 +62,9 @@ data_path = project_root / "Data"
 def ensure_dependencies():
     requirements_path = project_root / "Launcher" / "requirements.txt"
     if requirements_path.exists():
-        print(f"[INFO] Checking dependencies from {requirements_path}...")
-        result = subprocess.run(
-            [str(python_path), "-m", "pip", "install", "-q", "-r", str(requirements_path)],
+        print(f"[INFO] Checking dependencies from {requirements_path}...", flush=True)
+        process = subprocess.Popen(
+            [str(python_path), "-u", "-m", "pip", "install", "--no-warn-script-location", "-r", str(requirements_path)],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
