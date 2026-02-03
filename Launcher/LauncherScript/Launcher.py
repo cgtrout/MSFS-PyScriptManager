@@ -76,7 +76,8 @@ def ensure_dependencies():
             creationflags=subprocess.CREATE_NO_WINDOW
         )
         for line in iter(process.stdout.readline, ''):
-            print(line, end="", flush=True)
+            if "already satisfied" not in line:
+                print(line, end="", flush=True)
         process.wait()
         if process.returncode != 0:
             print(f"[WARNING] pip install returned {process.returncode}. Some packages may be missing.", flush=True)

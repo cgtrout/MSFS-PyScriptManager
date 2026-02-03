@@ -190,6 +190,14 @@ int readPythonPathFromIni(char *pythonPath, size_t maxLen) {
         if (inPythonSection && strncmp(trimmed, "PythonDir=", 10) == 0) {
             strncpy(pythonDir, trimmed + 10, sizeof(pythonDir) - 1);
             pythonDir[sizeof(pythonDir) - 1] = '\0';
+
+            // Strip leading slash/backslash (user might write \WinPython\... instead of WinPython\...)
+            char *dirStart = pythonDir;
+            while (*dirStart == '\\' || *dirStart == '/') dirStart++;
+            if (dirStart != pythonDir) {
+                memmove(pythonDir, dirStart, strlen(dirStart) + 1);
+            }
+
             break;
         }
     }
