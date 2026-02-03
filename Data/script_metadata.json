@@ -39,5 +39,14 @@
           "description": "Open Help"
         }
       ]
+    },
+    "z_intro_script.py": {
+      "commands": [
+        {
+          "command_name": "open_help",
+          "command_arg": "/readme.md",
+          "description": "Open README"
+        }
+      ]
     }
   }

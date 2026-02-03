@@ -11,7 +11,7 @@ This script intercepts print jobs and displays them as on-screen popups. It is p
  2. **Configure the Printer**: Set the printer in the Fenix EFB settings to use the "VirtualTextPrinter" created by the script:
 
      ![ACARS Printer Setup](https://github.com/user-attachments/assets/13a472df-3aa1-4977-8001-cc7ec6170d92)
- 3. **VR Community Addon (Optional):** Has an optional community toolbar addon for those in VR see: [Community Addon Guide](./Docs/Community_Addon_Guide.md)
+ 3. **VR Community Addon (Optional):** Has an optional community toolbar addon for those in VR see: [Community Addon Guide](./Community_Addon_Guide.md)
  4. Note that this script **must** be running for the print functionality to work as it functions as a print server.
 ## How to test the Printer
 - There is a script called "virtual_pos_TEST.py" that can be run to test the printer.  Run this in conjunction with the "virtual_pos_printer" script to test.  If everything is working correctly you should see popups with a test message every five seconds.  Close the test script to end the testing.
