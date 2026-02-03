@@ -19,32 +19,6 @@ import ctypes
 
 from threading import Lock
 
-import pstats
-
-import numpy as np
-from parse_ansi import AnsiParser
-
-import tkinter as tk
-from tkinter import filedialog, scrolledtext, TclError
-from tkinter import ttk
-
-import psutil
-import re
-from ttkthemes import ThemedTk
-
-from ordered_logger import OrderedLogger
-
-import faulthandler
-import traceback
-
-import signal
-import keyboard
-
-# Add parent directory so Lib path can be found
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
-from Lib.settings_changer import JsonSaveEditor
-from Lib.dark_mode import DarkmodeUtils
-
 # Path to the WinPython Python executable and VS Code.exe
 current_dir = Path(__file__).resolve().parent
 project_root = current_dir.parents[1]
@@ -70,10 +44,9 @@ def read_launcher_config():
         print(f"[INFO] launcher.ini not found at {ini_path}. Using default paths.")
 
     # Derive VS Code path from Python directory (go up one level)
-    # e.g., WinPython/Winpython64-3.13.0.1dotrc1/python-3.13.0rc1.amd64 
+    # e.g., WinPython/Winpython64-3.13.0.1dotrc1/python-3.13.0rc1.amd64
     #    -> WinPython/Winpython64-3.13.0.1dotrc1/VS Code.exe
-    from pathlib import Path as PathLib
-    python_path_obj = PathLib(python_dir)
+    python_path_obj = Path(python_dir)
     vscode_path_str = str(python_path_obj.parent / "VS Code.exe")
 
     return python_dir, vscode_path_str
@@ -84,6 +57,50 @@ pythonw_path = project_root / python_dir_str / "pythonw.exe"
 vscode_path = project_root / vscode_path_str
 scripts_path = project_root / "Scripts"
 data_path = project_root / "Data"
+
+# Ensure third-party dependencies are installed into WinPython
+def ensure_dependencies():
+    requirements_path = project_root / "Launcher" / "requirements.txt"
+    if requirements_path.exists():
+        print(f"[INFO] Checking dependencies from {requirements_path}...")
+        result = subprocess.run(
+            [str(python_path), "-m", "pip", "install", "-q", "-r", str(requirements_path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        if result.stdout:
+            print(result.stdout, end="")
+        if result.returncode != 0:
+            print(f"[WARNING] pip install returned {result.returncode}. Some packages may be missing.")
+
+ensure_dependencies()
+
+# Third-party imports (ensured by ensure_dependencies above)
+import numpy as np
+from parse_ansi import AnsiParser
+
+import tkinter as tk
+from tkinter import filedialog, scrolledtext, TclError
+from tkinter import ttk
+
+import psutil
+import re
+from ttkthemes import ThemedTk
+
+from ordered_logger import OrderedLogger
+
+import faulthandler
+import traceback
+
+import signal
+import keyboard
+
+# Add parent directory so Lib path can be found
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
+from Lib.settings_changer import JsonSaveEditor
+from Lib.dark_mode import DarkmodeUtils
 
 # Define color constants
 DARK_BG_COLOR = "#2E2E2E"

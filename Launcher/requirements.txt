@@ -1,0 +1,12 @@
+numpy
+psutil
+ttkthemes
+keyboard
+pygetwindow
+requests
+matplotlib
+pygame
+Pillow
+SimConnect
+pywin32
+pywinpty
