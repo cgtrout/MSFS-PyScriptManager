@@ -48,7 +48,8 @@ BOOL WINAPI ConsoleHandler(DWORD dwCtrlType)
         {
             const char *shutdownMessage = "shutdown\n";
             DWORD bytesWritten;
-            WriteFile(g_hCommandPipe, shutdownMessage, strlen(shutdownMessage), &bytesWritten, NULL);
+            OVERLAPPED ol = {0};
+            WriteFile(g_hCommandPipe, shutdownMessage, strlen(shutdownMessage), &bytesWritten, &ol);
             CloseHandle(g_hCommandPipe);
             g_hCommandPipe = NULL;
         }
@@ -89,9 +90,11 @@ void processPipeDataLoop(HANDLE hInboundPipe, HANDLE hCommandPipe, PROCESS_INFOR
         if (currentTime - lastHeartbeatTime >= heartbeatInterval)
         {
             DWORD bytesWritten;
-            if (!WriteFile(g_hCommandPipe, heartbeatMessage, strlen(heartbeatMessage), &bytesWritten, NULL))
+            OVERLAPPED writeOl = {0};
+            if (!WriteFile(g_hCommandPipe, heartbeatMessage, strlen(heartbeatMessage), &bytesWritten, &writeOl))
             {
-                printf("[ERROR] Failed to send heartbeat. Error: %lu\n", GetLastError());
+                if (GetLastError() != ERROR_IO_PENDING)
+                    printf("[ERROR] Failed to send heartbeat. Error: %lu\n", GetLastError());
             }
             lastHeartbeatTime = currentTime;
         }
@@ -141,6 +144,64 @@ HANDLE createNamedPipe(
     }
 
     return pipeHandle;
+}
+
+// Read Python path from launcher.ini configuration file
+// Returns 1 on success, 0 on failure
+int readPythonPathFromIni(char *pythonPath, size_t maxLen) {
+    char iniPath[512];
+    char line[512];
+    char pythonDir[512] = {0};
+    FILE *iniFile;
+
+    snprintf(iniPath, sizeof(iniPath), ".\\Launcher\\launcher.ini");
+    iniFile = fopen(iniPath, "r");
+    if (!iniFile) {
+        return 0;
+    }
+
+    int inPythonSection = 0;
+    while (fgets(line, sizeof(line), iniFile)) {
+        char *trimmed = line;
+        while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+
+        size_t len = strlen(trimmed);
+        if (len > 0 && (trimmed[len-1] == '\n' || trimmed[len-1] == '\r')) {
+            trimmed[len-1] = '\0';
+            if (len > 1 && trimmed[len-2] == '\r') {
+                trimmed[len-2] = '\0';
+            }
+        }
+
+        if (trimmed[0] == '\0' || trimmed[0] == ';' || trimmed[0] == '#') {
+            continue;
+        }
+
+        if (strcmp(trimmed, "[Python]") == 0) {
+            inPythonSection = 1;
+            continue;
+        }
+
+        if (trimmed[0] == '[') {
+            inPythonSection = 0;
+            continue;
+        }
+
+        if (inPythonSection && strncmp(trimmed, "PythonDir=", 10) == 0) {
+            strncpy(pythonDir, trimmed + 10, sizeof(pythonDir) - 1);
+            pythonDir[sizeof(pythonDir) - 1] = '\0';
+            break;
+        }
+    }
+
+    fclose(iniFile);
+
+    if (pythonDir[0] != '\0') {
+        snprintf(pythonPath, maxLen, ".\\%s\\pythonw.exe", pythonDir);
+        return 1;
+    }
+
+    return 0;
 }
 
 // Execute a Python script using the specified interpreter path and script file path
@@ -208,12 +269,12 @@ int run_script(const char *pythonPath, const char *scriptPath)
         return -1; // Exit if the pipe couldn't be created
     }
 
-    // Create shutdown pipe
+    // Create shutdown pipe (overlapped so ConnectNamedPipe can be non-blocking)
     g_hCommandPipe = createNamedPipe(
         "PythonShutdownPipe",      // Pipe prefix
         pid,                       // Process ID
         randomSuffix,              // Random suffix
-        PIPE_ACCESS_OUTBOUND,      // Write-only access
+        PIPE_ACCESS_OUTBOUND | FILE_FLAG_OVERLAPPED,  // Write-only, overlapped
         scriptCommandPipeName,     // Output: pipe name
         sizeof(scriptCommandPipeName),
         &sa,                       // Pass SECURITY_ATTRIBUTES
@@ -272,25 +333,91 @@ int run_script(const char *pythonPath, const char *scriptPath)
     printf("NOTE: Closing this window will close MSFS-PyScriptManager\n");
     printf("-------------------------------------------------------------------------------------------\n\n");
 
-    // Wait for the client to connect
-    printf("Waiting for Launcher...\n");
-    BOOL connected = ConnectNamedPipe(g_hCommandPipe, NULL) || GetLastError() == ERROR_PIPE_CONNECTED;
-    if (!connected)
-    {
-        displayErrorAndRestoreConsole("Failed to connect to shutdown named pipe.", hConsole, showWindow);
-        CloseHandle(hInboundPipe);
-        return -1;
-    }
-
-    // Now, explicitly connect the output pipe after launching the process:
+    // IMPORTANT: Connect to output pipe FIRST so we can see Python errors during startup
+    printf("Connecting to output pipe...\n");
     BOOL connectedOutput = ConnectNamedPipe(hInboundPipe, NULL) ||
                            (GetLastError() == ERROR_PIPE_CONNECTED);
     if (!connectedOutput)
     {
         displayErrorAndRestoreConsole("Failed to connect to output named pipe.", hConsole, showWindow);
         CloseHandle(hInboundPipe);
-        // Clean up shutdown pipe if needed...
+        CloseHandle(g_hCommandPipe);
         return -1;
+    }
+    printf("Output pipe connected\n");
+
+    // Use overlapped ConnectNamedPipe so we can read Python output while waiting.
+    // If Python crashes before connecting, we see the error instead of hanging.
+    printf("Waiting for Launcher...\n");
+    {
+        OVERLAPPED connectOl = {0};
+        connectOl.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+        BOOL connected = ConnectNamedPipe(g_hCommandPipe, &connectOl);
+        if (!connected && GetLastError() != ERROR_IO_PENDING)
+        {
+            displayErrorAndRestoreConsole("Failed to connect to shutdown named pipe.", hConsole, showWindow);
+            CloseHandle(connectOl.hEvent);
+            CloseHandle(hInboundPipe);
+            CloseHandle(g_hCommandPipe);
+            return -1;
+        }
+
+        // Poll: read output pipe, check connect completion, check process exit
+        while (!connected)
+        {
+            char buffer[4096];
+            DWORD bytesAvailable = 0;
+            DWORD bytesRead;
+            DWORD dummy;
+
+            // Read any output Python has written so far
+            if (PeekNamedPipe(hInboundPipe, NULL, 0, NULL, &bytesAvailable, NULL) && bytesAvailable > 0)
+            {
+                if (ReadFile(hInboundPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0)
+                {
+                    buffer[bytesRead] = '\0';
+                    printf("%s", buffer);
+                }
+            }
+
+            // Did the shutdown pipe finish connecting?
+            if (GetOverlappedResult(g_hCommandPipe, &connectOl, &dummy, FALSE))
+            {
+                connected = TRUE;
+                break;
+            }
+
+            // Did Python exit before it could connect?
+            if (WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0)
+            {
+                // Drain whatever is left in the output pipe
+                while (PeekNamedPipe(hInboundPipe, NULL, 0, NULL, &bytesAvailable, NULL) && bytesAvailable > 0)
+                {
+                    if (ReadFile(hInboundPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0)
+                    {
+                        buffer[bytesRead] = '\0';
+                        printf("%s", buffer);
+                    }
+                }
+
+                DWORD exitCode;
+                GetExitCodeProcess(pi.hProcess, &exitCode);
+                showWindow(hConsole, SW_RESTORE);
+                printf("\n[ERROR] Python process exited (code %lu) before connecting to shutdown pipe.\n", exitCode);
+
+                CloseHandle(connectOl.hEvent);
+                CloseHandle(hInboundPipe);
+                CloseHandle(g_hCommandPipe);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+                return (int)exitCode;
+            }
+
+            Sleep(10);
+        }
+
+        CloseHandle(connectOl.hEvent);
     }
 
     printf("Launcher connected\n");
@@ -300,11 +427,8 @@ int run_script(const char *pythonPath, const char *scriptPath)
     Sleep(100);
     showWindow(hConsole, SW_MINIMIZE);
 
-    // MAIN LOOP - Process data from inbound and outbound pipes
+    // MAIN LOOP - Read output, send heartbeats, monitor Python process
     processPipeDataLoop(hInboundPipe, g_hCommandPipe, &pi);
-
-    // Wait for the Python process to complete
-    WaitForSingleObject(pi.hProcess, INFINITE);
     DWORD exitCode;
     GetExitCodeProcess(pi.hProcess, &exitCode);
 
@@ -333,7 +457,23 @@ int run_script(const char *pythonPath, const char *scriptPath)
 int main()
 {
     // Specify the path to the Python interpreter and the script to be executed.
-    const char *pythonPath = ".\\WinPython\\python-3.13.0rc1.amd64\\pythonw.exe";
+    char pythonPathBuffer[512];
+    const char *pythonPath;
+
+    if (readPythonPathFromIni(pythonPathBuffer, sizeof(pythonPathBuffer))) {
+        pythonPath = pythonPathBuffer;
+        printf("[INFO] Using Python path from launcher.ini: %s\n", pythonPath);
+    } else {
+        printf("[ERROR] Failed to read Python path from launcher.ini\n\n");
+        printf("Please ensure launcher.ini exists at: .\\Launcher\\launcher.ini\n");
+        printf("And contains the following configuration:\n\n");
+        printf("[Python]\n");
+        printf("PythonDir=WinPython\\python-3.13.0rc1.amd64\n\n");
+        printf("Adjust the PythonDir value to match your Python installation directory.\n\n");
+        printf("Press any key to exit...\n");
+        getchar();
+        return -1;
+    }
     const char *scriptPath = ".\\Launcher\\LauncherScript\\launcher.py";
 
     // Register the console control handler

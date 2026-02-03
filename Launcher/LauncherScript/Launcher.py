@@ -3,6 +3,7 @@
 print("---Launcher.py STARTING---")
 
 import json
+import configparser
 import logging
 import os
 import queue
@@ -47,9 +48,40 @@ from Lib.dark_mode import DarkmodeUtils
 # Path to the WinPython Python executable and VS Code.exe
 current_dir = Path(__file__).resolve().parent
 project_root = current_dir.parents[1]
-python_path = project_root / "WinPython" / "python-3.13.0rc1.amd64" / "python.exe"
-pythonw_path = python_path.with_name("pythonw.exe")
-vscode_path = project_root / "WinPython" / "VS Code.exe"
+
+# Read paths from launcher.ini
+def read_launcher_config():
+    """Read launcher configuration from launcher.ini file."""
+    config = configparser.ConfigParser()
+    ini_path = project_root / "Launcher" / "launcher.ini"
+
+    # Default values
+    python_dir = "WinPython/Winpython64-3.13.0.1dotrc1/python-3.13.0rc1.amd64"
+
+    if ini_path.exists():
+        try:
+            config.read(ini_path)
+            if config.has_option('Python', 'PythonDir'):
+                python_dir = config.get('Python', 'PythonDir').replace('\\', '/')
+            print(f"[INFO] Loaded configuration from {ini_path}")
+        except Exception as e:
+            print(f"[WARNING] Error reading launcher.ini: {e}. Using defaults.")
+    else:
+        print(f"[INFO] launcher.ini not found at {ini_path}. Using default paths.")
+
+    # Derive VS Code path from Python directory (go up one level)
+    # e.g., WinPython/Winpython64-3.13.0.1dotrc1/python-3.13.0rc1.amd64 
+    #    -> WinPython/Winpython64-3.13.0.1dotrc1/VS Code.exe
+    from pathlib import Path as PathLib
+    python_path_obj = PathLib(python_dir)
+    vscode_path_str = str(python_path_obj.parent / "VS Code.exe")
+
+    return python_dir, vscode_path_str
+
+python_dir_str, vscode_path_str = read_launcher_config()
+python_path = project_root / python_dir_str / "python.exe"
+pythonw_path = project_root / python_dir_str / "pythonw.exe"
+vscode_path = project_root / vscode_path_str
 scripts_path = project_root / "Scripts"
 data_path = project_root / "Data"
 
@@ -940,7 +972,7 @@ class CommandLineTab(Tab):
 
             # Build a custom environment inheriting from os.environ
             custom_env = os.environ.copy()
-            winpython_bin = str((project_root / "WinPython" / "python-3.13.0rc1.amd64").resolve())
+            winpython_bin = str((project_root / python_dir_str).resolve())
 
             # Ensure the WinPython binary and scripts folder are in PATH
             custom_env["PATH"] = f"{winpython_bin};{winpython_bin}\\Scripts;{custom_env.get('PATH', '')}"
@@ -1281,7 +1313,7 @@ class CommandLineTab(Tab):
 
 class ScriptLauncherApp:
     """Represents the main application for launching and managing scripts."""
-    def __init__(self, root):
+    def __init__(self, root, shutdown_event=None):
         # Root Window Setup
         self.root = root
         self.configure_root()
@@ -1294,8 +1326,8 @@ class ScriptLauncherApp:
         # Bind Events
         self.bind_events()
 
-        # Event for shutdown
-        self.shutdown_event = Event()
+        # Event for shutdown (use provided event or create a new one)
+        self.shutdown_event = shutdown_event if shutdown_event is not None else Event()
 
         self.process_tracker = ProcessTracker(scheduler=self.root.after,
                                               shutdown_event=self.shutdown_event)
@@ -2076,9 +2108,21 @@ def main():
 
     print("Starting Launcher.py -- main()")
 
+    # Create shutdown event BEFORE GUI initialization
+    shutdown_event = Event()
+
+    # Start the shutdown monitoring subprocess IMMEDIATELY if a pipe is provided
+    # This allows the C launcher to proceed without waiting for GUI initialization
+    monitor_process = None
+    if shutdown_pipe:
+        monitor_process = Process(target=monitor_shutdown_pipe,
+                                  args=(shutdown_pipe, shutdown_event))
+        monitor_process.start()
+        logger.info("Started shutdown monitoring process.")
+
     # Start app
     root = ThemedTk(theme="black")
-    app = ScriptLauncherApp(root)
+    app = ScriptLauncherApp(root, shutdown_event=shutdown_event)
 
     # Add fault handler
     faulthandler.enable()
@@ -2089,14 +2133,6 @@ def main():
         root.after(5000, reset_traceback_timer)
 
     #reset_traceback_timer()
-
-    # Start the shutdown monitoring subprocess if a pipe is provided
-    monitor_process = None
-    if shutdown_pipe:
-        monitor_process = Process(target=monitor_shutdown_pipe,
-                                  args=(shutdown_pipe, app.shutdown_event))
-        monitor_process.start()
-        logger.info("Started shutdown monitoring process.")
 
     try:
         # Periodically check for the shutdown_event
