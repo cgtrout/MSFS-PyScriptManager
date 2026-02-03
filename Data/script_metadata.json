@@ -5,6 +5,11 @@
           "command_name": "open_settings_editor",
           "command_arg": "/Settings/settings.json",
           "description": "Open Settings"
+        },
+        {
+          "command_name": "open_help",
+          "command_arg": "/Docs/virtual_pos_printer.md",
+          "description": "Open Help"
         }
       ]
     },
@@ -14,6 +19,33 @@
           "command_name": "open_settings_editor",
           "command_arg": "/Settings/metar_load.json",
           "description": "Open Settings"
+        }
+      ]
+    },
+    "fenix_lights.py": {
+      "commands": [
+        {
+          "command_name": "open_help",
+          "command_arg": "/Docs/fenix_lights.md",
+          "description": "Open Help"
+        }
+      ]
+    },
+    "custom_status_bar.py": {
+      "commands": [
+        {
+          "command_name": "open_help",
+          "command_arg": "/Docs/custom_status_bar.md",
+          "description": "Open Help"
+        }
+      ]
+    },
+    "z_intro_script.py": {
+      "commands": [
+        {
+          "command_name": "open_help",
+          "command_arg": "/readme.md",
+          "description": "Open README"
         }
       ]
     }
