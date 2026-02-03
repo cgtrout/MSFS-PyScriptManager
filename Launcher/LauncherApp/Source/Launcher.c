@@ -359,9 +359,6 @@ int run_script(const char *pythonPath, const char *scriptPath)
         return -1;
     }
 
-    // Minimize the console window
-    Sleep(100); // Allow time for the operation to take effect
-
     // Declare and initialize SECURITY_ATTRIBUTES
     SECURITY_ATTRIBUTES sa = {0};
     sa.nLength = sizeof(sa);
@@ -548,10 +545,8 @@ int run_script(const char *pythonPath, const char *scriptPath)
 
     printf("Launcher connected\n");
 
-    // Bring the console window to the foreground and minimize it
-    setForegroundWindow(hConsole);
-    Sleep(100);
-    showWindow(hConsole, SW_MINIMIZE);
+    // Hide the console window (restored on error via SW_RESTORE)
+    showWindow(hConsole, SW_HIDE);
 
     // MAIN LOOP - Read output, send heartbeats, monitor Python process
     processPipeDataLoop(hInboundPipe, g_hCommandPipe, &pi);
