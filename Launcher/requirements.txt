@@ -10,3 +10,5 @@ Pillow
 SimConnect
 pywin32
 pywinpty
+mistune
+tkhtmlview

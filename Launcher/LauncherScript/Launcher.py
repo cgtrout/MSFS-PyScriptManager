@@ -95,6 +95,9 @@ from tkinter import ttk
 import psutil
 import re
 from ttkthemes import ThemedTk
+import mistune
+from tkhtmlview import HTMLScrolledText
+import tkhtmlview.html_parser as _tkhtmlview_parser
 
 from ordered_logger import OrderedLogger
 
@@ -432,11 +435,12 @@ class TabManager:
 
 class ScriptTab(Tab):
     """Represents one running script in a tab"""
-    def __init__(self, title, script_path, process_tracker):
+    def __init__(self, title, script_path, process_tracker, open_tab=None):
         super().__init__(title)
         self.script_path = script_path
         self.script_name = script_path.name
         self.process_tracker:ProcessTracker = process_tracker
+        self.open_tab = open_tab
 
         # Define font settings
         self.font_normal = ("Consolas", 12)
@@ -566,6 +570,25 @@ class ScriptTab(Tab):
                     command=lambda arg=command_arg: JsonSaveEditor(
                         os.path.normpath(os.path.join(project_root, arg.lstrip("/\\")))
                     ),
+                    bg=BUTTON_BG_COLOR,
+                    fg=BUTTON_FG_COLOR,
+                    activebackground=BUTTON_ACTIVE_BG_COLOR,
+                    activeforeground=BUTTON_ACTIVE_FG_COLOR,
+                    relief="flat",
+                    highlightthickness=0
+                )
+                button.pack(side="right", padx=0, pady=2)
+
+            elif command_name == "open_help" and self.open_tab:
+                md_path = os.path.normpath(os.path.join(project_root, command_arg.lstrip("/\\")))
+                button = tk.Button(
+                    self.button_frame,
+                    text=description,
+                    command=lambda path=md_path: self.open_tab(MarkdownTab(
+                        title=os.path.basename(path),
+                        md_file_path=path,
+                        open_tab=self.open_tab
+                    )),
                     bg=BUTTON_BG_COLOR,
                     fg=BUTTON_FG_COLOR,
                     activebackground=BUTTON_ACTIVE_BG_COLOR,
@@ -898,6 +921,95 @@ class PerfTab(Tab):
         text_widget = tk.Text(self.frame, wrap="word")
         text_widget.pack(expand=True, fill="both")
         return text_widget
+
+class MarkdownTab(Tab):
+    """A tab that renders a Markdown file as HTML."""
+    def __init__(self, title, md_file_path, open_tab=None):
+        super().__init__(title)
+        self.md_file_path = md_file_path
+        self.open_tab = open_tab
+
+    def build_content(self):
+        """Read the Markdown file and render it as HTML."""
+        with open(self.md_file_path, "r", encoding="utf-8") as f:
+            md_content = f.read()
+
+        html_body = mistune.html(md_content)
+
+        # CommonMark "loose lists" wrap every <li> content in <p>, which tkhtmlview renders as a blank line
+        # before the text — splitting bullet numbers from their content. Strip the <p> wrapper; where a
+        # list item has multiple paragraphs (e.g. text + image), collapse the </p><p> boundary to <br>.
+        html_body = re.sub(r'<li>\s*<p>', '<li>', html_body)
+        html_body = re.sub(r'</p>\s*</li>', '</li>', html_body)
+        html_body = re.sub(r'</p>\s*<p>', '<br>', html_body)
+
+        # Apply GitHub dark mode colors via inline styles (tkhtmlview supports per-element inline styles)
+        html_body = re.sub(r'<a\s', '<a style="color: #58a6ff" ', html_body)
+        html_body = re.sub(r'<h([1-6])>', r'<h\1 style="color: #f0f6fc">', html_body)
+        html_body = re.sub(r'<pre>', '<pre style="background-color: #1e1e2e">', html_body)
+
+        # tkhtmlview defaults foreground to "black" via DEFAULT_STACK regardless of the widget fg kwarg.
+        # Patch it to a soft dark-mode gray before set_html (which deepcopies DEFAULT_STACK), then restore.
+        _orig_fg = _tkhtmlview_parser.DEFAULT_STACK["config"]["foreground"]
+        _tkhtmlview_parser.DEFAULT_STACK["config"]["foreground"] = [("__DEFAULT__", "#c9d1d9")]
+
+        # Note: must use background= (long form) — tkhtmlview's _w_init checks for that key specifically
+        self.html_widget = HTMLScrolledText(
+            self.frame,
+            background=TEXT_WIDGET_BG_COLOR,
+            padx=10,
+            pady=5,
+        )
+        self.html_widget.set_html(html_body)
+
+        # Rebind relative .md links to open as new tabs instead of webbrowser.open()
+        self._rebind_links()
+
+        # tkhtmlview positions bullets via tab stops (bullet at px 30, text at px 35) but never sets
+        # lmargin2, so wrapped lines fall back to the left edge. Find list item lines (they start with
+        # a tab inserted by tkhtmlview) and apply lmargin2 to match the text start position.
+        for line_num, line in enumerate(self.html_widget.get("1.0", tk.END).split('\n'), start=1):
+            if line.startswith('\t'):
+                self.html_widget.tag_add("_li_indent", f"{line_num}.0", f"{line_num}.end")
+        self.html_widget.tag_config("_li_indent", lmargin2=35)
+
+        self.html_widget.config(state=tk.DISABLED)
+
+        _tkhtmlview_parser.DEFAULT_STACK["config"]["foreground"] = _orig_fg
+
+        # Replace tkhtmlview's plain tk.Scrollbar with a ttk.Scrollbar so it picks up the app dark theme
+        self.html_widget.vbar.destroy()
+        scrollbar = ttk.Scrollbar(self.html_widget.frame, orient="vertical", command=self.html_widget.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.html_widget.configure(yscrollcommand=scrollbar.set)
+
+        self.html_widget.pack(expand=True, fill="both")
+
+    def _rebind_links(self):
+        """Rebind relative .md links to open as new tabs; leave http(s) links to the browser."""
+        if not self.open_tab:
+            return
+        md_dir = os.path.dirname(os.path.abspath(self.md_file_path))
+        for slot in self.html_widget.html_parser.hlink_slots:
+            url = slot.URL
+            # Leave absolute URLs to tkhtmlview's default webbrowser handler
+            if url.startswith(("http://", "https://", "mailto:")):
+                continue
+            # Resolve relative path; strip #fragment if present
+            path_part = url.split("#", 1)[0]
+            if not path_part:
+                continue  # anchor-only link (#section) — nothing to navigate to
+            resolved = os.path.normpath(os.path.join(md_dir, path_part))
+            if resolved.lower().endswith(".md") and os.path.isfile(resolved):
+                self.html_widget.tag_unbind(slot.tag_name, "<Button-1>")
+                self.html_widget.tag_bind(
+                    slot.tag_name, "<Button-1>",
+                    lambda event, path=resolved: self.open_tab(MarkdownTab(
+                        title=os.path.basename(path),
+                        md_file_path=path,
+                        open_tab=self.open_tab
+                    ))
+                )
 
 class CommandLineTab(Tab):
     """A tab that provides a terminal-like command-line interface."""
@@ -1431,7 +1543,8 @@ class ScriptLauncherApp:
         script_tab = ScriptTab(
             title=script_path.name,
             script_path=script_path,
-            process_tracker=self.process_tracker
+            process_tracker=self.process_tracker,
+            open_tab=self.tab_manager.add_tab
         )
         self.tab_manager.add_tab(script_tab)
 
@@ -1493,7 +1606,8 @@ class ScriptLauncherApp:
         script_tab = ScriptTab(
             title=script_path.name,
             script_path=script_path,
-            process_tracker=self.process_tracker
+            process_tracker=self.process_tracker,
+            open_tab=self.tab_manager.add_tab
         )
         self.tab_manager.add_tab(script_tab)
 
@@ -1572,7 +1686,8 @@ class ScriptLauncherApp:
         script_tab = ScriptTab(
             title=script_path.name,
             script_path=script_path,
-            process_tracker=self.process_tracker
+            process_tracker=self.process_tracker,
+            open_tab=self.tab_manager.add_tab
         )
         self.tab_manager.add_tab(script_tab)
 
