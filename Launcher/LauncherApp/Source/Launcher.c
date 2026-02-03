@@ -212,6 +212,87 @@ int readPythonPathFromIni(char *pythonPath, size_t maxLen) {
     return 0;
 }
 
+#define MAX_PYTHON_DIRS 16
+
+// Scan .\WinPython\<distro>\<subdir> for directories containing pythonw.exe.
+// dirs[][] receives relative paths like "WinPython\WPy64-313110\python".
+// Returns the number of directories found (up to maxDirs).
+int scanForPythonDirs(char dirs[][512], int maxDirs)
+{
+    int count = 0;
+    WIN32_FIND_DATA findDataL1;
+    char searchPath[512];
+
+    snprintf(searchPath, sizeof(searchPath), ".\\WinPython\\*");
+    HANDLE hFindL1 = FindFirstFile(searchPath, &findDataL1);
+    if (hFindL1 == INVALID_HANDLE_VALUE)
+        return 0;
+
+    do {
+        if (!(findDataL1.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+            continue;
+        if (findDataL1.cFileName[0] == '.')
+            continue;
+
+        // Second level: enumerate subdirs inside this distro folder
+        WIN32_FIND_DATA findDataL2;
+        char searchPath2[512];
+        snprintf(searchPath2, sizeof(searchPath2), ".\\WinPython\\%s\\*", findDataL1.cFileName);
+        HANDLE hFindL2 = FindFirstFile(searchPath2, &findDataL2);
+        if (hFindL2 == INVALID_HANDLE_VALUE)
+            continue;
+
+        do {
+            if (!(findDataL2.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+                continue;
+            if (findDataL2.cFileName[0] == '.')
+                continue;
+
+            // Does pythonw.exe live here?
+            char candidate[512];
+            snprintf(candidate, sizeof(candidate), ".\\WinPython\\%s\\%s\\pythonw.exe",
+                     findDataL1.cFileName, findDataL2.cFileName);
+
+            DWORD attrs = GetFileAttributes(candidate);
+            if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY))
+            {
+                if (count < maxDirs)
+                {
+                    snprintf(dirs[count], 512, "WinPython\\%s\\%s",
+                             findDataL1.cFileName, findDataL2.cFileName);
+                    count++;
+                }
+            }
+        } while (FindNextFile(hFindL2, &findDataL2));
+        FindClose(hFindL2);
+
+    } while (FindNextFile(hFindL1, &findDataL1));
+    FindClose(hFindL1);
+
+    return count;
+}
+
+// Write (or overwrite) launcher.ini with the given PythonDir value.
+// Returns 1 on success, 0 on failure.
+int writePythonDirToIni(const char *pythonDir)
+{
+    FILE *f = fopen(".\\Launcher\\launcher.ini", "w");
+    if (!f)
+        return 0;
+
+    fprintf(f, "# MSFS PyScript Manager - Launcher Configuration\n");
+    fprintf(f, "# This file configures which Python installation the launcher uses\n");
+    fprintf(f, "\n");
+    fprintf(f, "[Python]\n");
+    fprintf(f, "# Path to the Python installation directory (relative to project root)\n");
+    fprintf(f, "# The launcher will look for python.exe and pythonw.exe in this directory\n");
+    fprintf(f, "# VS Code.exe will be located in the parent directory\n");
+    fprintf(f, "PythonDir=%s\n", pythonDir);
+
+    fclose(f);
+    return 1;
+}
+
 // Execute a Python script using the specified interpreter path and script file path
 // Returns the exit code from the Python process, or -1 if there was an error
 int run_script(const char *pythonPath, const char *scriptPath)
@@ -464,24 +545,85 @@ int run_script(const char *pythonPath, const char *scriptPath)
 
 int main()
 {
-    // Specify the path to the Python interpreter and the script to be executed.
     char pythonPathBuffer[512];
-    const char *pythonPath;
+    const char *pythonPath = NULL;
 
-    if (readPythonPathFromIni(pythonPathBuffer, sizeof(pythonPathBuffer))) {
-        pythonPath = pythonPathBuffer;
-        printf("[INFO] Using Python path from launcher.ini: %s\n", pythonPath);
-    } else {
-        printf("[ERROR] Failed to read Python path from launcher.ini\n\n");
-        printf("Please ensure launcher.ini exists at: .\\Launcher\\launcher.ini\n");
-        printf("And contains the following configuration:\n\n");
-        printf("[Python]\n");
-        printf("PythonDir=WinPython\\python-3.13.0rc1.amd64\n\n");
-        printf("Adjust the PythonDir value to match your Python installation directory.\n\n");
-        printf("Press any key to exit...\n");
-        getchar();
-        return -1;
+    // --- Try the path from launcher.ini first ---
+    if (readPythonPathFromIni(pythonPathBuffer, sizeof(pythonPathBuffer)))
+    {
+        // Validate that pythonw.exe actually exists at the configured path
+        DWORD attrs = GetFileAttributes(pythonPathBuffer);
+        if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY))
+        {
+            pythonPath = pythonPathBuffer;
+            printf("[INFO] Using Python path from launcher.ini: %s\n", pythonPath);
+        }
+        else
+        {
+            printf("[INFO] Previously saved path no longer exists, will scan for options.\n");
+        }
     }
+
+    // --- Fallback: scan and let the user pick ---
+    if (!pythonPath)
+    {
+        char dirs[MAX_PYTHON_DIRS][512];
+        int count = scanForPythonDirs(dirs, MAX_PYTHON_DIRS);
+
+        if (count == 0)
+        {
+            printf("\n[ERROR] MSFS PyScript Manager requires a Python installation (WinPython)\n");
+            printf("        to run, but none were found in the WinPython\\ folder.\n");
+            printf("        Please install WinPython there and try again.\n\n");
+            printf("Press any key to exit...\n");
+            getchar();
+            return -1;
+        }
+
+        int selection = 0; // index into dirs[]
+
+        printf("\nMSFS PyScript Manager needs a Python installation to run.\n");
+        printf("The following Python installations were found -- please pick one.\n");
+        printf("Your choice will be remembered so you won't be asked again.\n\n");
+        for (int i = 0; i < count; i++)
+        {
+            printf("  [%d] %s\n", i + 1, dirs[i]);
+        }
+        printf("\nEnter selection (1-%d): ", count);
+        fflush(stdout);
+
+        if (scanf("%d", &selection) != 1)
+        {
+            printf("\n[ERROR] Invalid input.\n\n");
+            printf("Press any key to exit...\n");
+            getchar();
+            return -1;
+        }
+        selection--; // convert to 0-based
+
+        if (selection < 0 || selection >= count)
+        {
+            printf("[ERROR] Selection out of range.\n\n");
+            printf("Press any key to exit...\n");
+            getchar();
+            return -1;
+        }
+
+        // Persist the choice so next launch is silent
+        if (writePythonDirToIni(dirs[selection]))
+        {
+            printf("[INFO] Selection saved -- you won't be prompted again unless the path changes.\n");
+        }
+        else
+        {
+            printf("[WARNING] Could not save selection (will still work this session).\n");
+        }
+
+        snprintf(pythonPathBuffer, sizeof(pythonPathBuffer), ".\\%s\\pythonw.exe", dirs[selection]);
+        pythonPath = pythonPathBuffer;
+        printf("[INFO] Using: %s\n\n", pythonPath);
+    }
+
     const char *scriptPath = ".\\Launcher\\LauncherScript\\launcher.py";
 
     // Register the console control handler
