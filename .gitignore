@@ -51,3 +51,5 @@ application_log.txt
 shutdown_log.txt
 profile_output.html
 detailed_state_log.txt
+Launcher/launcher.ini
+Data/update_cache.json

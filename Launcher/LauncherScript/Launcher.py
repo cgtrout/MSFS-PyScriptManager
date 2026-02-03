@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+import webbrowser
 from multiprocessing import Process, Event
 from pathlib import Path
 from tkinter import messagebox
@@ -62,6 +63,8 @@ pythonw_path = project_root / python_dir_str / "pythonw.exe"
 vscode_path = project_root / vscode_path_str
 scripts_path = project_root / "Scripts"
 data_path = project_root / "Data"
+version_file_path = project_root / "Launcher" / "version.txt"
+update_cache_path = data_path / "update_cache.json"
 
 # Ensure third-party dependencies are installed into WinPython
 def ensure_dependencies():
@@ -106,6 +109,7 @@ import traceback
 
 import signal
 import keyboard
+import requests
 
 # Add parent directory so Lib path can be found
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
@@ -132,6 +136,106 @@ logger = OrderedLogger(
     level=logging.DEBUG,
     log_format="%(asctime)s [%(levelname)s] %(message)s"
 )
+
+# GitHub repository for update checks
+UPDATE_REPO_OWNER = "cgtrout"
+UPDATE_REPO_NAME = "MSFS-PyScriptManager"
+
+def read_update_config():
+    """Read update configuration from launcher.ini."""
+    config = configparser.ConfigParser()
+    ini_path = project_root / "Launcher" / "launcher.ini"
+
+    # Defaults
+    update_owner = UPDATE_REPO_OWNER
+    update_repo = UPDATE_REPO_NAME
+    check_on_startup = True
+    check_interval_hours = 24
+
+    if ini_path.exists():
+        try:
+            config.read(ini_path)
+            if config.has_section("Update"):
+                update_owner = config.get("Update", "RepoOwner", fallback=update_owner).strip()
+                update_repo = config.get("Update", "RepoName", fallback=update_repo).strip()
+                check_on_startup = config.getboolean("Update", "CheckOnStartup", fallback=check_on_startup)
+                check_interval_hours = config.getint("Update", "CheckIntervalHours", fallback=check_interval_hours)
+        except Exception as e:
+            print(f"[WARNING] Error reading update config from launcher.ini: {e}. Using defaults.")
+
+    return update_owner, update_repo, check_on_startup, check_interval_hours
+
+def read_app_version():
+    """Read application version from Launcher/version.txt."""
+    if not version_file_path.exists():
+        print(f"[WARNING] Version file not found at {version_file_path}. Using 0.0.0.")
+        return "0.0.0"
+    try:
+        return version_file_path.read_text(encoding="utf-8").strip() or "0.0.0"
+    except Exception as e:
+        print(f"[WARNING] Failed to read version file: {e}. Using 0.0.0.")
+        return "0.0.0"
+
+def _parse_version(version_str):
+    """Extract numeric components from a version string for comparison."""
+    cleaned = version_str.strip()
+    numbers = re.findall(r"\d+", cleaned)
+    return tuple(int(n) for n in numbers)
+
+def _format_version_numbers(numbers):
+    """Format numeric version tuple into a dotted string."""
+    if not numbers:
+        return ""
+    return ".".join(str(n) for n in numbers)
+
+def is_newer_version(latest, current):
+    """
+    Return True if latest > current.
+    Prefer numeric comparison when possible, otherwise fall back to string equality.
+    """
+    latest_clean = latest.strip()
+    current_clean = current.strip()
+
+    latest_parsed = _parse_version(latest_clean)
+    current_parsed = _parse_version(current_clean)
+
+    if latest_parsed or current_parsed:
+        return latest_parsed > current_parsed
+
+    return latest_clean != current_clean
+
+def load_update_cache():
+    """Load update cache (last_check)."""
+    if not update_cache_path.exists():
+        return {}
+    try:
+        return json.loads(update_cache_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+def save_update_cache(cache):
+    """Save update cache to disk."""
+    try:
+        update_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        update_cache_path.write_text(json.dumps(cache), encoding="utf-8")
+    except Exception as e:
+        print(f"[WARNING] Failed to write update cache: {e}")
+
+def should_check_updates(cache, interval_seconds):
+    """Check if enough time has passed since last update check."""
+    last_check = cache.get("last_check", 0)
+    return (time.time() - last_check) > interval_seconds
+
+def fetch_latest_release(owner, repo, timeout=3):
+    """Fetch latest release info from GitHub API."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+    response = requests.get(url, timeout=timeout)
+    response.raise_for_status()
+    data = response.json()
+    return {
+        "tag_name": data.get("tag_name", ""),
+        "html_url": data.get("html_url", "")
+    }
 
 class Tab:
     """Manages the content and behavior of an individual tab (its frame, widgets, etc.)."""
@@ -1578,6 +1682,12 @@ class ScriptLauncherApp:
         self.root = root
         self.configure_root()
 
+        # Update check configuration
+        (self.update_owner,
+         self.update_repo,
+         self.check_on_startup,
+         self.check_interval_hours) = read_update_config()
+
         # Toolbar Setup
         self.create_toolbar()
 
@@ -1604,6 +1714,66 @@ class ScriptLauncherApp:
         """Start the app"""
         # Autoplay Scripts
         self.autoplay_script_group()
+
+        # Optional update check on startup
+        if self.check_on_startup:
+            self.schedule_update_check()
+
+    def schedule_update_check(self, force=False):
+        """Schedule a background update check."""
+        if not self.update_owner or not self.update_repo:
+            print("[INFO] Update check skipped: RepoOwner/RepoName not configured.")
+            return
+
+        thread = threading.Thread(
+            target=self._update_check_worker,
+            args=(force,),
+            daemon=True,
+            name="UpdateCheckThread"
+        )
+        thread.start()
+
+    def _update_check_worker(self, force):
+        """Worker thread for update checks."""
+        try:
+            print("[INFO] Checking for updates...")
+            cache = load_update_cache()
+            cache["last_check"] = time.time()
+            save_update_cache(cache)
+
+            current_version = read_app_version()
+            latest = fetch_latest_release(self.update_owner, self.update_repo)
+            latest_tag = (latest.get("tag_name") or "").strip()
+            latest_url = latest.get("html_url", "")
+
+            if latest_tag and is_newer_version(latest_tag, current_version):
+                display_current = _format_version_numbers(_parse_version(current_version)) or current_version
+                display_latest = _format_version_numbers(_parse_version(latest_tag)) or latest_tag
+                print("!============================== UPDATE AVAILABLE ==============================!")
+                print(f"[INFO] Latest: {display_latest} | Installed: {display_current}")
+                print("!==============================================================================!")
+                last_prompted = cache.get("last_prompted_version", "").strip()
+                if force or last_prompted != latest_tag:
+                    cache["last_prompted_version"] = latest_tag
+                    save_update_cache(cache)
+                    self.root.after(0, lambda: self._show_update_prompt(display_current, display_latest, latest_url))
+            else:
+                display_current = _format_version_numbers(_parse_version(current_version)) or current_version
+                print(f"[INFO] Up to date: {display_current}")
+        except Exception as e:
+            print(f"[WARNING] Update check failed: {e}")
+
+    def _show_update_prompt(self, current_version, latest_version, latest_url):
+        """Show update prompt and optionally open browser."""
+        message = (
+            "An update is available.\n\n"
+            f"Installed: {current_version}\n"
+            f"Latest: {latest_version}\n\n"
+            "Open the download page?"
+        )
+        if messagebox.askyesno("Update Available", message):
+            if latest_url:
+                webbrowser.open(latest_url)
 
     def handle_control_tilde(self, event=None):
         """Bring up the CommandLineTab: Select if exists, create if not."""
@@ -1972,9 +2142,31 @@ class ProcessTracker:
                 name=f"DispatcherStdout-{tab_id}"
             ).start()
 
+            # Warning redirect for pkg_resource warning (pygame)
+            # This is a issue present in current version of pygame that hasn't yet been fixed
+            warn_followup = {"pending": False}
+
+            def _forward_pkg_resources_warning(line):
+                # Emit to launcher.c (stdout) and log, but do not show in script tab.
+                print(line, end="")
+                logger.warning(line.rstrip("\n"))
+
+            def _stderr_wrapper(text):
+                if "pkg_resources is deprecated as an API" in text:
+                    warn_followup["pending"] = True
+                    _forward_pkg_resources_warning(text)
+                    return
+                if warn_followup["pending"]:
+                    if "from pkg_resources import" in text:
+                        _forward_pkg_resources_warning(text)
+                        warn_followup["pending"] = False
+                        return
+                    warn_followup["pending"] = False
+                stderr_callback(text)
+
             threading.Thread(
                 target=self._dispatch_queue,
-                args=(stderr_queue, stderr_callback, stop_event),
+                args=(stderr_queue, _stderr_wrapper, stop_event),
                 daemon=True,
                 name=f"DispatcherStderr-{tab_id}"
             ).start()
