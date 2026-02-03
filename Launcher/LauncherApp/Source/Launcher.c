@@ -1,6 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0601  // Windows 7+
+#endif
 #include <windows.h>
+#ifndef LOAD_LIBRARY_SEARCH_SYSTEM32
+#define LOAD_LIBRARY_SEARCH_SYSTEM32 0x00000800
+#endif
 #include <time.h>
 
 // Define types for function pointers to dynamically load Windows API functions.
@@ -13,7 +19,7 @@ typedef BOOL (*SetForegroundWindow_t)(HWND);
 BOOL loadConsoleFunctions(GetConsoleWindow_t *getConsoleWindow, ShowWindow_t *showWindow, SetForegroundWindow_t *setForegroundWindow)
 {
     HMODULE kernel32 = GetModuleHandle("kernel32.dll");
-    HMODULE user32 = LoadLibrary("user32.dll");
+    HMODULE user32 = LoadLibraryExA("user32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
 
     // Check if the DLLs were successfully loaded
     if (!kernel32 || !user32)
@@ -191,11 +197,42 @@ int readPythonPathFromIni(char *pythonPath, size_t maxLen) {
             strncpy(pythonDir, trimmed + 10, sizeof(pythonDir) - 1);
             pythonDir[sizeof(pythonDir) - 1] = '\0';
 
+            size_t dirLen = strlen(pythonDir);
+            if (dirLen == 0) {
+                printf("[ERROR] Invalid Python path in config (empty)\n");
+                fclose(iniFile);
+                return 0;
+            }
+
+            // Reject UNC and drive-absolute paths before normalization
+            if ((dirLen >= 2 && ((pythonDir[0] == '\\' && pythonDir[1] == '\\') ||
+                                 (pythonDir[0] == '/' && pythonDir[1] == '/'))) ||
+                (dirLen >= 2 && ((pythonDir[0] >= 'A' && pythonDir[0] <= 'Z') ||
+                                 (pythonDir[0] >= 'a' && pythonDir[0] <= 'z')) &&
+                 pythonDir[1] == ':')) {
+                printf("[ERROR] Invalid Python path in config (absolute paths not allowed)\n");
+                fclose(iniFile);
+                return 0;
+            }
+
+            // Reject parent-directory traversal
+            if (strstr(pythonDir, "..") != NULL) {
+                printf("[ERROR] Invalid Python path in config (parent paths not allowed)\n");
+                fclose(iniFile);
+                return 0;
+            }
+
             // Strip leading slash/backslash (user might write \WinPython\... instead of WinPython\...)
             char *dirStart = pythonDir;
             while (*dirStart == '\\' || *dirStart == '/') dirStart++;
             if (dirStart != pythonDir) {
                 memmove(pythonDir, dirStart, strlen(dirStart) + 1);
+            }
+
+            if (pythonDir[0] == '\0') {
+                printf("[ERROR] Invalid Python path in config (empty after normalization)\n");
+                fclose(iniFile);
+                return 0;
             }
 
             break;
