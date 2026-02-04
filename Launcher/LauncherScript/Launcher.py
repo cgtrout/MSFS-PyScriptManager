@@ -15,8 +15,7 @@ from multiprocessing.synchronize import Event as MultiprocessingEvent
 from pathlib import Path
 from typing import IO
 
-import keyboard
-from ttkthemes import ThemedTk
+
 
 # Add parent directory so Lib path can be found
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
@@ -27,6 +26,9 @@ from _lib import ensure_dependencies, OrderedLogger
 
 # Ensure third-party dependencies are installed
 ensure_dependencies()
+
+import keyboard
+from ttkthemes import ThemedTk
 from app import ScriptLauncherApp
 
 # Configure logging globally
