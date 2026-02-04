@@ -15,6 +15,7 @@ import threading
 import time
 import tkinter as tk
 import traceback
+from pathlib import Path
 from tkinter import messagebox
 from datetime import datetime, timezone, timedelta
 from enum import Enum
@@ -36,6 +37,10 @@ try:
 except ImportError:
     print("Failed to import Lib directory. Please ensure /Lib/* is present")
     sys.exit(1)
+
+project_root = Path(__file__).resolve().parents[1]
+logs_path = project_root / "Logs"
+logs_path.mkdir(parents=True, exist_ok=True)
 
 # Default templates file - this will be created if it doesn't exist
 # in the settings directory as /Settings/status_bar_templates.py
@@ -565,7 +570,7 @@ class ServiceManager:
         self.background_updater = BackgroundUpdater(self.app_state, root)
 
         # Log File
-        self.log_file_path = "traceback.log"
+        self.log_file_path = str(logs_path / "traceback.log")
         self.traceback_log_file = open(self.log_file_path, "w", encoding="utf-8")
         faulthandler.enable(file=self.traceback_log_file)
 
@@ -605,7 +610,7 @@ class ServiceManager:
         except Exception: # pylint: disable=broad-exception-caught
             return False
 
-    def log_global_state(self, event=None, log_path="detailed_state_log.log", max_depth=2):
+    def log_global_state(self, event=None, log_path=None, max_depth=2):
         """
         Log the global state and nested attributes to a file, prioritizing user-defined globals.
 
@@ -615,6 +620,8 @@ class ServiceManager:
             max_depth (int): Maximum recursion depth for nested attributes.
         """
         import inspect # pylint: disable=import-outside-toplevel # Deliberate lazy load
+        if log_path is None:
+            log_path = str(logs_path / "detailed_state_log.log")
 
         def is_user_defined(var_name, var_value):
             """

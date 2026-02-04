@@ -137,6 +137,8 @@ scripts_path = project_root / "Scripts"
 data_path = project_root / "Data"
 version_file_path = project_root / "Launcher" / "version.txt"
 update_cache_path = data_path / "update_cache.json"
+logs_path = project_root / "Logs"
+logs_path.mkdir(parents=True, exist_ok=True)
 
 # Track if we're running in BYO (system Python) mode
 is_byo_mode = python_dir_path.is_absolute()
@@ -292,7 +294,7 @@ SCRIPT_LOAD_DELAY_MS = 20
 
 # Configure logging globally
 logger = OrderedLogger(
-    filename="shutdown_log.txt",  # Specify the log file
+    filename=str(logs_path / "shutdown_log.txt"),
     level=logging.DEBUG,
     log_format="%(asctime)s [%(levelname)s] %(message)s"
 )
@@ -2753,7 +2755,7 @@ def main():
 
     # Add fault handler
     faulthandler.enable()
-    traceback_log_file = open("Launcher.log", "w")
+    traceback_log_file = open(logs_path / "Launcher.log", "w")
     def reset_traceback_timer():
         """Reset the faulthandler timer to prevent a dump."""
         faulthandler.dump_traceback_later(15, file=traceback_log_file, exit=True)
