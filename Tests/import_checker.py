@@ -83,19 +83,46 @@ def try_import_any(import_names: list[str]) -> tuple[bool, str | None]:
 
 
 def parse_requirements(requirements_path: Path) -> list[str]:
-    """Parse requirements.txt and extract package names."""
+    """Parse requirements.txt and extract package names, respecting environment markers."""
     if not requirements_path.exists():
         return []
+
+    # Import packaging for marker evaluation
+    try:
+        from packaging.markers import Marker, InvalidMarker
+    except ImportError:
+        Marker = None
+        InvalidMarker = Exception
 
     packages = []
     with open(requirements_path, "r") as f:
         for line in f:
             line = line.strip()
-            if not line or line.startswith("#"):
+            # Skip empty lines, comments, and pip flags
+            if not line or line.startswith("#") or line.startswith("-"):
                 continue
+
+            # Check for environment marker (PEP 508)
+            marker_str = None
+            if ";" in line:
+                line, marker_str = line.split(";", 1)
+                marker_str = marker_str.strip()
+
+            # Extract package name (strip version specifiers and extras)
             package = line.split("==")[0].split(">=")[0].split("<=")[0].split("<")[0].split(">")[0].split("[")[0].strip()
-            if package:
-                packages.append(package)
+            if not package:
+                continue
+
+            # Evaluate environment marker if present
+            if marker_str and Marker is not None:
+                try:
+                    marker = Marker(marker_str)
+                    if not marker.evaluate():
+                        continue  # Skip package - marker doesn't match current environment
+                except InvalidMarker:
+                    pass  # Invalid marker syntax, include package anyway
+
+            packages.append(package)
     return packages
 
 

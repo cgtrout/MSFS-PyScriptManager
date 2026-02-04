@@ -98,7 +98,12 @@ Currently, **most of the included scripts will detect Simulator state**.  Howeve
 - The launcher EXE is provided for convenience, but you can also launch the script manually.  It is also possible to launch the script "/Launcher/Launcher.py" from "WinPython/WinPython Command Prompt.exe" if you prefer to not launch from the EXE.  The exe can be built by launching "Build.bat" in "\Launcher\LauncherApp" as the "TCC" C-Compiler is included(https://bellard.org/tcc/).
 - You can easily create your own scripts and run them as well.  Note that if you need to add any libraries use the "WinPython/WinPython Command Prompt.exe" and run the "pip" command from here to add a library to the WinPython directory.
 - I recommend using [Visual Studio Code](https://code.visualstudio.com/download) for editing the scripts.  The built in "Edit" button will open the selected script in VS Code if it is installed.
+
+## WinPython Notes
 - Uses WinPython to allow standalone installation - https://github.com/winpython
+- Now supports multiple versions of WinPython.  To switch versions run "MSFS-PyScriptManager.exe --pick" (this will bring up a menu to allow you to switch to other installed versions).
+- Extract new versions of WinPython to /WinPython directory then run pick command above to switch to a new installed version.
+- The launcher will use the "requirements.txt" file in /Launcher to ensure all required modules are installed through pip.
 
 ## Additional Credits
 - Icon used for Launcher: [JoyPixels Emojione](https://github.com/joypixels/emojione) (MIT License)
