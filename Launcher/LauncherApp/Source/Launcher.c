@@ -8,6 +8,7 @@
 #define LOAD_LIBRARY_SEARCH_SYSTEM32 0x00000800
 #endif
 #include <time.h>
+#include <conio.h>
 
 // Define types for function pointers to dynamically load Windows API functions.
 typedef HWND (*GetConsoleWindow_t)(void);
@@ -32,6 +33,27 @@ BOOL loadConsoleFunctions(GetConsoleWindow_t *getConsoleWindow, ShowWindow_t *sh
 
     // Return TRUE only if all functions were successfully loaded.
     return *getConsoleWindow && *showWindow && *setForegroundWindow;
+}
+
+// Ensure console is visible and pause for a keypress.
+void promptToExitOnError(void)
+{
+    GetConsoleWindow_t getConsoleWindow;
+    ShowWindow_t showWindow;
+    SetForegroundWindow_t setForegroundWindow;
+
+    if (loadConsoleFunctions(&getConsoleWindow, &showWindow, &setForegroundWindow))
+    {
+        HWND hConsole = getConsoleWindow();
+        if (hConsole)
+        {
+            showWindow(hConsole, SW_RESTORE);
+            setForegroundWindow(hConsole);
+        }
+    }
+
+    printf("Press any key to exit...\n");
+    _getch();
 }
 
 // Print an error message and restore the console window if it was minimized.
@@ -665,8 +687,7 @@ int main(int argc, char **argv)
                 printf("        Please either:\n");
                 printf("          1. Extract WinPython to the WinPython\\ folder, OR\n");
                 printf("          2. Install Python and add it to your system PATH\n\n");
-                printf("Press any key to exit...\n");
-                getchar();
+                promptToExitOnError();
                 return -1;
             }
         }
@@ -688,8 +709,7 @@ int main(int argc, char **argv)
             if (scanf("%d", &selection) != 1)
             {
                 printf("\n[ERROR] Invalid input.\n\n");
-                printf("Press any key to exit...\n");
-                getchar();
+                promptToExitOnError();
                 return -1;
             }
             selection--; // convert to 0-based
@@ -697,8 +717,7 @@ int main(int argc, char **argv)
             if (selection < 0 || selection >= count)
             {
                 printf("[ERROR] Selection out of range.\n\n");
-                printf("Press any key to exit...\n");
-                getchar();
+                promptToExitOnError();
                 return -1;
             }
 
@@ -729,8 +748,7 @@ int main(int argc, char **argv)
     // If there was an error, prompt the user to press a key before exiting.
     if (result != 0)
     {
-        printf("Press any key to exit...\n");
-        getchar();
+        promptToExitOnError();
     }
 
     return result;
