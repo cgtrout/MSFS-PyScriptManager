@@ -74,7 +74,7 @@ class NoaaSource(MetarSource):
         invalid_airports = set()
         for metar in raw_data:
             raw_observation = metar.get("rawOb")
-            station_id = metar.get("stationId")
+            station_id = metar.get("icaoId")
             if station_id != self.airport_code.upper():
                 invalid_airports.add(station_id)
             if raw_observation:
@@ -131,7 +131,7 @@ class MetarFetcher:
         """Parse the date and time from a METAR line."""
         try:
             parts = metar_line.split()
-            datetime_part = parts[1]  # e.g., "090900Z"
+            datetime_part = parts[2]  # e.g., "090900Z"
 
             day = int(datetime_part[:2])
             time_utc = datetime_part[2:6]
