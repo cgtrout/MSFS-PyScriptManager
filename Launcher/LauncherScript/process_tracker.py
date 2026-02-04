@@ -1,4 +1,5 @@
 # process_tracker.py - ProcessTracker for managing subprocesses
+from __future__ import annotations
 
 import logging
 import os
@@ -6,37 +7,64 @@ import queue
 import subprocess
 import threading
 import time
+from multiprocessing.synchronize import Event as MultiprocessingEvent
 from pathlib import Path
 from threading import Lock
-from typing import Dict
+from typing import TYPE_CHECKING, Any, Callable, IO, TypedDict
 
 import psutil
 
 from config import SCRIPT_LOAD_DELAY_MS
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from tabs.script_tab import ScriptTab
+
+logger: logging.Logger = logging.getLogger(__name__)
+
+
+class ProcessMetadata(TypedDict):
+    process: subprocess.Popen[str]
+    script_name: str
+    script_tab: ScriptTab
+    stdout_queue: queue.Queue[str | None]
+    stderr_queue: queue.Queue[str | None]
+    stdin_queue: queue.Queue[str | None]
+    stop_event: threading.Event
+
+
+class ProcessInfo(TypedDict):
+    process: subprocess.Popen[str]
+    script_name: str
 
 
 class ProcessTracker:
     """Manages runtime of collection of processes"""
-    def __init__(self, scheduler, shutdown_event):
-        self.processes = {}  # Maps tab_id to process metadata
-        self.scheduler = scheduler  # Store the scheduler
-        self.script_name = None
-        self.queuefull_warning_issued = False
-        self.lock = Lock()
-        self.shutdown_event = shutdown_event  # Store the shutdown event
+    def __init__(self, scheduler: Callable[..., Any], shutdown_event: MultiprocessingEvent) -> None:
+        self.processes: dict[int | None, ProcessMetadata] = {}  # Maps tab_id to process metadata
+        self.scheduler: Callable[..., Any] = scheduler  # Store the scheduler
+        self.script_name: str | None = None
+        self.queuefull_warning_issued: bool = False
+        self.lock: Lock = Lock()
+        self.shutdown_event: MultiprocessingEvent = shutdown_event  # Store the shutdown event
 
-    def start_process(self, tab_id, command, stdout_callback, stderr_callback, script_tab, script_name=None):
+    def start_process(
+        self,
+        tab_id: int | None,
+        command: list[str],
+        stdout_callback: Callable[[str], None],
+        stderr_callback: Callable[[str], None],
+        script_tab: ScriptTab,
+        script_name: str | None = None
+    ) -> None:
         """Start a subprocess and manage its I/O."""
 
         # Add Lib path
-        lib_path = str((Path(__file__).resolve().parents[1] / "Lib").resolve())
-        custom_env = os.environ.copy()  # Create a local environment copy
+        lib_path: str = str((Path(__file__).resolve().parents[1] / "Lib").resolve())
+        custom_env: dict[str, str] = os.environ.copy()  # Create a local environment copy
         custom_env["PYTHONPATH"] = f"{lib_path};{custom_env.get('PYTHONPATH', '')}"
 
         try:
-            process = subprocess.Popen(
+            process: subprocess.Popen[str] = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -50,10 +78,10 @@ class ProcessTracker:
             self.script_name = script_name
 
             # Create individual queues and stop event
-            stdout_queue = queue.Queue(maxsize=1000)
-            stderr_queue = queue.Queue(maxsize=1000)
-            stdin_queue = queue.Queue(maxsize=1000)
-            stop_event = threading.Event()
+            stdout_queue: queue.Queue[str | None] = queue.Queue(maxsize=1000)
+            stderr_queue: queue.Queue[str | None] = queue.Queue(maxsize=1000)
+            stdin_queue: queue.Queue[str | None] = queue.Queue(maxsize=1000)
+            stop_event: threading.Event = threading.Event()
 
             with self.lock:
                 self.processes[tab_id] = {
@@ -67,6 +95,7 @@ class ProcessTracker:
                 }
 
             # Start threads for stdout and stderr reading
+            assert process.stdout is not None
             threading.Thread(
                 target=self._read_output,
                 args=(process.stdout, stdout_queue, stop_event, tab_id, "stdout"),
@@ -74,6 +103,7 @@ class ProcessTracker:
                 name=f"StdoutThread-{tab_id}"
             ).start()
 
+            assert process.stderr is not None
             threading.Thread(
                 target=self._read_output,
                 args=(process.stderr, stderr_queue, stop_event, tab_id, "stderr"),
@@ -82,6 +112,7 @@ class ProcessTracker:
             ).start()
 
             # Start a thread for writing to stdin
+            assert process.stdin is not None
             threading.Thread(
                 target=self._write_input,
                 args=(process.stdin, stdin_queue, stop_event, tab_id),
@@ -99,14 +130,14 @@ class ProcessTracker:
 
             # Warning redirect for pkg_resource warning (pygame)
             # This is a issue present in current version of pygame that hasn't yet been fixed
-            warn_followup = {"pending": False}
+            warn_followup: dict[str, bool] = {"pending": False}
 
-            def _forward_pkg_resources_warning(line):
+            def _forward_pkg_resources_warning(line: str) -> None:
                 # Emit to launcher.c (stdout) and log, but do not show in script tab.
                 print(line, end="")
                 logger.warning(line.rstrip("\n"))
 
-            def _stderr_wrapper(text):
+            def _stderr_wrapper(text: str) -> None:
                 if "pkg_resources is deprecated as an API" in text:
                     warn_followup["pending"] = True
                     _forward_pkg_resources_warning(text)
@@ -132,21 +163,28 @@ class ProcessTracker:
         except Exception as e:
             print(f"[ERROR] Failed to start process for Tab ID {tab_id}: {e}")
 
-    def _read_output(self, stream, output_queue, stop_event, tab_id, stream_name):
+    def _read_output(
+        self,
+        stream: IO[str],
+        output_queue: queue.Queue[str | None],
+        stop_event: threading.Event,
+        tab_id: int | None,
+        stream_name: str
+    ) -> None:
         """
         Read subprocess output with proper handling of lines and partial data.
         """
         print(f"[INFO] Starting output reader for {stream_name}, Tab ID: {tab_id}")
 
-        fd = stream.fileno()  # Get the file descriptor for low-level reads
-        buffer = ""  # Accumulate partial lines
-        last_flushed_partial = None  # Track the last flushed partial line
+        fd: int = stream.fileno()  # Get the file descriptor for low-level reads
+        buffer: str = ""  # Accumulate partial lines
+        last_flushed_partial: str | None = None  # Track the last flushed partial line
 
         try:
             while not stop_event.is_set():
                 try:
                     # Attempt to read a chunk of data
-                    chunk = os.read(fd, 4096).decode("utf-8")
+                    chunk: str = os.read(fd, 4096).decode("utf-8")
                     if not chunk:  # EOF or no data available
                         time.sleep(0.01)
                         continue
@@ -192,12 +230,18 @@ class ProcessTracker:
 
             print(f"[INFO] Output reader for {stream_name} finished, Tab ID: {tab_id}")
 
-    def _write_input(self, stdin, input_queue, stop_event, tab_id):
+    def _write_input(
+        self,
+        stdin: IO[str],
+        input_queue: queue.Queue[str | None],
+        stop_event: threading.Event,
+        tab_id: int | None
+    ) -> None:
         """Write input from the queue to the subprocess's stdin."""
         try:
             while not stop_event.is_set():
                 try:
-                    input_data = input_queue.get(timeout=1)  # Block until input is available
+                    input_data: str | None = input_queue.get(timeout=1)  # Block until input is available
                     if input_data is None:  # Sentinel for EOF
                         break
                     stdin.write(input_data)
@@ -212,12 +256,17 @@ class ProcessTracker:
             except Exception as e:
                 print(f"[WARNING] Failed to close stdin for Tab ID {tab_id}: {e}")
 
-    def _dispatch_queue(self, q, callback, stop_event):
+    def _dispatch_queue(
+        self,
+        q: queue.Queue[str | None],
+        callback: Callable[[str], None],
+        stop_event: threading.Event
+    ) -> None:
         """Consume items from the queue and invoke the callback."""
         print("[INFO] Starting dispatcher thread.")
         while True:
             try:
-                line = q.get(timeout=1)  # Avoid indefinite blocking
+                line: str | None = q.get(timeout=1)  # Avoid indefinite blocking
             except queue.Empty:
                 # Check if this process's stop_event is set
                 if stop_event.is_set():
@@ -233,23 +282,23 @@ class ProcessTracker:
             # Use the provided scheduler to safely invoke the callback
             self.scheduler(0, lambda l=line: callback(l))
 
-    def schedule_process_check(self, tabid):
+    def schedule_process_check(self, tabid: int | None) -> None:
         """Schedule a periodic check for process termination."""
         self.scheduler(2000, lambda: self.check_termination(tabid))
 
-    def check_termination(self, tab_id):
+    def check_termination(self, tab_id: int | None) -> None:
         """Check if the process has terminated and notify the associated ScriptTab."""
         with self.lock:
             metadata = self.processes.get(tab_id)
             if not metadata:
                 return  # Process already cleaned up or not found
 
-        process = metadata["process"]
-        script_tab = metadata.get("script_tab")
-        script_name = metadata.get("script_name", "Unknown")
+        process: subprocess.Popen[str] = metadata["process"]
+        script_tab: ScriptTab = metadata.get("script_tab")
+        script_name: str = metadata.get("script_name", "Unknown")
 
         if process.poll() is not None:  # Process has stopped
-            exit_code = process.poll()
+            exit_code: int | None = process.poll()
 
             # Notify the ScriptTab directly
             try:
@@ -277,7 +326,7 @@ class ProcessTracker:
         # Reschedule the next check
         self.schedule_process_check(tab_id)
 
-    def terminate_process(self, tab_id):
+    def terminate_process(self, tab_id: int | None) -> None:
         """Terminate the process for a given tab ID."""
         print(f"[INFO] Attempting to terminate process for Tab ID: {tab_id}")
         logger.info("[INFO] Attempting to terminate process for Tab ID: %s", tab_id)
@@ -288,7 +337,7 @@ class ProcessTracker:
             if not metadata:
                 print(f"[INFO] No process found for Tab ID {tab_id}.")
                 return
-            process = metadata["process"]
+            process: subprocess.Popen[str] = metadata["process"]
 
         # Terminate the process if it is still running
         if process.poll() is None:  # Still running
@@ -310,12 +359,12 @@ class ProcessTracker:
         logger.info("[INFO] Process for Tab ID %s terminated.", tab_id)
 
     @staticmethod
-    def terminate_process_tree(pid, timeout=5, force=True):
+    def terminate_process_tree(pid: int | None, timeout: int = 5, force: bool = True) -> None:
         """Terminate a process tree."""
         print(f"[INFO] Terminating process tree for PID: {pid}")
         logger.info("[INFO] Terminating process tree for PID: %s", pid)
         try:
-            parent = psutil.Process(pid)
+            parent: psutil.Process = psutil.Process(pid)
         except psutil.NoSuchProcess:
             logger.info(f"Process with PID {pid} already terminated. "
                   "Checking for orphaned children.")
@@ -327,7 +376,7 @@ class ProcessTracker:
             return
 
         try:
-            children = parent.children(recursive=True)
+            children: list[psutil.Process] = parent.children(recursive=True)
             logger.info(f"Found {len(children)} child processes for PID {pid}."
                   f"Terminating children first.")
 
@@ -351,7 +400,7 @@ class ProcessTracker:
                         logger.info("proc.kill()")
                         proc.kill()
                     except psutil.NoSuchProcess:
-                        logger.warning(f"NoSuchProcess")
+                        logger.warning("NoSuchProcess")
                         continue
                     except psutil.AccessDenied:
                         logger.info(f"[WARNING] Access denied to kill child PID {proc.pid}.")
@@ -367,7 +416,7 @@ class ProcessTracker:
                         proc.kill()
                         logger.info("proc.kill()")
                     except psutil.NoSuchProcess:
-                        logger.warning(f"NoSuchProcess")
+                        logger.warning("NoSuchProcess")
                         continue
                     except psutil.AccessDenied:
                         logger.warning(f"Access denied to kill PID {proc.pid}.")
@@ -378,7 +427,7 @@ class ProcessTracker:
             print(f"[ERROR] Unexpected error terminating process tree for PID {pid}: {e}")
 
     @staticmethod
-    def terminate_orphaned_children(parent_pid):
+    def terminate_orphaned_children(parent_pid: int | None) -> None:
         """Terminate orphaned children of a non-existent parent process."""
         try:
             for proc in psutil.process_iter(attrs=["pid", "ppid"]):
@@ -394,7 +443,7 @@ class ProcessTracker:
         except Exception as e:
             print(f"[ERROR] Error scanning for orphaned children of PID {parent_pid}: {e}")
 
-    def list_processes(self) -> Dict[int, Dict]:
+    def list_processes(self) -> dict[int, ProcessInfo]:
         """List all tracked processes and their metadata."""
         return {
             tab_id: {
@@ -402,4 +451,5 @@ class ProcessTracker:
                 "script_name": metadata.get("script_name", "Unknown"),
             }
             for tab_id, metadata in self.processes.items()
+            if tab_id is not None
         }

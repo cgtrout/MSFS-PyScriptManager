@@ -4,31 +4,32 @@ import configparser
 import os
 import sys
 from pathlib import Path
+from typing import Final
 
 # Path to the WinPython Python executable and VS Code.exe
-current_dir = Path(__file__).resolve().parent
-project_root = current_dir.parents[1]
+current_dir: Path = Path(__file__).resolve().parent
+project_root: Path = current_dir.parents[1]
 
 # Color constants
-DARK_BG_COLOR = "#2E2E2E"
-BUTTON_BG_COLOR = "#444444"
-BUTTON_FG_COLOR = "#EEEEEE"
-BUTTON_ACTIVE_BG_COLOR = "#666666"
-BUTTON_ACTIVE_FG_COLOR = "#FFFFFF"
-TEXT_WIDGET_BG_COLOR = "#171717"
-TEXT_WIDGET_FG_COLOR = "#FFFFFF"
-TEXT_WIDGET_INSERT_COLOR = "#FFFFFF"
-FRAME_BG_COLOR = "#2E2E2E"
+DARK_BG_COLOR: Final[str] = "#2E2E2E"
+BUTTON_BG_COLOR: Final[str] = "#444444"
+BUTTON_FG_COLOR: Final[str] = "#EEEEEE"
+BUTTON_ACTIVE_BG_COLOR: Final[str] = "#666666"
+BUTTON_ACTIVE_FG_COLOR: Final[str] = "#FFFFFF"
+TEXT_WIDGET_BG_COLOR: Final[str] = "#171717"
+TEXT_WIDGET_FG_COLOR: Final[str] = "#FFFFFF"
+TEXT_WIDGET_INSERT_COLOR: Final[str] = "#FFFFFF"
+FRAME_BG_COLOR: Final[str] = "#2E2E2E"
 
 # Delay load between scripts
-SCRIPT_LOAD_DELAY_MS = 20
+SCRIPT_LOAD_DELAY_MS: Final[int] = 20
 
 # GitHub repository for update checks
-UPDATE_REPO_OWNER = "cgtrout"
-UPDATE_REPO_NAME = "MSFS-PyScriptManager"
+UPDATE_REPO_OWNER: Final[str] = "cgtrout"
+UPDATE_REPO_NAME: Final[str] = "MSFS-PyScriptManager"
 
 
-def find_system_vscode():
+def find_system_vscode() -> str | None:
     """Search for VS Code in common installation locations."""
     import shutil
 
@@ -51,13 +52,13 @@ def find_system_vscode():
     return None
 
 
-def read_launcher_config():
+def read_launcher_config() -> tuple[str, str | None]:
     """Read launcher configuration from launcher.ini file."""
     config = configparser.ConfigParser()
     ini_path = project_root / "Launcher" / "launcher.ini"
 
     # Default values
-    python_dir = "WinPython/Winpython64-3.13.0.1dotrc1/python-3.13.0rc1.amd64"
+    python_dir: str = "WinPython/Winpython64-3.13.0.1dotrc1/python-3.13.0rc1.amd64"
 
     if ini_path.exists():
         try:
@@ -108,7 +109,7 @@ def read_launcher_config():
     return python_dir, vscode_path_str
 
 
-def read_byo_auto_install_setting():
+def read_byo_auto_install_setting() -> bool | None:
     """Read the AutoInstallDeps setting from launcher.ini for BYO mode."""
     config = configparser.ConfigParser()
     ini_path = project_root / "Launcher" / "launcher.ini"
@@ -122,7 +123,7 @@ def read_byo_auto_install_setting():
     return None  # Not set yet
 
 
-def save_byo_auto_install_setting(value: bool):
+def save_byo_auto_install_setting(value: bool) -> None:
     """Save the AutoInstallDeps setting to launcher.ini."""
     config = configparser.ConfigParser()
     ini_path = project_root / "Launcher" / "launcher.ini"
@@ -144,16 +145,16 @@ def save_byo_auto_install_setting(value: bool):
         config.write(f)
 
 
-def read_update_config():
+def read_update_config() -> tuple[str, str, bool, int]:
     """Read update configuration from launcher.ini."""
     config = configparser.ConfigParser()
     ini_path = project_root / "Launcher" / "launcher.ini"
 
     # Defaults
-    update_owner = UPDATE_REPO_OWNER
-    update_repo = UPDATE_REPO_NAME
-    check_on_startup = True
-    check_interval_hours = 24
+    update_owner: str = UPDATE_REPO_OWNER
+    update_repo: str = UPDATE_REPO_NAME
+    check_on_startup: bool = True
+    check_interval_hours: int = 24
 
     if ini_path.exists():
         try:

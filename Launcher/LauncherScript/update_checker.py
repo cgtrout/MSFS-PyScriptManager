@@ -3,13 +3,19 @@
 import json
 import re
 import time
+from typing import Any, TypedDict
 
 import requests
 
 from config import version_file_path, update_cache_path
 
 
-def read_app_version():
+class ReleaseInfo(TypedDict):
+    tag_name: str
+    html_url: str
+
+
+def read_app_version() -> str:
     """Read application version from Launcher/version.txt."""
     if not version_file_path.exists():
         print(f"[WARNING] Version file not found at {version_file_path}. Using 0.0.0.")
@@ -21,21 +27,21 @@ def read_app_version():
         return "0.0.0"
 
 
-def _parse_version(version_str):
+def _parse_version(version_str: str) -> tuple[int, ...]:
     """Extract numeric components from a version string for comparison."""
     cleaned = version_str.strip()
     numbers = re.findall(r"\d+", cleaned)
     return tuple(int(n) for n in numbers)
 
 
-def _format_version_numbers(numbers):
+def _format_version_numbers(numbers: tuple[int, ...]) -> str:
     """Format numeric version tuple into a dotted string."""
     if not numbers:
         return ""
     return ".".join(str(n) for n in numbers)
 
 
-def is_newer_version(latest, current):
+def is_newer_version(latest: str, current: str) -> bool:
     """
     Return True if latest > current.
     Prefer numeric comparison when possible, otherwise fall back to string equality.
@@ -52,7 +58,7 @@ def is_newer_version(latest, current):
     return latest_clean != current_clean
 
 
-def load_update_cache():
+def load_update_cache() -> dict[str, Any]:
     """Load update cache (last_check)."""
     if not update_cache_path.exists():
         return {}
@@ -62,7 +68,7 @@ def load_update_cache():
         return {}
 
 
-def save_update_cache(cache):
+def save_update_cache(cache: dict[str, Any]) -> None:
     """Save update cache to disk."""
     try:
         update_cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -71,13 +77,13 @@ def save_update_cache(cache):
         print(f"[WARNING] Failed to write update cache: {e}")
 
 
-def should_check_updates(cache, interval_seconds):
+def should_check_updates(cache: dict[str, Any], interval_seconds: float) -> bool:
     """Check if enough time has passed since last update check."""
     last_check = cache.get("last_check", 0)
     return (time.time() - last_check) > interval_seconds
 
 
-def fetch_latest_release(owner, repo, timeout=3):
+def fetch_latest_release(owner: str, repo: str, timeout: int = 3) -> ReleaseInfo:
     """Fetch latest release info from GitHub API."""
     url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
     response = requests.get(url, timeout=timeout)

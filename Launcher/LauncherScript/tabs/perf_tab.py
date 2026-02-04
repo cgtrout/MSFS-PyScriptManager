@@ -1,6 +1,8 @@
 # tabs/perf_tab.py - Performance monitoring tab
+from __future__ import annotations
 
 import tkinter as tk
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import psutil
 
@@ -8,23 +10,26 @@ from .base import Tab
 from config import TEXT_WIDGET_BG_COLOR, TEXT_WIDGET_FG_COLOR, TEXT_WIDGET_INSERT_COLOR
 from _lib import RingMovingAverage
 
+if TYPE_CHECKING:
+    from process_tracker import ProcessTracker
+
 
 class PerfTab(Tab):
     """PerfTab - represents performance tab for monitoring performance of scripts"""
 
-    REFRESH_RATE_MS = 50
-    MA_WINDOW_SEC = 2
-    CALCULATED_MA_WINDOW = int((MA_WINDOW_SEC * 1000) / REFRESH_RATE_MS)
+    REFRESH_RATE_MS: ClassVar[int] = 50
+    MA_WINDOW_SEC: ClassVar[int] = 2
+    CALCULATED_MA_WINDOW: ClassVar[int] = int((MA_WINDOW_SEC * 1000) / REFRESH_RATE_MS)
 
-    def __init__(self, title, process_tracker):
+    def __init__(self, title: str, process_tracker: ProcessTracker) -> None:
         super().__init__(title)
-        self.process_tracker = process_tracker
-        self.performance_metrics_open = True
-        self.text_widget = None
-        self.cpu_stats = {}
-        self.process_objects = {}
+        self.process_tracker: ProcessTracker = process_tracker
+        self.performance_metrics_open: bool = True
+        self.text_widget: tk.Text | None = None
+        self.cpu_stats: dict[int, dict[str, Any]] = {}
+        self.process_objects: dict[int, psutil.Process] = {}
 
-    def build_content(self):
+    def build_content(self) -> None:
         """Add widgets to the performance tab."""
         self.text_widget = tk.Text(
             self.frame, wrap="word",
@@ -34,22 +39,23 @@ class PerfTab(Tab):
         self.text_widget.pack(expand=True, fill="both")
         self.start_monitoring()
 
-    def start_monitoring(self):
+    def start_monitoring(self) -> None:
         """Start monitoring performance metrics"""
         if not self.performance_metrics_open:
             return
 
         # Update metrics
-        metrics_text = self.generate_metrics_text()
+        metrics_text: str = self.generate_metrics_text()
         self.refresh_performance_metrics(metrics_text)
 
         # Schedule the next update
+        assert self.frame is not None
         self.frame.after(self.REFRESH_RATE_MS, self.start_monitoring)
 
-    def refresh_performance_metrics(self, text):
+    def refresh_performance_metrics(self, text: str) -> None:
         """Refresh the performance metrics text widget."""
         if self.text_widget and self.text_widget.winfo_exists():
-            current_yview = self.text_widget.yview()  # Store current scroll position
+            current_yview: tuple[float, float] = self.text_widget.yview()  # Store current scroll position
 
             # Replace all text but keep scroll position
             self.text_widget.delete("1.0", tk.END)  # Clear old content
@@ -58,9 +64,9 @@ class PerfTab(Tab):
             # Restore previous scroll position
             self.text_widget.yview_moveto(current_yview[0])
 
-    def generate_metrics_text(self):
+    def generate_metrics_text(self) -> str:
         """Generate a text representation of performance metrics."""
-        metrics = []
+        metrics: list[str] = []
         processes = self.process_tracker.list_processes()
 
         if not processes:
@@ -72,7 +78,7 @@ class PerfTab(Tab):
 
         for tab_id, process_info in processes.items():
             process = process_info.get("process")
-            script_name = process_info.get("script_name", "Unknown")
+            script_name: str = process_info.get("script_name", "Unknown")
 
             if process and process.pid:
                 try:
@@ -80,7 +86,7 @@ class PerfTab(Tab):
                     if tab_id not in self.process_objects:
                         self.process_objects[tab_id] = psutil.Process(process.pid)
 
-                    proc = self.process_objects[tab_id]
+                    proc: psutil.Process = self.process_objects[tab_id]
 
                     if proc.is_running():
                         # Initialize stats for new processes
@@ -92,8 +98,8 @@ class PerfTab(Tab):
                             }
 
                         # Calculate current CPU usage (non-blocking, reusing process object)
-                        cpu_usage = proc.cpu_percent(interval=None)
-                        memory_usage = proc.memory_info().rss / (1024 ** 2)  # Convert to MB
+                        cpu_usage: float = proc.cpu_percent(interval=None)
+                        memory_usage: float = proc.memory_info().rss / (1024 ** 2)  # Convert to MB
 
                         # Update cumulative stats
                         self.cpu_stats[tab_id]["cumulative_cpu"] += cpu_usage
@@ -101,12 +107,12 @@ class PerfTab(Tab):
                         self.cpu_stats[tab_id]["short_ma"].add(cpu_usage)
 
                         # Calculate average CPU usage
-                        avg_cpu_usage = (
+                        avg_cpu_usage: float = (
                             self.cpu_stats[tab_id]["cumulative_cpu"]
                             / self.cpu_stats[tab_id]["count"]
                         )
 
-                        short_ma = self.cpu_stats[tab_id]["short_ma"].get_average()
+                        short_ma: float = self.cpu_stats[tab_id]["short_ma"].get_average()
 
                         # Add metrics to the output
                         metrics.append(
@@ -129,12 +135,12 @@ class PerfTab(Tab):
 
         return "\n".join(metrics)
 
-    def stop_performance_monitoring(self):
+    def stop_performance_monitoring(self) -> None:
         """Stop monitoring performance metrics."""
         self.performance_metrics_open = False
 
-    def create_metrics_widget(self):
+    def create_metrics_widget(self) -> tk.Text:
         """Create and add a text widget for displaying performance metrics."""
-        text_widget = tk.Text(self.frame, wrap="word")
+        text_widget: tk.Text = tk.Text(self.frame, wrap="word")
         text_widget.pack(expand=True, fill="both")
         return text_widget
