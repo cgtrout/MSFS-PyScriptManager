@@ -1,14 +1,15 @@
 # utils.py - Utility classes and functions for MSFSPyScriptManager
 
+import os
 import subprocess
+import sys
 import tkinter as tk
 from tkinter import messagebox
 
-import numpy as np
 import keyboard
+import numpy as np
+import numpy.typing as npt
 
-import sys
-import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import (
     project_root, python_path, is_byo_mode,
@@ -18,29 +19,29 @@ from config import (
 
 class RingMovingAverage:
     """Used to calculate moving average with ring buffer"""
-    def __init__(self, window_size):
-        self.window_size = window_size
-        self.buffer = np.zeros(window_size, dtype=float)
-        self.index = 0
-        self.count = 0
+    def __init__(self, window_size: int) -> None:
+        self.window_size: int = window_size
+        self.buffer: npt.NDArray[np.float64] = np.zeros(window_size, dtype=float)
+        self.index: int = 0
+        self.count: int = 0
 
-    def add(self, value):
+    def add(self, value: float) -> None:
         """Add to moving average array"""
         self.buffer[self.index] = value
         self.index = (self.index + 1) % self.window_size
         self.count = min(self.count + 1, self.window_size)
 
-    def get_average(self):
+    def get_average(self) -> float:
         """Get calculated average"""
-        return np.mean(self.buffer[:self.count]) if self.count > 0 else 0.0
+        return float(np.mean(self.buffer[:self.count])) if self.count > 0 else 0.0
 
 
-def is_shift_held():
+def is_shift_held() -> bool:
     """Check if Shift key is currently held globally."""
     return keyboard.is_pressed("shift")
 
 
-def prompt_byo_install():
+def prompt_byo_install() -> bool:
     """Prompt user whether to auto-install dependencies in BYO mode using a dialog."""
     # Create hidden root window for dialog
     root = tk.Tk()
@@ -74,7 +75,7 @@ def prompt_byo_install():
         return False
 
 
-def ensure_dependencies():
+def ensure_dependencies() -> None:
     """Ensure third-party dependencies are installed."""
     requirements_path = project_root / "Launcher" / "requirements.txt"
     if not requirements_path.exists():

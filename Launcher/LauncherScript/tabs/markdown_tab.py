@@ -1,10 +1,12 @@
 # tabs/markdown_tab.py - Markdown rendering tab
+from __future__ import annotations
 
 import os
 import re
 import threading
 import tkinter as tk
 from tkinter import ttk
+from typing import Any, Callable
 
 import mistune
 from tkhtmlview import HTMLScrolledText
@@ -16,18 +18,27 @@ from config import TEXT_WIDGET_BG_COLOR
 
 class MarkdownTab(Tab):
     """A tab that renders a Markdown file as HTML."""
-    def __init__(self, title, md_file_path, open_tab=None, fragment=None):
+    def __init__(
+        self,
+        title: str,
+        md_file_path: str,
+        open_tab: Callable[[Tab], None] | None = None,
+        fragment: str | None = None
+    ) -> None:
         super().__init__(title)
-        self.md_file_path = md_file_path
-        self.open_tab = open_tab
-        self.fragment = fragment
+        self.md_file_path: str = md_file_path
+        self.open_tab: Callable[[Tab], None] | None = open_tab
+        self.fragment: str | None = fragment
+        self._md_content: str = ""
+        self._html_body: str = ""
+        self.html_widget: HTMLScrolledText | None = None
 
-    def build_content(self):
+    def build_content(self) -> None:
         """Read the Markdown file and render it as HTML."""
         with open(self.md_file_path, "r", encoding="utf-8") as f:
             self._md_content = f.read()
 
-        html_body = mistune.html(self._md_content)
+        html_body: str = mistune.html(self._md_content)
 
         # CommonMark "loose lists" wrap every <li> content in <p>, which tkhtmlview renders as a blank line
         # before the text — splitting bullet numbers from their content. Strip the <p> wrapper; where a
@@ -44,7 +55,7 @@ class MarkdownTab(Tab):
         # tkhtmlview fetches remote images synchronously (requests.get per <img>).  Render
         # immediately with placeholders so the tab appears fast, then fetch in the background
         # and re-render once they are cached.
-        remote_img_urls = re.findall(r'<img\s[^>]*src="(https?://[^"]*)"[^>]*/?>',  html_body)
+        remote_img_urls: list[str] = re.findall(r'<img\s[^>]*src="(https?://[^"]*)"[^>]*/?>',  html_body)
         if remote_img_urls:
             self._html_body = html_body  # full version for the background re-render
             html_body = re.sub(r'<img\s[^>]*src="https?://[^"]*"[^>]*/?>',
@@ -52,7 +63,7 @@ class MarkdownTab(Tab):
 
         # tkhtmlview defaults foreground to "black" via DEFAULT_STACK regardless of the widget fg kwarg.
         # Patch it to a soft dark-mode gray before set_html (which deepcopies DEFAULT_STACK), then restore.
-        _orig_fg = _tkhtmlview_parser.DEFAULT_STACK["config"]["foreground"]
+        _orig_fg: Any = _tkhtmlview_parser.DEFAULT_STACK["config"]["foreground"]
         _tkhtmlview_parser.DEFAULT_STACK["config"]["foreground"] = [("__DEFAULT__", "#c9d1d9")]
 
         # Note: must use background= (long form) — tkhtmlview's _w_init checks for that key specifically
@@ -70,7 +81,7 @@ class MarkdownTab(Tab):
 
         # Replace tkhtmlview's plain tk.Scrollbar with a ttk.Scrollbar so it picks up the app dark theme
         self.html_widget.vbar.destroy()
-        scrollbar = ttk.Scrollbar(self.html_widget.frame, orient="vertical", command=self.html_widget.yview)
+        scrollbar: ttk.Scrollbar = ttk.Scrollbar(self.html_widget.frame, orient="vertical", command=self.html_widget.yview)
         scrollbar.pack(side="right", fill="y")
         self.html_widget.configure(yscrollcommand=scrollbar.set)
 
@@ -85,8 +96,9 @@ class MarkdownTab(Tab):
             threading.Thread(target=self._fetch_and_rerender,
                              args=(remote_img_urls,), daemon=True).start()
 
-    def _apply_content_fixes(self):
+    def _apply_content_fixes(self) -> None:
         """Re-apply widget-content fixes after every set_html()."""
+        assert self.html_widget is not None
         self._rebind_links()
 
         # tkhtmlview positions bullets via tab stops (bullet at px 30, text at px 35) but never sets
@@ -98,7 +110,7 @@ class MarkdownTab(Tab):
 
         self.html_widget.config(state=tk.DISABLED)
 
-    def _fetch_and_rerender(self, urls):
+    def _fetch_and_rerender(self, urls: list[str]) -> None:
         """Fetch remote images in parallel, then schedule a re-render on the main thread."""
         from concurrent.futures import ThreadPoolExecutor
         import requests
@@ -106,16 +118,17 @@ class MarkdownTab(Tab):
         from io import BytesIO
         from copy import deepcopy
 
-        def fetch_one(url):
+        def fetch_one(url: str) -> tuple[str, Image.Image | None]:
             try:
                 return url, Image.open(BytesIO(requests.get(url, timeout=15).content))
             except Exception:
                 return url, None
 
         with ThreadPoolExecutor(max_workers=len(urls)) as pool:
-            results = list(pool.map(fetch_one, urls))
+            results: list[tuple[str, Image.Image | None]] = list(pool.map(fetch_one, urls))
 
         # Pre-populate the parser's image cache so set_html() won't re-fetch
+        assert self.html_widget is not None
         for url, img in results:
             if img is not None:
                 self.html_widget.html_parser.cached_images[url] = deepcopy(img)
@@ -123,15 +136,16 @@ class MarkdownTab(Tab):
         # Schedule re-render on the Tk main thread
         self.html_widget.after(0, self._rerender_with_images)
 
-    def _rerender_with_images(self):
+    def _rerender_with_images(self) -> None:
         """Re-render the widget with remote images now that they are cached."""
         if not self.frame or not self.frame.winfo_exists():
             return  # tab was closed while images were downloading
 
+        assert self.html_widget is not None
         # Preserve scroll position across the re-render
-        yview_top = self.html_widget.yview()[0]
+        yview_top: float = self.html_widget.yview()[0]
 
-        _orig_fg = _tkhtmlview_parser.DEFAULT_STACK["config"]["foreground"]
+        _orig_fg: Any = _tkhtmlview_parser.DEFAULT_STACK["config"]["foreground"]
         _tkhtmlview_parser.DEFAULT_STACK["config"]["foreground"] = [("__DEFAULT__", "#c9d1d9")]
 
         self.html_widget.set_html(self._html_body)
@@ -143,18 +157,19 @@ class MarkdownTab(Tab):
         # Restore scroll position
         self.html_widget.yview_moveto(yview_top)
 
-    def _rebind_links(self):
+    def _rebind_links(self) -> None:
         """Rebind relative .md links to open as new tabs; anchor links to scroll; leave http(s) to browser."""
-        md_dir = os.path.dirname(os.path.abspath(self.md_file_path))
+        assert self.html_widget is not None
+        md_dir: str = os.path.dirname(os.path.abspath(self.md_file_path))
         for slot in self.html_widget.html_parser.hlink_slots:
-            url = slot.URL
+            url: str = slot.URL
             # Leave absolute URLs to tkhtmlview's default webbrowser handler
             if url.startswith(("http://", "https://", "mailto:")):
                 continue
             # Split into path and #fragment
-            parts = url.split("#", 1)
-            path_part = parts[0]
-            fragment = parts[1] if len(parts) > 1 else None
+            parts: list[str] = url.split("#", 1)
+            path_part: str = parts[0]
+            fragment: str | None = parts[1] if len(parts) > 1 else None
 
             if not path_part:
                 # Anchor-only link (#section) — scroll to heading in current tab
@@ -162,18 +177,18 @@ class MarkdownTab(Tab):
                     self.html_widget.tag_unbind(slot.tag_name, "<Button-1>")
                     self.html_widget.tag_bind(
                         slot.tag_name, "<Button-1>",
-                        lambda event, frag=fragment: self._scroll_to_heading(frag)
+                        lambda _event, frag=fragment: self._scroll_to_heading(frag)
                     )
                 continue
 
             if not self.open_tab:
                 continue
-            resolved = os.path.normpath(os.path.join(md_dir, path_part))
+            resolved: str = os.path.normpath(os.path.join(md_dir, path_part))
             if resolved.lower().endswith(".md") and os.path.isfile(resolved):
                 self.html_widget.tag_unbind(slot.tag_name, "<Button-1>")
                 self.html_widget.tag_bind(
                     slot.tag_name, "<Button-1>",
-                    lambda event, path=resolved, frag=fragment: self.open_tab(MarkdownTab(
+                    lambda _event, path=resolved, frag=fragment: self.open_tab(MarkdownTab(
                         title=os.path.basename(path),
                         md_file_path=path,
                         open_tab=self.open_tab,
@@ -181,28 +196,29 @@ class MarkdownTab(Tab):
                     ))
                 )
 
-    def _scroll_to_heading(self, fragment):
+    def _scroll_to_heading(self, fragment: str) -> None:
         """Find the heading whose slug matches fragment and scroll the widget to it."""
+        assert self.html_widget is not None
         for line in self._md_content.splitlines():
-            stripped = line.strip()
+            stripped: str = line.strip()
             if not stripped.startswith("#"):
                 continue
-            heading_text = stripped.lstrip("#").strip()
+            heading_text: str = stripped.lstrip("#").strip()
             # Render through mistune so CommonMark rules apply (e.g. mid-word underscores in
             # filenames stay literal), then strip the HTML tags to get the plain text that
             # tkhtmlview actually inserted into the widget.
-            plain = re.sub(r'<[^>]+>', '', mistune.html(heading_text)).strip()
+            plain: str = re.sub(r'<[^>]+>', '', mistune.html(heading_text)).strip()
             if self._make_slug(plain) == fragment:
                 # search() returns the first match — skip any hits that are inside list
                 # items or body text (e.g. the same word in a ToC entry) by requiring the
                 # match to be the only content on its line.
-                idx = "1.0"
+                idx: str = "1.0"
                 while True:
                     idx = self.html_widget.search(plain, idx, tk.END)
                     if not idx:
                         break
-                    line_start = self.html_widget.index(f"{idx} linestart")
-                    line_end   = self.html_widget.index(f"{idx} lineend")
+                    line_start: str = self.html_widget.index(f"{idx} linestart")
+                    line_end: str = self.html_widget.index(f"{idx} lineend")
                     if self.html_widget.get(line_start, line_end) == plain:
                         self.html_widget.see(idx)
                         # see() does the minimum scroll to make idx visible,
@@ -210,9 +226,9 @@ class MarkdownTab(Tab):
                         # the top (2 lines of context above) so it feels like
                         # a normal "jump to heading".
                         self.html_widget.update_idletasks()
-                        target_line = int(self.html_widget.index(idx).split('.')[0])
-                        top_line    = int(self.html_widget.index("@0,0").split('.')[0])
-                        scroll_by   = (target_line - top_line) - 2
+                        target_line: int = int(self.html_widget.index(idx).split('.')[0])
+                        top_line: int = int(self.html_widget.index("@0,0").split('.')[0])
+                        scroll_by: int = (target_line - top_line) - 2
                         if scroll_by > 0:
                             self.html_widget.yview_scroll(scroll_by, "units")
                         break
@@ -220,9 +236,9 @@ class MarkdownTab(Tab):
                 return
 
     @staticmethod
-    def _make_slug(text):
+    def _make_slug(text: str) -> str:
         """GitHub-style heading slug: lowercase, punctuation stripped, whitespace collapsed to hyphens."""
-        slug = text.lower()
+        slug: str = text.lower()
         slug = re.sub(r'[^\w\s-]', '', slug)
         slug = re.sub(r'[\s]+', '-', slug)
         return slug
