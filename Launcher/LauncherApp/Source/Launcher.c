@@ -614,56 +614,108 @@ int main(int argc, char **argv)
 
         if (count == 0)
         {
-            printf("\n[ERROR] MSFS PyScript Manager requires a Python installation (WinPython)\n");
-            printf("        to run, but none were found in the WinPython\\ folder.\n");
-            printf("        Please install WinPython there and try again.\n\n");
-            printf("Press any key to exit...\n");
-            getchar();
-            return -1;
-        }
+            // No WinPython found - try system PATH as fallback
+            printf("[INFO] No WinPython installation found, searching system PATH...\n");
 
-        int selection = 0; // index into dirs[]
+            int foundInPath = 0;
+            char pathEnv[32768];
+            if (GetEnvironmentVariable("PATH", pathEnv, sizeof(pathEnv)))
+            {
+                char *context = NULL;
+                char *token = strtok_s(pathEnv, ";", &context);
+                while (token && !foundInPath)
+                {
+                    char testPath[MAX_PATH];
 
-        printf("\nMSFS PyScript Manager needs a Python installation to run.\n");
-        printf("The following Python installations were found -- please pick one.\n");
-        printf("Your choice will be remembered so you won't be asked again.\n\n");
-        for (int i = 0; i < count; i++)
-        {
-            printf("  [%d] %s\n", i + 1, dirs[i]);
-        }
-        printf("\nEnter selection (1-%d): ", count);
-        fflush(stdout);
+                    // Try pythonw.exe first (no console window)
+                    snprintf(testPath, sizeof(testPath), "%s\\pythonw.exe", token);
+                    DWORD attrs = GetFileAttributes(testPath);
+                    if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY))
+                    {
+                        strncpy(pythonPathBuffer, testPath, sizeof(pythonPathBuffer) - 1);
+                        pythonPathBuffer[sizeof(pythonPathBuffer) - 1] = '\0';
+                        foundInPath = 1;
+                        break;
+                    }
 
-        if (scanf("%d", &selection) != 1)
-        {
-            printf("\n[ERROR] Invalid input.\n\n");
-            printf("Press any key to exit...\n");
-            getchar();
-            return -1;
-        }
-        selection--; // convert to 0-based
+                    // Fall back to python.exe
+                    snprintf(testPath, sizeof(testPath), "%s\\python.exe", token);
+                    attrs = GetFileAttributes(testPath);
+                    if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY))
+                    {
+                        strncpy(pythonPathBuffer, testPath, sizeof(pythonPathBuffer) - 1);
+                        pythonPathBuffer[sizeof(pythonPathBuffer) - 1] = '\0';
+                        foundInPath = 1;
+                        break;
+                    }
 
-        if (selection < 0 || selection >= count)
-        {
-            printf("[ERROR] Selection out of range.\n\n");
-            printf("Press any key to exit...\n");
-            getchar();
-            return -1;
-        }
+                    token = strtok_s(NULL, ";", &context);
+                }
+            }
 
-        // Persist the choice so next launch is silent
-        if (writePythonDirToIni(dirs[selection]))
-        {
-            printf("[INFO] Selection saved -- you won't be prompted again unless the path changes.\n");
+            if (foundInPath)
+            {
+                pythonPath = pythonPathBuffer;
+                printf("[INFO] Using system Python from PATH: %s\n", pythonPath);
+            }
+            else
+            {
+                // Nothing found anywhere
+                printf("\n[ERROR] No Python installation found.\n\n");
+                printf("        Please either:\n");
+                printf("          1. Extract WinPython to the WinPython\\ folder, OR\n");
+                printf("          2. Install Python and add it to your system PATH\n\n");
+                printf("Press any key to exit...\n");
+                getchar();
+                return -1;
+            }
         }
         else
         {
-            printf("[WARNING] Could not save selection (will still work this session).\n");
-        }
+            // WinPython installations found - let user pick
+            int selection = 0; // index into dirs[]
 
-        snprintf(pythonPathBuffer, sizeof(pythonPathBuffer), ".\\%s\\pythonw.exe", dirs[selection]);
-        pythonPath = pythonPathBuffer;
-        printf("[INFO] Using: %s\n\n", pythonPath);
+            printf("\nMSFS PyScript Manager needs a Python installation to run.\n");
+            printf("The following Python installations were found -- please pick one.\n");
+            printf("Your choice will be remembered so you won't be asked again.\n\n");
+            for (int i = 0; i < count; i++)
+            {
+                printf("  [%d] %s\n", i + 1, dirs[i]);
+            }
+            printf("\nEnter selection (1-%d): ", count);
+            fflush(stdout);
+
+            if (scanf("%d", &selection) != 1)
+            {
+                printf("\n[ERROR] Invalid input.\n\n");
+                printf("Press any key to exit...\n");
+                getchar();
+                return -1;
+            }
+            selection--; // convert to 0-based
+
+            if (selection < 0 || selection >= count)
+            {
+                printf("[ERROR] Selection out of range.\n\n");
+                printf("Press any key to exit...\n");
+                getchar();
+                return -1;
+            }
+
+            // Persist the choice so next launch is silent
+            if (writePythonDirToIni(dirs[selection]))
+            {
+                printf("[INFO] Selection saved -- you won't be prompted again unless the path changes.\n");
+            }
+            else
+            {
+                printf("[WARNING] Could not save selection (will still work this session).\n");
+            }
+
+            snprintf(pythonPathBuffer, sizeof(pythonPathBuffer), ".\\%s\\pythonw.exe", dirs[selection]);
+            pythonPath = pythonPathBuffer;
+            printf("[INFO] Using: %s\n\n", pythonPath);
+        }
     }
 
     const char *scriptPath = ".\\Launcher\\LauncherScript\\launcher.py";

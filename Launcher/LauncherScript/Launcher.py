@@ -25,6 +25,28 @@ current_dir = Path(__file__).resolve().parent
 project_root = current_dir.parents[1]
 
 # Read paths from launcher.ini
+def find_system_vscode():
+    """Search for VS Code in common installation locations."""
+    import shutil
+
+    # Common VS Code locations on Windows
+    common_paths = [
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/Microsoft VS Code/Code.exe",
+        Path("C:/Program Files/Microsoft VS Code/Code.exe"),
+        Path("C:/Program Files (x86)/Microsoft VS Code/Code.exe"),
+    ]
+
+    for p in common_paths:
+        if p.exists():
+            return str(p)
+
+    # Try to find 'code' in PATH
+    code_path = shutil.which("code")
+    if code_path:
+        return code_path
+
+    return None
+
 def read_launcher_config():
     """Read launcher configuration from launcher.ini file."""
     config = configparser.ConfigParser()
@@ -49,6 +71,28 @@ def read_launcher_config():
     else:
         print(f"[INFO] launcher.ini not found at {ini_path}. Using default paths.")
 
+    # Check if the configured Python path actually exists
+    configured_python = project_root / python_dir / "python.exe"
+    if not configured_python.exists():
+        # Fall back to system Python (the one running this script)
+        print("")
+        print("=" * 80)
+        print("                    RUNNING WITH SYSTEM PYTHON (BYO MODE)")
+        print("=" * 80)
+        print(f"  Python: {sys.executable}")
+        print(f"  Version: {sys.version}")
+        print("")
+        print("  WARNING: You are running with your system Python installation.")
+        print("  This configuration is not officially supported.")
+        print("  For best compatibility, use the bundled WinPython distribution.")
+        print("=" * 80)
+        print("", flush=True)
+
+        # Return the directory containing sys.executable
+        system_python_dir = str(Path(sys.executable).parent)
+        vscode_path_str = find_system_vscode()
+        return system_python_dir, vscode_path_str
+
     # Derive VS Code launch script from Python directory
     # winvscode.bat properly forwards arguments to the real code.exe;
     # "VS Code.exe" in the same directory is a WinPython GUI launcher that does not.
@@ -60,32 +104,146 @@ def read_launcher_config():
     return python_dir, vscode_path_str
 
 python_dir_str, vscode_path_str = read_launcher_config()
-python_path = project_root / python_dir_str / "python.exe"
-pythonw_path = project_root / python_dir_str / "pythonw.exe"
-vscode_path = project_root / vscode_path_str
+
+# Handle both relative (WinPython) and absolute (system Python) paths
+python_dir_path = Path(python_dir_str)
+if python_dir_path.is_absolute():
+    # System Python - use absolute path directly
+    python_path = python_dir_path / "python.exe"
+    pythonw_path = python_dir_path / "pythonw.exe"
+else:
+    # WinPython - relative to project root
+    python_path = project_root / python_dir_str / "python.exe"
+    pythonw_path = project_root / python_dir_str / "pythonw.exe"
+
+# Handle VS Code path (can be None for system Python if not found)
+if vscode_path_str:
+    vscode_path_obj = Path(vscode_path_str)
+    if vscode_path_obj.is_absolute():
+        vscode_path = vscode_path_obj
+    else:
+        vscode_path = project_root / vscode_path_str
+else:
+    vscode_path = None
+
+# Validate pythonw.exe exists - fall back to python.exe if not
+# (System Python installs usually have pythonw.exe, but not always)
+if not pythonw_path.exists():
+    print(f"[WARNING] pythonw.exe not found at {pythonw_path}")
+    print(f"[WARNING] Falling back to python.exe (console window may appear for scripts)")
+    pythonw_path = python_path
+
 scripts_path = project_root / "Scripts"
 data_path = project_root / "Data"
 version_file_path = project_root / "Launcher" / "version.txt"
 update_cache_path = data_path / "update_cache.json"
 
-# Ensure third-party dependencies are installed into WinPython
+# Track if we're running in BYO (system Python) mode
+is_byo_mode = python_dir_path.is_absolute()
+
+def read_byo_auto_install_setting():
+    """Read the AutoInstallDeps setting from launcher.ini for BYO mode."""
+    config = configparser.ConfigParser()
+    ini_path = project_root / "Launcher" / "launcher.ini"
+    if ini_path.exists():
+        try:
+            config.read(ini_path)
+            if config.has_option('BYO', 'AutoInstallDeps'):
+                return config.get('BYO', 'AutoInstallDeps').strip().lower() == 'true'
+        except Exception:
+            pass
+    return None  # Not set yet
+
+def save_byo_auto_install_setting(value: bool):
+    """Save the AutoInstallDeps setting to launcher.ini."""
+    config = configparser.ConfigParser()
+    ini_path = project_root / "Launcher" / "launcher.ini"
+
+    # Read existing config if present
+    if ini_path.exists():
+        try:
+            config.read(ini_path)
+        except Exception:
+            pass
+
+    # Ensure BYO section exists
+    if not config.has_section('BYO'):
+        config.add_section('BYO')
+
+    config.set('BYO', 'AutoInstallDeps', str(value).lower())
+
+    with open(ini_path, 'w') as f:
+        config.write(f)
+
+def prompt_byo_install():
+    """Prompt user whether to auto-install dependencies in BYO mode using a dialog."""
+    # Use tkinter messagebox since stdin isn't available when launched from C exe
+    import tkinter as tk
+    from tkinter import messagebox
+
+    # Create hidden root window for dialog
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)  # Ensure dialog appears on top
+
+    requirements_path = project_root / "Launcher" / "requirements.txt"
+    message = (
+        "MSFS-PyScriptManager requires additional Python packages.\n\n"
+        f"Requirements file:\n{requirements_path}\n\n"
+        "Install dependencies to your system Python?\n\n"
+        "(Your choice will be remembered for future runs)"
+    )
+
+    result = messagebox.askyesno(
+        "BYO Python - Install Dependencies?",
+        message,
+        icon='question'
+    )
+
+    root.destroy()
+
+    if result:
+        save_byo_auto_install_setting(True)
+        print("[INFO] User approved dependency installation.")
+        return True
+    else:
+        save_byo_auto_install_setting(False)
+        print("[INFO] User declined dependency installation.")
+        print("[INFO] You can manually run: pip install -r Launcher/requirements.txt")
+        return False
+
+# Ensure third-party dependencies are installed
 def ensure_dependencies():
     requirements_path = project_root / "Launcher" / "requirements.txt"
-    if requirements_path.exists():
-        print(f"[INFO] Checking dependencies from {requirements_path}...", flush=True)
-        process = subprocess.Popen(
-            [str(python_path), "-u", "-m", "pip", "install", "--disable-pip-version-check", "--no-warn-script-location", "-r", str(requirements_path)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            creationflags=subprocess.CREATE_NO_WINDOW
-        )
-        for line in iter(process.stdout.readline, ''):
-            if "already satisfied" not in line:
-                print(line, end="", flush=True)
-        process.wait()
-        if process.returncode != 0:
-            print(f"[WARNING] pip install returned {process.returncode}. Some packages may be missing.", flush=True)
+    if not requirements_path.exists():
+        return
+
+    # In BYO mode, check if user has approved auto-install
+    if is_byo_mode:
+        auto_install = read_byo_auto_install_setting()
+        if auto_install is None:
+            # First time - ask user
+            if not prompt_byo_install():
+                return  # User said no
+        elif not auto_install:
+            # User previously said no
+            print("[INFO] Skipping dependency install (BYO mode, auto-install disabled)")
+            return
+
+    print(f"[INFO] Checking dependencies from {requirements_path}...", flush=True)
+    process = subprocess.Popen(
+        [str(python_path), "-u", "-m", "pip", "install", "--disable-pip-version-check", "--no-warn-script-location", "-r", str(requirements_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        creationflags=subprocess.CREATE_NO_WINDOW
+    )
+    for line in iter(process.stdout.readline, ''):
+        if "already satisfied" not in line:
+            print(line, end="", flush=True)
+    process.wait()
+    if process.returncode != 0:
+        print(f"[WARNING] pip install returned {process.returncode}. Some packages may be missing.", flush=True)
 
 ensure_dependencies()
 
@@ -837,6 +995,9 @@ class ScriptTab(Tab):
 
     def edit_script(self):
         """Open the script in VSCode for editing."""
+        if vscode_path is None:
+            self.insert_output("[ERROR] VS Code not found. Please install VS Code and add it to your PATH.\n")
+            return
         try:
             subprocess.Popen(["cmd", "/c", str(vscode_path.resolve()), str(self.script_path.resolve())])
             self.insert_output(f"Opening script {self.script_path} for editing in VS Code...\n")
@@ -2564,6 +2725,15 @@ def main():
     logger.info("Starting the application.")
 
     print("Starting Launcher.py -- main()")
+
+    # Set AppUserModelID before creating the root window (affects taskbar icon)
+    if sys.platform.startswith("win"):
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "MSFS.PyScriptManager"
+            )
+        except Exception:
+            pass
 
     # Create shutdown event BEFORE GUI initialization
     shutdown_event = Event()
