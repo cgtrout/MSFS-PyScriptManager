@@ -504,10 +504,8 @@ class TabManager:
         """Record the index of the tab being dragged."""
         try:
             self.drag_start_tab = self.notebook.index(f"@{event.x},{event.y}")
-            print(f"[DEBUG] Drag started on tab index: {self.drag_start_tab}")
         except TclError:
             self.drag_start_tab = None
-            print("[DEBUG] Drag start: No tab found under the cursor.")
 
     def on_tab_drag_motion(self, event):
         """Dynamically highlight the tab under the cursor."""
@@ -561,7 +559,6 @@ class TabManager:
     def swap_tabs(self, index1, index2):
         """Swap two tabs in the notebook and update their internal state."""
         if index1 == index2:
-            print("[DEBUG] Swap not needed: Dragged tab is already in the correct position.")
             return
 
         # Get all tabs as a list of frames
@@ -569,19 +566,13 @@ class TabManager:
         tab1_frame = tabs_list[index1]
         tab2_frame = tabs_list[index2]
 
-        print(f"[DEBUG] Swapping tab frames: {tab1_frame} <-> {tab2_frame}")
-
         # Swap the positions in the notebook widget
         self.notebook.insert(index2, tab1_frame)
         self.notebook.insert(index1, tab2_frame)
 
-        print(f"[DEBUG] Tabs swapped successfully. Updated tabs: {self.tabs}")
-
     def generate_tab_id(self):
         """Generate a unique tab ID and log the caller and its caller."""
         self.next_tab_id += 1
-
-        print(f"Generated new tab id: {self.next_tab_id} ")
         return self.next_tab_id
 
     def add_tab(self, tab):
@@ -594,8 +585,6 @@ class TabManager:
             caller_name = f"{caller_info.name} (at {caller_info.filename})"
         else:
             caller_name = "Unknown"
-
-        print(f"[DEBUG] add_tab called by: {caller_name}")
 
         def _add_tab():
             tab_id = self.generate_tab_id()  # Generate tab ID on the main thread
@@ -614,7 +603,6 @@ class TabManager:
         """Close a tab and clean up resources."""
         def _close_tab():
             logger.debug("close_tab inner")
-            print(f"[DEBUG] Type of self.tabs: {type(self.tabs)}")
             tab = self.tabs.pop(tab_id, None)
             if not tab:
                 print(f"[WARNING] Tab with ID {tab_id} not found.")
@@ -661,7 +649,6 @@ class TabManager:
         # Schedule reloads with increasing delay
         for i, tab in enumerate(script_tabs):
             delay = i * SCRIPT_LOAD_DELAY_MS
-            print(f"delay")
             self.scheduler(delay, reload_script_with_delay, i)
 
     def on_tab_right_click(self, event):
@@ -1605,7 +1592,6 @@ class CommandLineTab(Tab):
         - Input: "python te"
         - Output: ("python", "te")
         """
-        print(f"[DEBUG] Parsing command: '{command}'")
         # Split the command into parts by spaces
         parts = command.rsplit(" ", 1)
         if len(parts) == 1:
@@ -1614,7 +1600,6 @@ class CommandLineTab(Tab):
         else:
             base, path = parts[0], parts[1]
 
-        print(f"[DEBUG] Parsed result - Base: '{base}', Path: '{path}'")
         return base, path
 
     def get_autocomplete_matches(self, prefix):
@@ -1683,18 +1668,18 @@ class CommandLineTab(Tab):
 
         try:
             pid = self.process.pid
-            print(f"[DEBUG] Inspecting processes associated with PID: {pid}")
+            print(f"[INFO] Inspecting processes associated with PID: {pid}")
 
             # Get the parent process
             parent_process = psutil.Process(pid)
-            print(f"[DEBUG] Parent Process: PID={parent_process.pid}, Name={parent_process.name()}, Status={parent_process.status()}")
+            print(f"[INFO] Parent Process: PID={parent_process.pid}, Name={parent_process.name()}, Status={parent_process.status()}")
 
             # Get all child processes
             children = parent_process.children(recursive=True)
             if not children:
-                print(f"[DEBUG] No child processes found for PID={pid}.")
+                print(f"[INFO] No child processes found for PID={pid}.")
             else:
-                print(f"[DEBUG] Found {len(children)} child processes:")
+                print(f"[INFO] Found {len(children)} child processes:")
                 for child in children:
                     print(f"  - Child PID={child.pid}, Name={child.name()}, Status={child.status()}")
 
@@ -1713,7 +1698,6 @@ class CommandLineTab(Tab):
 
         try:
             parent_pid = self.process.pid
-            print(f"[DEBUG] Inspecting processes associated with PID: {parent_pid}")
 
             # Get the parent process and its children
             parent = psutil.Process(parent_pid)
@@ -1814,7 +1798,6 @@ class CommandLineTab(Tab):
     def on_tab_activated(self):
         if self.input_entry and self.input_entry.winfo_exists():
             self.input_entry.focus_force()
-            print("[DEBUG] Focus set to input_entry.")
         else:
             print("[ERROR] Input textbox is not available for focus.")
 
@@ -2368,20 +2351,16 @@ class ProcessTracker:
                     buffer += chunk
 
                     # Debug: Log received chunk and updated buffer
-                    #print(f"[DEBUG] Chunk received ({len(chunk)} chars): {repr(chunk)}")
-                    #print(f"[DEBUG] Current buffer ({len(buffer)} chars): {repr(buffer)}")
 
                     # Process complete lines in the buffer
                     while "\n" in buffer:
                         line, buffer = buffer.split("\n", 1)
                         output_queue.put_nowait(line + "\n")
-                        #print(f"[DEBUG] Line enqueued: {repr(line)}")
                         last_flushed_partial = None  # Reset partial tracking
 
                     # Handle partial line (e.g., prompts or incomplete output)
                     if buffer and buffer != last_flushed_partial:
                         output_queue.put_nowait(buffer)
-                        #print(f"[DEBUG] Partial buffer enqueued: {repr(buffer)}")
                         last_flushed_partial = buffer
 
                         # Clear the buffer after enqueueing partial data
@@ -2403,7 +2382,6 @@ class ProcessTracker:
             # Handle cleanup: flush remaining buffer and signal end of stream
             if buffer and buffer != last_flushed_partial:
                 output_queue.put_nowait(buffer)
-                print(f"[DEBUG] Final buffer flushed: {repr(buffer)}")
             output_queue.put(None)  # Signal end of stream to the queue
 
             try:
