@@ -2104,7 +2104,11 @@ class ScriptLauncherApp:
             self.load_script_group_from_path(autoplay_path)
         else:
             print("[INFO] Autoplay: No '_autoplay.script_group' file found at startup. "
-                  "Skipping autoplay.")
+                  "Creating an empty one.")
+            try:
+                autoplay_path.write_text("", encoding="utf-8")
+            except Exception as e:
+                print(f"[WARNING] Autoplay: Failed to create empty group file: {e}")
 
     def save_script_group(self):
         """Save the currently open tabs (scripts) to a .script_group file with relative paths."""
