@@ -105,6 +105,9 @@ Currently, **most of the included scripts will detect Simulator state**.  Howeve
 - Extract new versions of WinPython to /WinPython directory then run pick command above to switch to a new installed version.
 - The launcher will use the "requirements.txt" file in /Launcher to ensure all required modules are installed through pip.
 
+## BYO Python Mode
+- If no WinPython is present, you can run the launcher exe without Python. It will run using your system Python defined in your PATH.
+
 ## Additional Credits
 - Icon used for Launcher: [JoyPixels Emojione](https://github.com/joypixels/emojione) (MIT License)
 
