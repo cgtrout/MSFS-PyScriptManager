@@ -13,6 +13,9 @@ import tkinter as tk
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "1"
 import pygame
 import time
+import math
+
+TEST_MODE = False # Runs with test data rather than live joy data
 
 try:
     # Import all color print functions
@@ -24,8 +27,9 @@ except ImportError:
     sys.exit(1)
 
 class JoystickApp:
-    def __init__(self, graph_size_pixels, alpha_transparency_level, settings_file):
+    def __init__(self, graph_size_pixels, alpha_transparency_level, settings_file, test_mode=False):
         # Initialize constants and state
+        self.test_mode = test_mode
         self.graph_size_pixels = graph_size_pixels
         self.graph_size_inches = graph_size_pixels / 100
         self.alpha_transparency_level = alpha_transparency_level
@@ -56,10 +60,10 @@ class JoystickApp:
         }
 
         self.cache_lock = threading.Lock()
-        self.scat = None
+        self.dot = None
         self.elevator_trim_marker = None
         self.aileron_trim_marker = None
-        self.coord_text = None
+        self.coord_label = None
 
         self.root = None
         self.menu = None
@@ -71,11 +75,10 @@ class JoystickApp:
         self.desired_joystick_name, self.window_position = self._load_settings()
 
         # Initialize pygame for joystick handling
-        pygame.init()
-        pygame.joystick.init()
-
-        # Load and configure joysticks
-        self._load_joysticks()
+        if not self.test_mode:
+            pygame.init()
+            pygame.joystick.init()
+            self._load_joysticks()
 
         optimize_gc(allocs=5000, gen1_factor=5, gen2_factor=5, freeze=False, show_data=False)
 
@@ -88,7 +91,6 @@ class JoystickApp:
         # Use the desired joystick name already loaded
         if self.desired_joystick_name in self.joystick_names:
             self.selected_joystick = self.joysticks[self.joystick_names.index(self.desired_joystick_name)]
-            self.selected_joystick.init()
             print_info(f"Joystick '{self.desired_joystick_name}' loaded from settings and initialized.")
         else:
             print_warning(f"Saved joystick '{self.desired_joystick_name}' not found. No joystick selected.")
@@ -172,29 +174,43 @@ class JoystickApp:
             self.static_background = self.fig.canvas.copy_from_bbox(self.fig.bbox)
 
         # Get Input Data: joystick position
-        if self.selected_joystick:
+        if self.test_mode:
+            t = time.time()
+            new_x = math.sin(t * 0.5)
+            new_y = math.sin(t * 0.7)
+        elif self.selected_joystick:
             pygame.event.pump()
             new_x = self.selected_joystick.get_axis(0)
             new_y = self.selected_joystick.get_axis(1)
         else:
             new_x, new_y = 0, 0
-            self.coord_text.set_text("No Joy!\nRight-click to \nselect")
-            self.fig.canvas.draw()
-            self.root.after(50, self._update_plot)
+            self.coord_label.config(text="No Joy!\nRight-click\nto select")
+            self.fig.canvas.blit(self.fig.bbox)
+            self.root.after(100, self._update_plot)
             return
 
         # Get Trim Values.
-        with self.cache_lock:
+        if self.test_mode:
+            t = time.time()
             new_trim_values = {
-                "elevator_trim": self.cached_trim_values.get("elevator_trim", 0),
-                "aileron_trim": self.cached_trim_values.get("aileron_trim", 0),
-                "rotor_lateral_trim": self.cached_trim_values.get("rotor_lateral_trim", 0),
-                "rotor_longitudinal_trim": self.cached_trim_values.get("rotor_longitudinal_trim", 0),
+                "elevator_trim": 0.3 + 0.2 * math.sin(t * 0.3),
+                "aileron_trim": -0.2 + 0.15 * math.sin(t * 0.4),
+                "rotor_lateral_trim": 0,
+                "rotor_longitudinal_trim": 0,
             }
+        else:
+            with self.cache_lock:
+                new_trim_values = {
+                    "elevator_trim": self.cached_trim_values.get("elevator_trim", 0),
+                    "aileron_trim": self.cached_trim_values.get("aileron_trim", 0),
+                    "rotor_lateral_trim": self.cached_trim_values.get("rotor_lateral_trim", 0),
+                    "rotor_longitudinal_trim": self.cached_trim_values.get("rotor_longitudinal_trim", 0),
+                }
 
-        # Skip update if nothing changed
+        # Skip artist updates if nothing changed, but re-blit in case Tk cleared the canvas
         if (new_x, new_y) == self.last_joystick_pos and new_trim_values == self.last_trim_values:
-            self.root.after(100, self._update_plot)
+            self.fig.canvas.blit(self.fig.bbox)
+            self.root.after(50, self._update_plot)
             return
 
         # Save new state
@@ -202,8 +218,8 @@ class JoystickApp:
         self.last_trim_values = new_trim_values.copy()
 
         # Update dynamic artists
-        # Update scatter for joystick position
-        self.scat.set_offsets([[new_x, new_y]])
+        self.dot.set_xdata([new_x])
+        self.dot.set_ydata([new_y])
 
         # Determine aircraft mode based on trim values.
         threshold = 0.01
@@ -220,19 +236,16 @@ class JoystickApp:
             self.elevator_trim_marker.set_visible(abs(new_trim_values["elevator_trim"]) > threshold)
             self.aileron_trim_marker.set_visible(abs(new_trim_values["aileron_trim"]) > threshold)
 
-        # Update coordinate text
-        new_coord_text = f"X: {new_x:>5.2f} Y: {new_y:>5.2f}"
-        self.coord_text.set_text(new_coord_text)
+        self.coord_label.config(text=f"X: {new_x:>5.2f} Y: {new_y:>5.2f}")
 
         # Manual Blitting:
         # Restore the static background
         self.fig.canvas.restore_region(self.static_background)
         # Redraw the updated dynamic artists
-        for artist in [self.scat, self.elevator_trim_marker, self.aileron_trim_marker, self.coord_text]:
+        for artist in [self.dot, self.elevator_trim_marker, self.aileron_trim_marker]:
             self.fig.draw_artist(artist)
         # Blit the updated region to the display
         self.fig.canvas.blit(self.fig.bbox)
-        self.fig.canvas.flush_events()
 
         # Schedule the next update.
         self.root.after(50, self._update_plot)
@@ -254,7 +267,7 @@ class JoystickApp:
         self.fig, self.ax = plt.subplots(figsize=(self.graph_size_inches, self.graph_size_inches))
         self._apply_plot_layout_adjustments()
 
-        self.scat = self.ax.scatter([], [], s=20, color="yellow")
+        self.dot, = self.ax.plot([], [], 'o', color='yellow', markersize=4, markeredgewidth=0, linestyle='None')
         self.ax.set_xlim(-1.01, 1.01)
         self.ax.set_ylim(-1.01, 1.01)
 
@@ -263,10 +276,14 @@ class JoystickApp:
 
         self.elevator_trim_marker = self.ax.axhline(0, color=self.TRIM_COLOR, lw=0.8, linestyle='--', visible=False)
         self.aileron_trim_marker = self.ax.axvline(0, color=self.TRIM_COLOR, lw=0.8, linestyle='--', visible=False)
-        self.coord_text = self.ax.text(0.9, -0.9, '', ha='right', va='bottom', fontsize=8, color='darkgray', transform=self.ax.transData)
 
         canvas = FigureCanvasTkAgg(self.fig, master=self.root)
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        # Tk Label for coordinates — kept out of matplotlib's draw loop entirely
+        self.coord_label = tk.Label(self.root, text='', font=('Consolas', 7),
+                                    fg='darkgray', bg='black', bd=0, highlightthickness=0, anchor='se')
+        self.coord_label.place(relx=1.0, rely=1.0, x=-2, y=-2, anchor='se')
 
         self.fig.canvas.draw()
 
@@ -279,12 +296,14 @@ class JoystickApp:
 
     def run(self):
         self._create_gui()
-        self._initialize_simconnect()
-        trim_thread = threading.Thread(target=self._fetch_trim_data, daemon=True)
-        trim_thread.start()
+        if not self.test_mode:
+            self._initialize_simconnect()
+            trim_thread = threading.Thread(target=self._fetch_trim_data, daemon=True)
+            trim_thread.start()
         self.root.after(50, self._update_plot)
         self.root.mainloop()
-        pygame.quit()
+        if not self.test_mode:
+            pygame.quit()
 
     def _start_drag(self, event):
         self.root.x = event.x
@@ -335,5 +354,5 @@ if __name__ == "__main__":
     SETTINGS_DIR = os.path.join(BASE_DIR, "Settings")
     SETTINGS_FILE = os.path.join(SETTINGS_DIR, "plot_joystick.json")
 
-    app = JoystickApp(graph_size_pixels=100, alpha_transparency_level=0.8, settings_file=SETTINGS_FILE)
+    app = JoystickApp(graph_size_pixels=100, alpha_transparency_level=0.8, settings_file=SETTINGS_FILE, test_mode=TEST_MODE)
     app.run()
