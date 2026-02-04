@@ -10,7 +10,7 @@ import os
 import sys
 import threading
 import time
-from multiprocessing import Process, Event
+from multiprocessing import Process, Event, current_process
 from multiprocessing.synchronize import Event as MultiprocessingEvent
 from pathlib import Path
 from typing import IO
@@ -30,8 +30,15 @@ from ttkthemes import ThemedTk
 from app import ScriptLauncherApp
 
 # Configure logging globally
+shutdown_log_path: Path = logs_path / "shutdown_log.txt"
+if current_process().name == "MainProcess":
+    try:
+        shutdown_log_path.unlink()
+    except FileNotFoundError:
+        pass
+
 logger: OrderedLogger = OrderedLogger(
-    filename=str(logs_path / "shutdown_log.txt"),
+    filename=str(shutdown_log_path),
     level=logging.DEBUG,
     log_format="%(asctime)s [%(levelname)s] %(message)s"
 )

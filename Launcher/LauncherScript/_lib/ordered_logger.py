@@ -18,8 +18,10 @@ class OrderedLogger:
         self.sequence_number: int = 0
         self.sequence_lock: threading.Lock = threading.Lock()
 
-        # Set up a file handler
-        handler: logging.FileHandler = logging.FileHandler(filename, mode="w")
+        # Set up a file handler (append to avoid gaps when multiple processes write)
+        if self.logger.handlers:
+            self.logger.handlers.clear()
+        handler: logging.FileHandler = logging.FileHandler(filename, mode="a", encoding="utf-8", delay=True)
         log_format = log_format or "%(asctime)s - %(levelname)s - %(message)s"
         formatter: logging.Formatter = logging.Formatter(log_format)
         handler.setFormatter(formatter)
