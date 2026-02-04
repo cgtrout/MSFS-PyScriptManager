@@ -575,13 +575,23 @@ int run_script(const char *pythonPath, const char *scriptPath)
     return exitCode;
 }
 
-int main()
+int main(int argc, char **argv)
 {
     char pythonPathBuffer[512];
     const char *pythonPath = NULL;
+    int forceSelectPython = 0;
+
+    // Simple CLI parsing
+    for (int i = 1; i < argc; i++)
+    {
+        if (strcmp(argv[i], "--pick") == 0)
+        {
+            forceSelectPython = 1;
+        }
+    }
 
     // --- Try the path from launcher.ini first ---
-    if (readPythonPathFromIni(pythonPathBuffer, sizeof(pythonPathBuffer)))
+    if (!forceSelectPython && readPythonPathFromIni(pythonPathBuffer, sizeof(pythonPathBuffer)))
     {
         // Validate that pythonw.exe actually exists at the configured path
         DWORD attrs = GetFileAttributes(pythonPathBuffer);
