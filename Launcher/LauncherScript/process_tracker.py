@@ -51,7 +51,6 @@ class ProcessTracker:
         self.processes: dict[int | None, ProcessMetadata] = {}  # Maps tab_id to process metadata
         self.scheduler: Callable[..., Any] = scheduler  # Store the scheduler
         self.script_name: str | None = None
-        self.queuefull_warning_issued: bool = False
         self.lock: Lock = Lock()
         self.shutdown_event: MultiprocessingEvent = shutdown_event  # Store the shutdown event
 
@@ -171,6 +170,22 @@ class ProcessTracker:
         except Exception as e:
             print(f"[ERROR] Failed to start process for Tab ID {tab_id}: {e}")
 
+    def _put_to_queue(
+        self,
+        output_queue: queue.Queue[str | None],
+        item: str,
+        stop_event: threading.Event
+    ) -> bool:
+        """Block reader until queue has space (natural back-pressure).
+        Returns False only if stop_event is set while waiting."""
+        while True:
+            try:
+                output_queue.put(item, timeout=0.5)
+                return True
+            except queue.Full:
+                if stop_event.is_set():
+                    return False
+
     def _read_output(
         self,
         stream: IO[str],
@@ -211,29 +226,20 @@ class ProcessTracker:
                     # Process complete lines in the buffer
                     while "\n" in buffer:
                         line, buffer = buffer.split("\n", 1)
-                        try:
-                            output_queue.put_nowait(line + "\n")
+                        if self._put_to_queue(output_queue, line + "\n", stop_event):
                             enqueued += 1
-                        except queue.Full:
-                            if not self.queuefull_warning_issued:
-                                print(f"[WARNING] Output queue full for {stream_name}, Tab ID: {tab_id}. Dropping output.")
-                                self.queuefull_warning_issued = True
+                        else:
                             dropped += 1
                         last_flushed_partial = None  # Reset partial tracking
 
                     # Handle partial line (e.g., prompts or incomplete output)
                     if buffer and buffer != last_flushed_partial:
-                        try:
-                            output_queue.put_nowait(buffer)
-                        except queue.Full:
-                            if not self.queuefull_warning_issued:
-                                print(f"[WARNING] Output queue full for {stream_name}, Tab ID: {tab_id}. Dropping output.")
-                                self.queuefull_warning_issued = True
-                            dropped += 1
-                        else:
+                        if self._put_to_queue(output_queue, buffer, stop_event):
                             enqueued += 1
                             last_flushed_partial = buffer
                             buffer = ""  # Clear only after successful enqueue
+                        else:
+                            dropped += 1
 
                 except BlockingIOError:
                     # No data available yet; pause briefly to avoid busy-waiting
