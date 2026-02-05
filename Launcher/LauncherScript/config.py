@@ -204,7 +204,8 @@ if not pythonw_path.exists():
 scripts_path = project_root / "Scripts"
 data_path = project_root / "Data"
 version_file_path = project_root / "Launcher" / "version.txt"
-update_cache_path = data_path / "update_cache.json"
+cache_path = data_path / ".cache"
+update_cache_path = cache_path / "update_cache.json"
 logs_path = project_root / "Logs"
 logs_path.mkdir(parents=True, exist_ok=True)
 
