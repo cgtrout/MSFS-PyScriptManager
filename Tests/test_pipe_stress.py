@@ -44,7 +44,7 @@ BURST_COUNT     = 30_000        # stdout flood; queue maxsize = 1000
 # Phases
 # =============================================================================
 
-def phase_partial_line() -> None:
+def phase_partial_line() -> str:
     """Write a prompt with no trailing newline, pause, then complete it.
     Exercises the partial-line flush and the last_flushed_partial guard."""
     print("[PHASE 1] Partial line", flush=True)
@@ -53,9 +53,10 @@ def phase_partial_line() -> None:
     time.sleep(0.5)
     sys.stdout.write(" ... done\n")
     sys.stdout.flush()
+    return "partial written and completed"
 
 
-def phase_multibyte() -> None:
+def phase_multibyte() -> str:
     """Single large write forcing multibyte splits at every read boundary.
 
     Written to sys.stdout.buffer so the OS sees one contiguous block.  The
@@ -70,9 +71,10 @@ def phase_multibyte() -> None:
     sys.stdout.buffer.write(raw)
     sys.stdout.buffer.flush()
     print(f"  wrote {MULTIBYTE_LINES} lines ({len(raw)} bytes)", flush=True)
+    return f"{MULTIBYTE_LINES} lines / {len(raw)} bytes"
 
 
-def phase_burst() -> None:
+def phase_burst() -> str:
     """Flood stdout as fast as possible.
 
     The output queue is maxsize=1000.  If the dispatcher falls behind
@@ -85,14 +87,16 @@ def phase_burst() -> None:
         print(f"[BURST] {i}")
     # This line arrives after the flood.  If you see it, the reader survived.
     print(f"  last burst index: {BURST_COUNT - 1}", flush=True)
+    return f"{BURST_COUNT} lines"
 
 
-def phase_stderr_interleave() -> None:
+def phase_stderr_interleave() -> str:
     """Hammer both stdout and stderr reader threads at the same time."""
     print("[PHASE 4] Stderr interleave (500 pairs)", flush=True)
     for i in range(500):
         print(f"  [out] {i}", flush=True)
         print(f"  [err] {i}", file=sys.stderr, flush=True)
+    return "500 pairs"
 
 
 # =============================================================================
@@ -100,17 +104,38 @@ def phase_stderr_interleave() -> None:
 # =============================================================================
 
 def main() -> None:
-    phase_partial_line()
-    phase_multibyte()
-    phase_burst()
-    phase_stderr_interleave()
+    phases: list[tuple[str, object]] = [
+        ("partial line",      phase_partial_line),
+        ("multibyte",         phase_multibyte),
+        ("burst",             phase_burst),
+        ("stderr interleave", phase_stderr_interleave),
+    ]
 
-    # EOF canary.  This is the last thing written.  If it appears in the tab,
-    # the reader flushed its buffer before firing the None sentinel and the
-    # dispatcher delivered it to the UI.
-    print("\n[DONE] All phases complete.")
-    print(f"[DONE] Burst={BURST_COUNT}, multibyte={MULTIBYTE_LINES} lines.")
-    print("[DONE] 'completed successfully' in the tab footer = EOF + stop_event OK.")
+    results: list[tuple[str, str, str]] = []   # (name, status, detail)
+    for name, fn in phases:
+        try:
+            detail = fn()
+            results.append((name, "PASS", detail))
+        except Exception as e:
+            results.append((name, "FAIL", str(e)))
+
+    # ---------------------------------------------------------------------
+    # Results table — this is also the EOF canary.  If it appears, the
+    # reader flushed its buffer and the None sentinel reached the dispatcher.
+    # ---------------------------------------------------------------------
+    print("\n" + "=" * 52, flush=True)
+    print(" RESULTS", flush=True)
+    print("=" * 52, flush=True)
+    for name, status, detail in results:
+        print(f"  [{status}] {name:25s} {detail}", flush=True)
+    print("=" * 52, flush=True)
+
+    all_passed = all(s == "PASS" for _, s, _ in results)
+    if all_passed:
+        print("  All phases passed.", flush=True)
+        print("  Tab footer 'completed successfully' = EOF + stop_event OK.", flush=True)
+    else:
+        print("  SOME PHASES FAILED — check output above.", flush=True)
 
 
 if __name__ == "__main__":
