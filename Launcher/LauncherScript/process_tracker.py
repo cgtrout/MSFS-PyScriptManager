@@ -185,9 +185,8 @@ class ProcessTracker:
                 try:
                     # Attempt to read a chunk of data
                     chunk: str = os.read(fd, 4096).decode("utf-8")
-                    if not chunk:  # EOF or no data available
-                        time.sleep(0.01)
-                        continue
+                    if not chunk:  # EOF
+                        break
 
                     buffer += chunk
 
