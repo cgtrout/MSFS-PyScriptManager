@@ -3,7 +3,8 @@ __all__ = [
     "print_info",
     "print_debug",
     "print_error",
-    "print_color"
+    "print_color",
+    "set_debug_level"
 ]
 
 import re
