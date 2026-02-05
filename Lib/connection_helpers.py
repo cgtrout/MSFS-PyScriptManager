@@ -11,7 +11,7 @@ import time
 from SimConnect import SimConnect, AircraftRequests
 
 from Lib.color_print import print_debug, print_error, print_info
-from Lib.sim_process import wait_for_sim_running
+from Lib.sim_process import is_sim_running, wait_for_sim_running
 
 
 class BaseConnectionHelper(ABC):
@@ -59,6 +59,9 @@ class SimConnectConnectionHelper(BaseConnectionHelper):
         Attempt to connect. If blocking, retry until connected or timeout.
         """
         if not blocking:
+            if not is_sim_running(min_runtime=self.min_runtime):
+                print_info("Sim not running; skipping non-blocking SimConnect attempt.")
+                return False
             return self._try_connect_once()
 
         start = time.monotonic()
