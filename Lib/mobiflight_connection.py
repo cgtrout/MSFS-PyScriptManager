@@ -86,10 +86,6 @@ class MobiflightConnectionHelper(BaseConnectionHelper):
             raise RuntimeError("Mobiflight not connected")
         return self.mf_requests
 
-
-# Backwards compatibility alias
-MobiflightConnection = MobiflightConnectionHelper
-
     def wait_for_lvar(self, lvar, check_interval=0.5):
         """Waits for a specified LVAR to reach a non zero state"""
         print_info(f"Waiting for LVAR '{lvar}'")
@@ -134,3 +130,6 @@ MobiflightConnection = MobiflightConnectionHelper
     def get(self, variable_string):
         """Calls mf_requests.get()"""
         return self.mf_requests.get(variable_string)
+
+# Backwards compatibility alias
+MobiflightConnection = MobiflightConnectionHelper
