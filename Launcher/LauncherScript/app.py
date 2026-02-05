@@ -115,7 +115,7 @@ class ScriptLauncherApp:
                     self.root.after(0, lambda: self._show_update_prompt(display_current, display_latest, latest_url))
             else:
                 display_current = _format_version_numbers(_parse_version(current_version)) or current_version
-                print(f"[INFO] Up to date: {display_current}")
+                print(f"[INFO] VERSION CHECK: MSFS-PyScriptManager Up to date ({display_current})")
         except Exception as e:
             print(f"[WARNING] Update check failed: {e}")
 
