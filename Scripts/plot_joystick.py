@@ -100,6 +100,12 @@ class JoystickApp:
             b"Percent Over 100",
             "N",
         ]
+        heli.list["ROTOR_LONGITUDINAL_TRIM_PCT"] = [
+            "Trim percent",
+            b"ROTOR LONGITUDINAL TRIM PCT",
+            b"Percent Over 100",
+            "N",
+        ]
 
         # Clear helper cache if present
         if hasattr(heli, "dic") and hasattr(heli.dic, "clear"):
