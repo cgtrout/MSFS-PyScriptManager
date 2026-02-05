@@ -182,12 +182,14 @@ class HttpServer:
         self.httpd = self.initialize_server()
 
     def initialize_server(self):
-        """Initialize HTTP server"""
+        """Initialize HTTP server (loopback-only)"""
         def handler(*args, **kwargs):
             return HttpRequestHandler(self.message_queue, self.sound_player, *args, **kwargs)
 
-        httpd = socketserver.TCPServer(("", HTTP_SERVER_PORT), handler)
-        print(f"HTTP server running on port {HTTP_SERVER_PORT}")
+        # Bind to loopback ONLY to avoid LAN exposure + firewall prompt
+        httpd = socketserver.TCPServer((PRINTER_SERVER_ADDRESS, HTTP_SERVER_PORT), handler)
+
+        print(f"HTTP server running on http://{PRINTER_SERVER_ADDRESS}:{HTTP_SERVER_PORT}")
         return httpd
 
     def start(self):
