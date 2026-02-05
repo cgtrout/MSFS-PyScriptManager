@@ -183,7 +183,7 @@ class ProcessTracker:
         decoder = codecs.getincrementaldecoder("utf-8")()
 
         try:
-            while not stop_event.is_set():
+            while True:
                 try:
                     raw: bytes = os.read(fd, 4096)
                     if not raw:  # EOF
