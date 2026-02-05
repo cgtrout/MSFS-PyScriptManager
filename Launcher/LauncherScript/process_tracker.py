@@ -284,6 +284,7 @@ class ProcessTracker:
                     input_data: str | None = input_queue.get(timeout=1)  # Block until input is available
                     if input_data is None:  # Sentinel for EOF
                         break
+                    logger.debug("stdin write: %r", input_data)
                     stdin.write(input_data)
                     stdin.flush()  # Ensure immediate delivery to the subprocess
                 except queue.Empty:
