@@ -82,6 +82,35 @@ class JoystickApp:
 
         optimize_gc(allocs=5000, gen1_factor=5, gen2_factor=5, freeze=False, show_data=False)
 
+    def patch_rotor_trim(self, aq):
+        """
+        Adds missing ROTOR_LATERAL_TRIM_PCT to the existing AircraftRequests instance.
+        """
+        # Find the helicopter helper inside aq.list
+        heli = next((h for h in aq.list if h.__class__.__name__.endswith("_HelicopterSpecificData")), None)
+        if heli is None:
+            raise RuntimeError("Could not find _HelicopterSpecificData inside aq.list")
+
+        if not isinstance(heli.list, dict):
+            raise RuntimeError(f"Expected heli.list to be dict, got {type(heli.list)}")
+
+        heli.list["ROTOR_LATERAL_TRIM_PCT"] = [
+            "Trim percent",
+            b"ROTOR LATERAL TRIM PCT",
+            b"Percent Over 100",
+            "N",
+        ]
+
+        # Clear helper cache if present
+        if hasattr(heli, "dic") and hasattr(heli.dic, "clear"):
+            heli.dic.clear()
+
+        print_debug(f"[patch] heli helper type={type(heli)}")
+        print_debug(f"[patch] added key='ROTOR_LATERAL_TRIM_PCT'")
+        print_debug(f"[patch] now_has_lateral={'ROTOR_LATERAL_TRIM_PCT' in heli.list}")
+        print_debug(f"[patch] lateral_def={heli.list['ROTOR_LATERAL_TRIM_PCT']}")
+
+
     def _load_joysticks(self):
         """Load joystick information and initialize the desired joystick."""
         # Get joystick info
@@ -131,6 +160,7 @@ class JoystickApp:
         try:
             self.sm = SimConnect()
             self.aq = AircraftRequests(self.sm, _time=1, _attemps=2)
+            self.patch_rotor_trim(self.aq)
             print_info("Connected to SimConnect.")
         except Exception as e:
             print_error(f"SimConnect initialization failed: {e}")
