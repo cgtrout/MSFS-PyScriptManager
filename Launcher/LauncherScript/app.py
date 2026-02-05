@@ -122,7 +122,7 @@ class ScriptLauncherApp:
     def _show_update_prompt(self, current_version: str, latest_version: str, latest_url: str) -> None:
         """Show update prompt and optionally open browser."""
         message: str = (
-            "An update is available.\n\n"
+            "An update for MSFS-PyScriptManager is available.\n\n"
             f"Installed: {current_version}\n"
             f"Latest: {latest_version}\n\n"
             "Open the download page?"
