@@ -92,10 +92,10 @@ class LineEditor:
         self._cursor = len(self._buffer)
         self._update_echo()
 
-    def handle_click(self, event) -> str:
+    def handle_click(self, event) -> str | None:
         """Handle mouse click to position cursor in the echo buffer."""
         if not self._buffer or self._mark_name not in self.text_widget.mark_names():
-            return "break"
+            return None  # No buffer active, allow normal selection
 
         # Get the click position
         click_index = self.text_widget.index(f"@{event.x},{event.y}")
@@ -105,9 +105,9 @@ class LineEditor:
         click_pos = float(click_index)
         mark_pos = float(mark_index)
 
-        # If click is before the mark or after the buffer, ignore
+        # If click is before the mark, allow normal selection (selecting output text)
         if click_pos < mark_pos:
-            return "break"
+            return None
 
         # Get the line and column of both positions
         click_line, click_col = map(int, click_index.split('.'))
@@ -119,8 +119,10 @@ class LineEditor:
             # Clamp to buffer length
             self._cursor = min(max(0, offset), len(self._buffer))
             self._update_echo()
+            return "break"  # We handled cursor positioning in the input buffer
 
-        return "break"
+        # Click is after the buffer but not on the same line, allow selection
+        return None
 
     def get_line(self) -> str:
         """Get the current line, finalize echo, and clear buffer."""
