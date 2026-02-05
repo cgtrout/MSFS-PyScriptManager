@@ -1,6 +1,7 @@
 # process_tracker.py - ProcessTracker for managing subprocesses
 from __future__ import annotations
 
+import codecs
 import logging
 import os
 import queue
@@ -179,15 +180,20 @@ class ProcessTracker:
         fd: int = stream.fileno()  # Get the file descriptor for low-level reads
         buffer: str = ""  # Accumulate partial lines
         last_flushed_partial: str | None = None  # Track the last flushed partial line
+        decoder = codecs.getincrementaldecoder("utf-8")()
 
         try:
             while not stop_event.is_set():
                 try:
-                    # Attempt to read a chunk of data
-                    chunk: str = os.read(fd, 4096).decode("utf-8")
-                    if not chunk:  # EOF
+                    raw: bytes = os.read(fd, 4096)
+                    if not raw:  # EOF
+                        # Flush any incomplete multibyte sequence
+                        remaining: str = decoder.decode(b"", final=True)
+                        if remaining:
+                            buffer += remaining
                         break
 
+                    chunk: str = decoder.decode(raw)
                     buffer += chunk
 
                     # Process complete lines in the buffer
