@@ -153,3 +153,28 @@ def is_sim_running(min_runtime: int = 120) -> bool:
     if result is not None:
         return result
     return _is_sim_running_wmic(min_runtime)
+
+
+def wait_for_sim_running(
+    min_runtime: int = 120,
+    timeout: float | None = None,
+    interval: float = 5.0,
+) -> bool:
+    """
+    Block until MSFS has been running for min_runtime seconds.
+    Returns True when running; False if timeout is reached.
+    """
+    if timeout is not None and timeout < 0:
+        raise ValueError("timeout must be >= 0 or None")
+    if interval <= 0:
+        raise ValueError("interval must be > 0")
+
+    start = time.monotonic()
+    while True:
+        if is_sim_running(min_runtime=min_runtime):
+            return True
+
+        if timeout is not None and (time.monotonic() - start) >= timeout:
+            return False
+
+        time.sleep(interval)

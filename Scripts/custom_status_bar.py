@@ -33,7 +33,7 @@ try:
     from Lib.color_print import *  # pylint: disable=unused-wildcard-import, wildcard-import
     from Lib.dark_mode import DarkmodeUtils
     from Lib.gc_tweak import optimize_gc
-    from Lib.sim_process import is_sim_running
+    from Lib.sim_process import wait_for_sim_running
 
 except ImportError:
     print("Failed to import Lib directory. Please ensure /Lib/* is present")
@@ -950,7 +950,7 @@ def convert_real_world_time_to_sim_time(real_world_time):
 def initialize_simconnect():
     """Initialize the connection to SimConnect."""
     try:
-        if not is_sim_running():
+        if not wait_for_sim_running():
             return
         print_info("Connecting to SimConnect...")
         state.sim_connect = SimConnect()
