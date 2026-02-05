@@ -27,6 +27,13 @@ from config import (
 if TYPE_CHECKING:
     from process_tracker import ProcessTracker
 
+DEBUG_PRINT = False
+
+
+def _debug_print(message: str) -> None:
+    if DEBUG_PRINT:
+        print(message)
+
 
 class LineEditor:
     """Manages line-editing buffer and echo for stdin input."""
@@ -40,11 +47,11 @@ class LineEditor:
     def _log_buffer(self, operation: str) -> None:
         """Log current buffer state for debugging."""
         buffer_str = "".join(self._buffer)
-        print(f"[LineEditor.{operation}] buffer='{buffer_str}' cursor={self._cursor} len={len(self._buffer)}")
+        _debug_print(f"[LineEditor.{operation}] buffer='{buffer_str}' cursor={self._cursor} len={len(self._buffer)}")
 
     def insert_char(self, char: str) -> None:
         """Insert a printable character at cursor position."""
-        print(f"[LineEditor.insert_char] BEFORE: char='{char}'")
+        _debug_print(f"[LineEditor.insert_char] BEFORE: char='{char}'")
         self._log_buffer("insert_char.before")
         self._buffer.insert(self._cursor, char)
         self._cursor += 1
@@ -53,7 +60,7 @@ class LineEditor:
 
     def backspace(self) -> None:
         """Delete character before cursor."""
-        print(f"[LineEditor.backspace] BEFORE:")
+        _debug_print(f"[LineEditor.backspace] BEFORE:")
         self._log_buffer("backspace.before")
         if self._cursor > 0:
             self._cursor -= 1
@@ -61,18 +68,18 @@ class LineEditor:
             self._log_buffer("backspace.after")
             self._update_echo()
         else:
-            print(f"[LineEditor.backspace] SKIPPED: cursor already at 0")
+            _debug_print(f"[LineEditor.backspace] SKIPPED: cursor already at 0")
 
     def delete(self) -> None:
         """Delete character at cursor."""
-        print(f"[LineEditor.delete] BEFORE:")
+        _debug_print(f"[LineEditor.delete] BEFORE:")
         self._log_buffer("delete.before")
         if self._cursor < len(self._buffer):
             del self._buffer[self._cursor]
             self._log_buffer("delete.after")
             self._update_echo()
         else:
-            print(f"[LineEditor.delete] SKIPPED: cursor at end")
+            _debug_print(f"[LineEditor.delete] SKIPPED: cursor at end")
 
     def move_left(self) -> None:
         if self._cursor > 0:
@@ -142,15 +149,15 @@ class LineEditor:
     def _update_echo(self) -> None:
         """Redraw the current line at the end of the text widget."""
         buffer_str = "".join(self._buffer)
-        print(f"[LineEditor._update_echo] ENTRY: buffer='{buffer_str}'")
+        _debug_print(f"[LineEditor._update_echo] ENTRY: buffer='{buffer_str}'")
 
         if not self.text_widget.winfo_exists():
-            print(f"[LineEditor._update_echo] EXIT: widget doesn't exist")
+            _debug_print(f"[LineEditor._update_echo] EXIT: widget doesn't exist")
             return
 
         # Log ALL content before we start
         all_content_before = self.text_widget.get("1.0", tk.END)
-        print(f"[LineEditor._update_echo] Widget full content BEFORE: {all_content_before!r}")
+        _debug_print(f"[LineEditor._update_echo] Widget full content BEFORE: {all_content_before!r}")
 
         # If mark exists, check if it's in the right place (should be on the last line)
         # If not, unset it and we'll recreate it
@@ -159,11 +166,11 @@ class LineEditor:
             end_pos = self.text_widget.index(tk.END)
             mark_line = int(float(mark_pos))
             end_line = int(float(end_pos))
-            print(f"[LineEditor._update_echo] Mark at {mark_pos} (line {mark_line}), END at {end_pos} (line {end_line})")
+            _debug_print(f"[LineEditor._update_echo] Mark at {mark_pos} (line {mark_line}), END at {end_pos} (line {end_line})")
 
             # If mark is not on the last line (or line before due to trailing newline), it's stale
             if mark_line < end_line - 1:
-                print(f"[LineEditor._update_echo] Mark is stale (not on last line), unsetting it")
+                _debug_print(f"[LineEditor._update_echo] Mark is stale (not on last line), unsetting it")
                 self.text_widget.mark_unset(self._mark_name)
 
         # Now create or use the mark
@@ -172,45 +179,45 @@ class LineEditor:
             # Get the last line content
             last_line_start = self.text_widget.index("end-1c linestart")
             last_line_content = self.text_widget.get(last_line_start, "end-1c")
-            print(f"[LineEditor._update_echo] Last line content: {last_line_content!r}")
+            _debug_print(f"[LineEditor._update_echo] Last line content: {last_line_content!r}")
 
             # Set mark at the very end (before the trailing newline that tk.END includes)
             self.text_widget.mark_set(self._mark_name, "end-1c")
             self.text_widget.mark_gravity(self._mark_name, "left")
             mark_pos = self.text_widget.index(self._mark_name)
-            print(f"[LineEditor._update_echo] Created mark at {mark_pos}")
+            _debug_print(f"[LineEditor._update_echo] Created mark at {mark_pos}")
 
         mark_pos = self.text_widget.index(self._mark_name)
-        print(f"[LineEditor._update_echo] Using mark at position: {mark_pos}")
+        _debug_print(f"[LineEditor._update_echo] Using mark at position: {mark_pos}")
 
         # Get current content between mark and END
         current_echo = self.text_widget.get(self._mark_name, tk.END)
-        print(f"[LineEditor._update_echo] Content from mark to END: {current_echo!r}")
+        _debug_print(f"[LineEditor._update_echo] Content from mark to END: {current_echo!r}")
 
         # Delete old echo
         self.text_widget._orig_delete(self._mark_name, tk.END)
-        print(f"[LineEditor._update_echo] Deleted from mark to END")
+        _debug_print(f"[LineEditor._update_echo] Deleted from mark to END")
 
         # Check content after delete
         all_content_after_delete = self.text_widget.get("1.0", tk.END)
-        print(f"[LineEditor._update_echo] Widget full content AFTER DELETE: {all_content_after_delete!r}")
+        _debug_print(f"[LineEditor._update_echo] Widget full content AFTER DELETE: {all_content_after_delete!r}")
 
         # Insert new buffer
         self.text_widget._orig_insert(tk.END, buffer_str)
-        print(f"[LineEditor._update_echo] Inserted buffer at END: {buffer_str!r}")
+        _debug_print(f"[LineEditor._update_echo] Inserted buffer at END: {buffer_str!r}")
 
         # Position the cursor at the correct location in the buffer
         # The mark is at the start of the echo, cursor should be mark + buffer cursor offset
         cursor_pos = f"{self._mark_name}+{self._cursor}c"
         self.text_widget.mark_set("insert", cursor_pos)
-        print(f"[LineEditor._update_echo] Set cursor to position: {cursor_pos} (buffer cursor={self._cursor})")
+        _debug_print(f"[LineEditor._update_echo] Set cursor to position: {cursor_pos} (buffer cursor={self._cursor})")
 
         # Check final content
         all_content_final = self.text_widget.get("1.0", tk.END)
-        print(f"[LineEditor._update_echo] Widget full content FINAL: {all_content_final!r}")
+        _debug_print(f"[LineEditor._update_echo] Widget full content FINAL: {all_content_final!r}")
 
         self.text_widget.see("insert")  # Scroll to show the cursor
-        print(f"[LineEditor._update_echo] EXIT")
+        _debug_print(f"[LineEditor._update_echo] EXIT")
 
     def _finalize_echo(self) -> None:
         """Lock in the submitted line: append newline, remove mark, clear buffer."""
@@ -307,12 +314,12 @@ class ScriptTab(Tab):
 
         def readonly_insert(*args, **kwargs):
             """Blocked insert - only our code should insert via _orig_insert"""
-            print(f"[BLOCKED] Attempted insert: args={args}")
+            _debug_print(f"[BLOCKED] Attempted insert: args={args}")
             return
 
         def readonly_delete(*args, **kwargs):
             """Blocked delete - only our code should delete via _orig_delete"""
-            print(f"[BLOCKED] Attempted delete: args={args}")
+            _debug_print(f"[BLOCKED] Attempted delete: args={args}")
             return
 
         self.text_widget.insert = readonly_insert
@@ -646,31 +653,31 @@ class ScriptTab(Tab):
         keysym: str = event.keysym
         char: str = event.char or ""
 
-        print(f"[_handle_text_key] ENTRY: keysym={keysym!r} char={char!r} widget={event.widget}")
+        _debug_print(f"[_handle_text_key] ENTRY: keysym={keysym!r} char={char!r} widget={event.widget}")
 
         # Let Ctrl/Alt combos propagate (Ctrl+C copy, etc.)
         # but block Ctrl+V — we don't want pasted text silently added
         # to the widget outside of the buffer.
         if event.state & 0x04:  # Ctrl held
             result = "break" if keysym in ("v", "V") else None
-            print(f"[_handle_text_key] EXIT: Ctrl combo, returning {result!r}")
+            _debug_print(f"[_handle_text_key] EXIT: Ctrl combo, returning {result!r}")
             return result
 
         # Modifier-only presses: ignore
         if keysym in ("Control_L", "Control_R", "Alt_L", "Alt_R",
                       "Shift_L", "Shift_R", "Super_L", "Super_R"):
-            print(f"[_handle_text_key] EXIT: modifier-only key")
+            _debug_print(f"[_handle_text_key] EXIT: modifier-only key")
             return None
 
         # F5  →  reload (replaces the old <F5> widget binding)
         if keysym == "F5":
-            print(f"[_handle_text_key] F5 detected, reloading script")
+            _debug_print(f"[_handle_text_key] F5 detected, reloading script")
             self.reload_script()
             return "break"
 
-        print(f"[_handle_text_key] Calling _process_key")
+        _debug_print(f"[_handle_text_key] Calling _process_key")
         self._process_key(event)
-        print(f"[_handle_text_key] EXIT: returning 'break'")
+        _debug_print(f"[_handle_text_key] EXIT: returning 'break'")
         return "break"
 
     def handle_keypress(self, event: tk.Event[tk.Misc]) -> None:
@@ -679,89 +686,89 @@ class ScriptTab(Tab):
         keysym: str = event.keysym
         char: str = event.char or ""
 
-        print(f"[handle_keypress] ENTRY: keysym={keysym!r} char={char!r} widget={event.widget} is_active={self.is_active}")
+        _debug_print(f"[handle_keypress] ENTRY: keysym={keysym!r} char={char!r} widget={event.widget} is_active={self.is_active}")
 
         if not self.is_active:
-            print(f"[handle_keypress] EXIT: tab not active")
+            _debug_print(f"[handle_keypress] EXIT: tab not active")
             return
         # Root's <Key> binding fires for all key events on Windows. If the event
         # originated from text_widget, its binding already handled it → skip.
         if self.text_widget and event.widget is self.text_widget:
-            print(f"[handle_keypress] EXIT: event from text_widget, skipping")
+            _debug_print(f"[handle_keypress] EXIT: event from text_widget, skipping")
             return
         if event.keysym == "F5":
-            print(f"[handle_keypress] F5 detected, reloading script")
+            _debug_print(f"[handle_keypress] F5 detected, reloading script")
             self.reload_script()
             return
 
-        print(f"[handle_keypress] Calling _process_key")
+        _debug_print(f"[handle_keypress] Calling _process_key")
         self._process_key(event)
-        print(f"[handle_keypress] EXIT")
+        _debug_print(f"[handle_keypress] EXIT")
 
     def _process_key(self, event: tk.Event[tk.Misc]) -> None:
         """Core line-editing logic — shared by widget and global paths."""
         keysym: str = event.keysym
         char: str = event.char or ""
 
-        print(f"[_process_key] ENTRY: keysym={keysym!r} char={char!r} _processing_key={self._processing_key}")
+        _debug_print(f"[_process_key] ENTRY: keysym={keysym!r} char={char!r} _processing_key={self._processing_key}")
 
         if self._processing_key:
-            print(f"[_process_key] EXIT: re-entrance guard blocked")
+            _debug_print(f"[_process_key] EXIT: re-entrance guard blocked")
             return  # Already processing a key, prevent re-entrance
 
         if not self._line_editor:
-            print(f"[_process_key] EXIT: no line editor")
+            _debug_print(f"[_process_key] EXIT: no line editor")
             return
 
         process_info = self.process_tracker.processes.get(self.tab_id)
         if not process_info:
-            print(f"[_process_key] EXIT: no process info")
+            _debug_print(f"[_process_key] EXIT: no process info")
             return
 
         self._processing_key = True
-        print(f"[_process_key] SET _processing_key=True")
+        _debug_print(f"[_process_key] SET _processing_key=True")
         try:
             if keysym == "BackSpace":
-                print(f"[_process_key] Processing BackSpace")
+                _debug_print(f"[_process_key] Processing BackSpace")
                 self._line_editor.backspace()
 
             elif keysym == "Delete":
-                print(f"[_process_key] Processing Delete")
+                _debug_print(f"[_process_key] Processing Delete")
                 self._line_editor.delete()
 
             elif keysym == "Left":
-                print(f"[_process_key] Processing Left")
+                _debug_print(f"[_process_key] Processing Left")
                 self._line_editor.move_left()
 
             elif keysym == "Right":
-                print(f"[_process_key] Processing Right")
+                _debug_print(f"[_process_key] Processing Right")
                 self._line_editor.move_right()
 
             elif keysym == "Home":
-                print(f"[_process_key] Processing Home")
+                _debug_print(f"[_process_key] Processing Home")
                 self._line_editor.move_home()
 
             elif keysym == "End":
-                print(f"[_process_key] Processing End")
+                _debug_print(f"[_process_key] Processing End")
                 self._line_editor.move_end()
 
             elif keysym == "Return":
-                print(f"[_process_key] Processing Return")
+                _debug_print(f"[_process_key] Processing Return")
                 line = self._line_editor.get_line()
-                print(f"[_process_key] Sending line to stdin: {line!r}")
+                _debug_print(f"[_process_key] Sending line to stdin: {line!r}")
                 try:
                     process_info["stdin_queue"].put_nowait(line + "\n")
                 except queue.Full:
                     self.insert_output("[WARNING] Input queue is full. Input dropped.\n")
 
             elif char and char.isprintable():
-                print(f"[_process_key] Processing printable char: {char!r}")
+                _debug_print(f"[_process_key] Processing printable char: {char!r}")
                 self._line_editor.insert_char(char)
             else:
-                print(f"[_process_key] No action taken for this key")
+                _debug_print(f"[_process_key] No action taken for this key")
         finally:
             self._processing_key = False
-            print(f"[_process_key] EXIT: SET _processing_key=False")
+            _debug_print(f"[_process_key] EXIT: SET _processing_key=False")
 
     def on_tab_activated(self) -> None:
         if self.text_widget and self.text_widget.winfo_exists():
