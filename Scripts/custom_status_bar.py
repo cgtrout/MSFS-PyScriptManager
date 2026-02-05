@@ -33,6 +33,7 @@ try:
     from Lib.color_print import *  # pylint: disable=unused-wildcard-import, wildcard-import
     from Lib.dark_mode import DarkmodeUtils
     from Lib.gc_tweak import optimize_gc
+    from Lib.sim_process import wait_for_sim_running
 
 except ImportError:
     print("Failed to import Lib directory. Please ensure /Lib/* is present")
@@ -946,85 +947,10 @@ def convert_real_world_time_to_sim_time(real_world_time):
         return real_world_time  # Return the original time as fallback
 
 # --- SimConnect Lookup Functions ----------------------------------------------------------------
-def is_sim_running(min_runtime=120):
-    """Return True if an MSFS process has been running for at least min_runtime seconds."""
-    try:
-        cmd = (
-            'wmic process where "name like \'FlightSimulator%%.exe\'" '
-            'get Name,CreationDate,ProcessId /format:csv'
-        )
-        raw_output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
-        output = raw_output.decode(errors="ignore").strip()
-
-        print_debug("\nRaw WMIC Output:\n" + output + "\n")
-
-        if "No Instance(s) Available" in output:
-            output = ""
-
-        if output:
-            print_debug("MSFS is running")
-
-    except subprocess.CalledProcessError:
-        return False
-
-    now = time.time()
-    reader = csv.DictReader(StringIO(output))
-
-    for row in reader:
-        name = row.get("Name", "").strip()
-        creation = row.get("CreationDate", "").strip()
-        pid = row.get("ProcessId", "").strip()
-
-        print_debug(f"Process Found: Name={name}, PID={pid}, CreationDate={creation}")
-
-        if not (name.startswith("FlightSimulator") and creation and pid.isdigit()):
-            continue
-
-        # Extract main timestamp and timezone offset (if available)
-        creation_parts = creation.split('.')
-        creation_time_str = creation_parts[0].strip()
-        timezone_offset_str = creation_parts[-1].strip()[-4:]  # Extract last 4 chars for timezone
-
-        try:
-            print_debug(f"Parsing creation time: {creation_time_str}")
-
-            # Convert to UTC datetime
-            start_dt = datetime.strptime(creation_time_str, "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
-
-            # Adjust for timezone offset if present
-            if timezone_offset_str.lstrip("+-").isdigit():  # Ensure it's a valid number
-                offset_minutes = int(timezone_offset_str)  # Convert offset to minutes
-                offset_seconds = offset_minutes * 60
-                start_dt -= timedelta(seconds=offset_seconds)  # Adjust time
-
-                print_debug(f"Applying timezone offset: {offset_minutes} minutes "
-                            f"({-offset_seconds} seconds)")
-
-            # Convert to epoch timestamp
-            start_time = start_dt.timestamp()
-
-            print_debug(f"Parsed start time (UTC epoch): {start_time}")
-
-        except ValueError:
-            print_error(f"[ERROR] Could not parse creation time: {creation}")
-            continue
-
-        runtime = now - start_time
-        print_debug(f"Calculated runtime: {runtime:.1f} seconds")
-
-        if runtime >= min_runtime:
-            print_info(f"Found MSFS process: {name} (PID: {pid}, Running for {runtime:.1f} sec)")
-            return True
-        else:
-            print_info(f"Found {name} (PID: {pid}), but only running for {runtime:.1f} sec (Waiting...)")
-            return False
-
-    return False
-
 def initialize_simconnect():
     """Initialize the connection to SimConnect."""
     try:
-        if not is_sim_running():
+        if not wait_for_sim_running():
             return
         print_info("Connecting to SimConnect...")
         state.sim_connect = SimConnect()

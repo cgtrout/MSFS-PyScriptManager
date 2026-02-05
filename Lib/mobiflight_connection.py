@@ -4,6 +4,7 @@ import time
 from Lib.MSFSPythonSimConnectMobiFlightExtension import SimConnectMobiFlight
 from Lib.MSFSPythonSimConnectMobiFlightExtension import MobiFlightVariableRequests
 from Lib.color_print import print_info, print_error
+from Lib.sim_process import wait_for_sim_running
 
 # Disable warnings - still shows errors
 logging.getLogger("SimConnect.SimConnect").setLevel(logging.ERROR)
@@ -21,6 +22,11 @@ class MobiflightConnection:
         """Attempt to establish a connection, retrying on failure."""
         while True:
             try:
+                if not wait_for_sim_running(timeout=self.retry_delay, interval=self.retry_delay):
+                    print_info(
+                        f"Flight Simulator not detected yet. Retrying in {self.retry_delay} seconds..."
+                    )
+                    continue
                 print_info("Attempting to connect to Flight Simulator...")
                 self.sm = SimConnectMobiFlight()
                 self.mf_requests = MobiFlightVariableRequests(self.sm, self.client_name)
