@@ -86,6 +86,9 @@ class MobiflightConnectionHelper(BaseConnectionHelper):
             raise RuntimeError("Mobiflight not connected")
         return self.mf_requests
 
+    def get(self, key):
+        return self.get_requests().get(key)
+
     def wait_for_lvar(self, lvar, check_interval=0.5):
         """Waits for a specified LVAR to reach a non zero state"""
         print_info(f"Waiting for LVAR '{lvar}'")

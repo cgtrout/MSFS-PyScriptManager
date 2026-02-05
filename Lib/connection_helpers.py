@@ -33,6 +33,10 @@ class BaseConnectionHelper(ABC):
     def get_requests(self):
         """Return the request handler if connected."""
 
+    @abstractmethod
+    def get(self, key):
+        """Return a value for the given key."""
+
 
 class SimConnectConnectionHelper(BaseConnectionHelper):
     """Basic SimConnect connection with retry support."""
@@ -123,3 +127,6 @@ class SimConnectConnectionHelper(BaseConnectionHelper):
         if self.aq is None:
             raise RuntimeError("SimConnect not connected")
         return self.aq
+
+    def get(self, key):
+        return self.get_requests().get(key)

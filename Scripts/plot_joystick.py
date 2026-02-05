@@ -171,10 +171,10 @@ class JoystickApp:
             if self.sm and self.aq:
                 try:
                     # Fetch data
-                    elevator_trim = self.aq.find("ELEVATOR_TRIM_PCT").value or 0
-                    aileron_trim = self.aq.find("AILERON_TRIM_PCT").value or 0
-                    rotor_lateral_trim = self.aq.find("ROTOR_LATERAL_TRIM_PCT").value or 0
-                    rotor_longitudinal_trim = self.aq.find("ROTOR_LONGITUDINAL_TRIM_PCT").value or 0
+                    elevator_trim = self.conn.get("ELEVATOR_TRIM_PCT") or 0
+                    aileron_trim = self.conn.get("AILERON_TRIM_PCT") or 0
+                    rotor_lateral_trim = self.conn.get("ROTOR_LATERAL_TRIM_PCT") or 0
+                    rotor_longitudinal_trim = self.conn.get("ROTOR_LONGITUDINAL_TRIM_PCT") or 0
 
                     # Safely update the cache
                     with self.cache_lock:
