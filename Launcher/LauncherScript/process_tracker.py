@@ -193,16 +193,25 @@ class ProcessTracker:
                     # Process complete lines in the buffer
                     while "\n" in buffer:
                         line, buffer = buffer.split("\n", 1)
-                        output_queue.put_nowait(line + "\n")
+                        try:
+                            output_queue.put_nowait(line + "\n")
+                        except queue.Full:
+                            if not self.queuefull_warning_issued:
+                                print(f"[WARNING] Output queue full for {stream_name}, Tab ID: {tab_id}. Dropping output.")
+                                self.queuefull_warning_issued = True
                         last_flushed_partial = None  # Reset partial tracking
 
                     # Handle partial line (e.g., prompts or incomplete output)
                     if buffer and buffer != last_flushed_partial:
-                        output_queue.put_nowait(buffer)
-                        last_flushed_partial = buffer
-
-                        # Clear the buffer after enqueueing partial data
-                        buffer = ""
+                        try:
+                            output_queue.put_nowait(buffer)
+                        except queue.Full:
+                            if not self.queuefull_warning_issued:
+                                print(f"[WARNING] Output queue full for {stream_name}, Tab ID: {tab_id}. Dropping output.")
+                                self.queuefull_warning_issued = True
+                        else:
+                            last_flushed_partial = buffer
+                            buffer = ""  # Clear only after successful enqueue
 
                 except BlockingIOError:
                     # No data available yet; pause briefly to avoid busy-waiting
@@ -219,7 +228,10 @@ class ProcessTracker:
         finally:
             # Handle cleanup: flush remaining buffer and signal end of stream
             if buffer and buffer != last_flushed_partial:
-                output_queue.put_nowait(buffer)
+                try:
+                    output_queue.put_nowait(buffer)
+                except queue.Full:
+                    pass  # Best effort on shutdown
             output_queue.put(None)  # Signal end of stream to the queue
 
             try:
