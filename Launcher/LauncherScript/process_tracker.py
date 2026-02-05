@@ -333,7 +333,8 @@ class ProcessTracker:
                         self.scheduler(SCRIPT_LOAD_DELAY_MS,
                                        lambda: script_tab.reload_script(clear_text=False))
 
-                # Clean up process metadata
+                # Signal threads to stop and clean up process metadata
+                metadata["stop_event"].set()
                 with self.lock:
                     self.processes.pop(tab_id, None)
             except Exception as e:
