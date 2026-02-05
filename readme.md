@@ -110,4 +110,6 @@ Currently, **most of the included scripts will detect Simulator state**.  Howeve
 
 ## Additional Credits
 - Icon used for Launcher: [JoyPixels Emojione](https://github.com/joypixels/emojione) (MIT License)
+- True Type Fonts: DIGITAL-7 version 1.11 [Style-7](http://www.styleseven.com)
+- Sound effect: “Receipt Printer 01” by thepodcastdoctor (Freesound), via Pixabay. License: CC0 / Pixabay Content License.
 
