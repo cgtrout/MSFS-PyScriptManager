@@ -38,10 +38,6 @@ Settings/*
 *.script_group
 todo.txt
 WinPython.7z
-Launcher/LauncherApp/Lib/7z/7za.dll
-Launcher/LauncherApp/Lib/7z/7zxa.dll
-Data/Community_Install/chrisaut-toolbar-printouts/*
-
 application_log.txt
 shutdown_log.txt
 profile_output.html
