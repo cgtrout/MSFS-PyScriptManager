@@ -1,51 +1,93 @@
 import logging
 import time
+from typing import Optional
 
 from Lib.MSFSPythonSimConnectMobiFlightExtension import SimConnectMobiFlight
 from Lib.MSFSPythonSimConnectMobiFlightExtension import MobiFlightVariableRequests
 from Lib.color_print import print_info, print_error
+from Lib.connection_helpers import BaseConnectionHelper
 from Lib.sim_process import wait_for_sim_running
 
 # Disable warnings - still shows errors
 logging.getLogger("SimConnect.SimConnect").setLevel(logging.ERROR)
 
-class MobiflightConnection:
+class MobiflightConnectionHelper(BaseConnectionHelper):
     """Handles the connection and reconnection to Mobiflight and MSFS."""
 
     def __init__(self, client_name="mobiflight_manager", retry_delay=20):
         self.client_name = client_name
         self.retry_delay = retry_delay
+        self.sm: Optional[SimConnectMobiFlight] = None
+        self.mf_requests: Optional[MobiFlightVariableRequests] = None
+
+    def connect(self, blocking: bool = True, timeout: Optional[float] = None) -> bool:
+        """Attempt to establish a connection. If blocking, retry until connected or timeout."""
+        if not blocking:
+            return self._try_connect_once()
+
+        start = time.monotonic()
+        while True:
+            if timeout is not None and (time.monotonic() - start) >= timeout:
+                return False
+
+            if not wait_for_sim_running(timeout=self.retry_delay, interval=self.retry_delay):
+                print_info(
+                    f"Flight Simulator not detected yet. Retrying in {self.retry_delay} seconds..."
+                )
+                continue
+
+            if self._try_connect_once():
+                return True
+
+            print_error(
+                f"Could not connect to Flight Simulator. Retrying in {self.retry_delay} seconds..."
+            )
+            time.sleep(self.retry_delay)
+
+    def _try_connect_once(self) -> bool:
+        try:
+            print_info("Attempting to connect to Flight Simulator...")
+            self.sm = SimConnectMobiFlight()
+            self.mf_requests = MobiFlightVariableRequests(self.sm, self.client_name)
+            self.mf_requests.clear_sim_variables()
+
+            # Prime the library - possibly necessary to ensure the connection works properly
+            altitude = self.mf_requests.get("(A:PLANE ALTITUDE,Feet)")
+            print(f"Primed with altitude: {altitude}")
+            print_info("Successfully connected to Flight Simulator.")
+            return True
+        except ConnectionError as e:
+            print_error(f"Could not connect to Flight Simulator: {e}")
+            self.sm = None
+            self.mf_requests = None
+            return False
+
+    def disconnect(self) -> None:
+        if self.sm is not None:
+            try:
+                if hasattr(self.sm, "close"):
+                    self.sm.close()
+            except Exception as e:  # pylint: disable=broad-except
+                print_error(f"Mobiflight close failed: {e}")
         self.sm = None
         self.mf_requests = None
 
-    def connect(self):
-        """Attempt to establish a connection, retrying on failure."""
-        while True:
-            try:
-                if not wait_for_sim_running(timeout=self.retry_delay, interval=self.retry_delay):
-                    print_info(
-                        f"Flight Simulator not detected yet. Retrying in {self.retry_delay} seconds..."
-                    )
-                    continue
-                print_info("Attempting to connect to Flight Simulator...")
-                self.sm = SimConnectMobiFlight()
-                self.mf_requests = MobiFlightVariableRequests(self.sm, self.client_name)
-                self.mf_requests.clear_sim_variables()
-
-                # Prime the library - possibly necessary to ensure the connection works properly
-                altitude = self.mf_requests.get("(A:PLANE ALTITUDE,Feet)")
-                print(f"Primed with altitude: {altitude}")
-                print_info("Successfully connected to Flight Simulator.")
-                return
-            except ConnectionError as e:
-                print_error(f"Could not connect to Flight Simulator: {e}. Retrying in {self.retry_delay} seconds...")
-                time.sleep(self.retry_delay)
+    def is_connected(self) -> bool:
+        return self.sm is not None and self.mf_requests is not None
 
     def get_request_handler(self):
         """Returns the request handler if the connection is active, otherwise reconnects."""
         if self.mf_requests is None:
             self.connect()
         return self.mf_requests
+
+    def get_requests(self):
+        if self.mf_requests is None:
+            raise RuntimeError("Mobiflight not connected")
+        return self.mf_requests
+
+    def get(self, key):
+        return self.get_requests().get(key)
 
     def wait_for_lvar(self, lvar, check_interval=0.5):
         """Waits for a specified LVAR to reach a non zero state"""
@@ -91,3 +133,6 @@ class MobiflightConnection:
     def get(self, variable_string):
         """Calls mf_requests.get()"""
         return self.mf_requests.get(variable_string)
+
+# Backwards compatibility alias
+MobiflightConnection = MobiflightConnectionHelper

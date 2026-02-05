@@ -6,7 +6,6 @@ import sys
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from SimConnect import SimConnect, AircraftRequests
 import threading
 import tkinter as tk
 
@@ -22,6 +21,7 @@ try:
     from Lib.color_print import *
     from Lib.dark_mode import DarkmodeUtils
     from Lib.gc_tweak import optimize_gc
+    from Lib.connection_helpers import SimConnectConnectionHelper
 except ImportError:
     print("Failed to import 'Lib' directory. Please ensure Lib/* is present")
     sys.exit(1)
@@ -39,6 +39,7 @@ class JoystickApp:
 
         self.sm = None
         self.aq = None
+        self.conn = SimConnectConnectionHelper(retry_delay=30)
         self.selected_joystick = None
         self.joystick_names = []
         self.joysticks = []
@@ -100,10 +101,16 @@ class JoystickApp:
             b"Percent Over 100",
             "N",
         ]
+        heli.list["ROTOR_LONGITUDINAL_TRIM_PCT"] = [
+            "Trim percent",
+            b"ROTOR LONGITUDINAL TRIM PCT",
+            b"Percent Over 100",
+            "N",
+        ]
 
         # Clear helper cache if present
-        if hasattr(heli, "dic") and hasattr(heli.dic, "clear"):
-            heli.dic.clear()
+        #if hasattr(heli, "dic") and hasattr(heli.dic, "clear"):
+        #    heli.dic.clear()
 
         print_debug(f"[patch] heli helper type={type(heli)}")
         print_debug(f"[patch] added key='ROTOR_LATERAL_TRIM_PCT'")
@@ -150,23 +157,13 @@ class JoystickApp:
         except (FileNotFoundError, json.JSONDecodeError):
             return "", "+0+40"
 
-    def _retry_simconnect(self, retry_interval=1000 * 60):
-        """Schedule a retry of SimConnect initialization."""
-        print_info(f"Scheduling SimConnect reconnection in {retry_interval // 1000} seconds.")
-        self.root.after(retry_interval, self._initialize_simconnect)
-
     def _initialize_simconnect(self):
-        """Attempt to initialize SimConnect."""
-        try:
-            self.sm = SimConnect()
-            self.aq = AircraftRequests(self.sm, _time=1, _attemps=2)
+        """Wait for SimConnect and initialize requests."""
+        if self.conn.connect(blocking=True):
+            self.sm = self.conn.sm
+            self.aq = self.conn.get_requests()
             self.patch_rotor_trim(self.aq)
             print_info("Connected to SimConnect.")
-        except Exception as e:
-            print_error(f"SimConnect initialization failed: {e}")
-            self.sm = None
-            self.aq = None
-            self._retry_simconnect()
 
     def _fetch_trim_data(self):
         """Fetch trim data in a background thread."""
@@ -174,10 +171,10 @@ class JoystickApp:
             if self.sm and self.aq:
                 try:
                     # Fetch data
-                    elevator_trim = self.aq.find("ELEVATOR_TRIM_PCT").value or 0
-                    aileron_trim = self.aq.find("AILERON_TRIM_PCT").value or 0
-                    rotor_lateral_trim = self.aq.find("ROTOR_LATERAL_TRIM_PCT").value or 0
-                    rotor_longitudinal_trim = self.aq.find("ROTOR_LONGITUDINAL_TRIM_PCT").value or 0
+                    elevator_trim = self.conn.get("ELEVATOR_TRIM_PCT") or 0
+                    aileron_trim = self.conn.get("AILERON_TRIM_PCT") or 0
+                    rotor_lateral_trim = self.conn.get("ROTOR_LATERAL_TRIM_PCT") or 0
+                    rotor_longitudinal_trim = self.conn.get("ROTOR_LONGITUDINAL_TRIM_PCT") or 0
 
                     # Safely update the cache
                     with self.cache_lock:
@@ -188,12 +185,10 @@ class JoystickApp:
 
                 except Exception as e:
                     print_error(f"SimConnect query failed: {e}")
+                    self.conn.disconnect()
                     self.sm = None
                     self.aq = None
-                    # Trigger reconnection
-                    wait_interval = 60
-                    self.root.after(0, lambda: self._retry_simconnect(retry_interval=wait_interval * 1000))
-                    time.sleep(wait_interval+0.1)  # Sleep for the retry interval
+                    self._initialize_simconnect()
             time.sleep(self.trim_update_interval)
 
     def _update_plot(self):

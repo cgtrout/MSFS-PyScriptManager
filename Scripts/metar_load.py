@@ -6,9 +6,9 @@ import json
 import requests
 import re
 from datetime import datetime, timedelta, timezone
-from SimConnect import SimConnect, AircraftRequests
 import subprocess
 import threading
+import time
 import sys
 import win32print
 
@@ -16,6 +16,7 @@ try:
     # Import all color print functions
     from Lib.color_print import *
     from Lib.dark_mode import DarkmodeUtils
+    from Lib.connection_helpers import SimConnectConnectionHelper
 
 except ImportError:
     print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
@@ -24,6 +25,9 @@ except ImportError:
 SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "..", "Settings", "metar_load.json")
 
 printer_name = "VirtualTextPrinter"  # Replace with your specific printer name
+conn = SimConnectConnectionHelper(retry_delay=30)
+SIMCONNECT_RETRY_INTERVAL = 30
+last_simconnect_attempt = 0.0
 
 class MetarSource:
     """Base class for a METAR source."""
@@ -490,8 +494,12 @@ def get_simulator_datetime():
     settings = load_settings()
 
     if settings.get("use_simulator_time", True):
-        global sim_connected
+        global sim_connected, last_simconnect_attempt
         try:
+            if not sim_connected:
+                now = time.monotonic()
+                if (now - last_simconnect_attempt) >= SIMCONNECT_RETRY_INTERVAL:
+                    initialize_simconnect()
             if not sim_connected:
                 raise ValueError("SimConnect is not connected.")
 
@@ -513,16 +521,16 @@ def initialize_simconnect():
     Initialize the connection to SimConnect and set up global variables.
     Establishes a connection to the simulator and prepares for data retrieval.
     """
-    global sm, aq, sim_connected
-    try:
-        # Initialize the SimConnect connection
-        sm = SimConnect()  # Create the SimConnect object to establish communication
-        aq = AircraftRequests(sm, _time=0)  # Create the AircraftRequests object for querying data
+    global sm, aq, sim_connected, last_simconnect_attempt
+    last_simconnect_attempt = time.monotonic()
+    print_info("Trying to connect to sim...")
+    if conn.connect(blocking=False):
+        sm = conn.sm
+        aq = conn.get_requests()
         sim_connected = True
         print("SimConnect initialized successfully.")
-    except Exception as e:
-        sim_connected = False
-        print(f"Failed to initialize SimConnect: {e}")
+        return
+    sim_connected = False
 
 def center_window(window):
     """
