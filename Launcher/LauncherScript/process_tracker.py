@@ -34,8 +34,6 @@ class ProcessMetadata(TypedDict):
     process: subprocess.Popen[str]
     script_name: str
     script_tab: ScriptTab
-    stdout_queue: queue.Queue[str | None]
-    stderr_queue: queue.Queue[str | None]
     stdin_queue: queue.Queue[str | None]
     stop_event: threading.Event
 
@@ -84,9 +82,7 @@ class ProcessTracker:
 
             self.script_name = script_name
 
-            # Create individual queues and stop event
-            stdout_queue: queue.Queue[str | None] = queue.Queue(maxsize=1000)
-            stderr_queue: queue.Queue[str | None] = queue.Queue(maxsize=1000)
+            # Create stdin queue and stop event
             stdin_queue: queue.Queue[str | None] = queue.Queue(maxsize=1000)
             stop_event: threading.Event = threading.Event()
 
@@ -95,45 +91,9 @@ class ProcessTracker:
                     "process": process,
                     "script_name": script_name or "Unknown",
                     "script_tab": script_tab,
-                    "stdout_queue": stdout_queue,
-                    "stderr_queue": stderr_queue,
                     "stdin_queue": stdin_queue,
                     "stop_event": stop_event,
                 }
-
-            # Start threads for stdout and stderr reading
-            assert process.stdout is not None
-            threading.Thread(
-                target=self._read_output,
-                args=(process.stdout, stdout_queue, stop_event, tab_id, "stdout"),
-                daemon=True,
-                name=f"StdoutThread-{tab_id}"
-            ).start()
-
-            assert process.stderr is not None
-            threading.Thread(
-                target=self._read_output,
-                args=(process.stderr, stderr_queue, stop_event, tab_id, "stderr"),
-                daemon=True,
-                name=f"StderrThread-{tab_id}"
-            ).start()
-
-            # Start a thread for writing to stdin
-            assert process.stdin is not None
-            threading.Thread(
-                target=self._write_input,
-                args=(process.stdin, stdin_queue, stop_event, tab_id),
-                daemon=True,
-                name=f"StdinWriter-{tab_id}"
-            ).start()
-
-            # Start dispatcher threads to process queues and invoke callbacks
-            threading.Thread(
-                target=self._dispatch_queue,
-                args=(stdout_queue, stdout_callback, stop_event),
-                daemon=True,
-                name=f"DispatcherStdout-{tab_id}"
-            ).start()
 
             # Warning redirect for pkg_resource warning (pygame)
             # This is a issue present in current version of pygame that hasn't yet been fixed
@@ -157,11 +117,32 @@ class ProcessTracker:
                     warn_followup["pending"] = False
                 stderr_callback(text)
 
+            # Start threads for stdout and stderr reading.
+            # Reader threads schedule callbacks directly via self.scheduler
+            # (root.after), eliminating the need for separate dispatcher threads.
+            assert process.stdout is not None
             threading.Thread(
-                target=self._dispatch_queue,
-                args=(stderr_queue, _stderr_wrapper, stop_event),
+                target=self._read_output,
+                args=(process.stdout, stdout_callback, stop_event, tab_id, "stdout"),
                 daemon=True,
-                name=f"DispatcherStderr-{tab_id}"
+                name=f"StdoutThread-{tab_id}"
+            ).start()
+
+            assert process.stderr is not None
+            threading.Thread(
+                target=self._read_output,
+                args=(process.stderr, _stderr_wrapper, stop_event, tab_id, "stderr"),
+                daemon=True,
+                name=f"StderrThread-{tab_id}"
+            ).start()
+
+            # Start a thread for writing to stdin
+            assert process.stdin is not None
+            threading.Thread(
+                target=self._write_input,
+                args=(process.stdin, stdin_queue, stop_event, tab_id),
+                daemon=True,
+                name=f"StdinWriter-{tab_id}"
             ).start()
 
             # Start process monitoring
@@ -170,32 +151,18 @@ class ProcessTracker:
         except Exception as e:
             print(f"[ERROR] Failed to start process for Tab ID {tab_id}: {e}")
 
-    def _put_to_queue(
-        self,
-        output_queue: queue.Queue[str | None],
-        item: str,
-        stop_event: threading.Event
-    ) -> bool:
-        """Block reader until queue has space (natural back-pressure).
-        Returns False only if stop_event is set while waiting."""
-        while True:
-            try:
-                output_queue.put(item, timeout=0.5)
-                return True
-            except queue.Full:
-                if stop_event.is_set():
-                    return False
 
     def _read_output(
         self,
         stream: IO[str],
-        output_queue: queue.Queue[str | None],
+        callback: Callable[[str], None],
         stop_event: threading.Event,
         tab_id: int | None,
         stream_name: str
     ) -> None:
         """
-        Read subprocess output with proper handling of lines and partial data.
+        Read subprocess output and schedule callbacks directly via self.scheduler.
+        Handles lines and partial data (e.g. prompts without trailing newline).
         """
         print(f"[INFO] Starting output reader for {stream_name}, Tab ID: {tab_id}")
 
@@ -203,8 +170,7 @@ class ProcessTracker:
         buffer: str = ""  # Accumulate partial lines
         last_flushed_partial: str | None = None  # Track the last flushed partial line
         decoder = codecs.getincrementaldecoder("utf-8")()
-        enqueued: int = 0
-        dropped: int = 0
+        dispatched: int = 0
         logger.debug("reader START  stream=%s tab=%s", stream_name, tab_id)
 
         try:
@@ -216,8 +182,8 @@ class ProcessTracker:
                         remaining: str = decoder.decode(b"", final=True)
                         if remaining:
                             buffer += remaining
-                        logger.debug("reader EOF   stream=%s tab=%s enqueued=%d dropped=%d qsize=%d",
-                                     stream_name, tab_id, enqueued, dropped, output_queue.qsize())
+                        logger.debug("reader EOF   stream=%s tab=%s dispatched=%d",
+                                     stream_name, tab_id, dispatched)
                         break
 
                     chunk: str = decoder.decode(raw)
@@ -226,20 +192,16 @@ class ProcessTracker:
                     # Process complete lines in the buffer
                     while "\n" in buffer:
                         line, buffer = buffer.split("\n", 1)
-                        if self._put_to_queue(output_queue, line + "\n", stop_event):
-                            enqueued += 1
-                        else:
-                            dropped += 1
+                        self.scheduler(0, lambda l=line + "\n": callback(l))
+                        dispatched += 1
                         last_flushed_partial = None  # Reset partial tracking
 
                     # Handle partial line (e.g., prompts or incomplete output)
                     if buffer and buffer != last_flushed_partial:
-                        if self._put_to_queue(output_queue, buffer, stop_event):
-                            enqueued += 1
-                            last_flushed_partial = buffer
-                            buffer = ""  # Clear only after successful enqueue
-                        else:
-                            dropped += 1
+                        self.scheduler(0, lambda l=buffer: callback(l))
+                        dispatched += 1
+                        last_flushed_partial = buffer
+                        buffer = ""
 
                 except BlockingIOError:
                     # No data available yet; pause briefly to avoid busy-waiting
@@ -254,13 +216,9 @@ class ProcessTracker:
             print(f"[ERROR] Unexpected error in output reader for {stream_name}: {loop_error}")
 
         finally:
-            # Handle cleanup: flush remaining buffer and signal end of stream
+            # Handle cleanup: flush remaining buffer
             if buffer and buffer != last_flushed_partial:
-                try:
-                    output_queue.put_nowait(buffer)
-                except queue.Full:
-                    pass  # Best effort on shutdown
-            output_queue.put(None)  # Signal end of stream to the queue
+                self.scheduler(0, lambda l=buffer: callback(l))
             logger.debug("reader DONE  stream=%s tab=%s", stream_name, tab_id)
 
             try:
@@ -297,37 +255,6 @@ class ProcessTracker:
             except Exception as e:
                 print(f"[WARNING] Failed to close stdin for Tab ID {tab_id}: {e}")
 
-    def _dispatch_queue(
-        self,
-        q: queue.Queue[str | None],
-        callback: Callable[[str], None],
-        stop_event: threading.Event
-    ) -> None:
-        """Consume items from the queue and invoke the callback."""
-        thread_name: str = threading.current_thread().name
-        dispatched: int = 0
-        logger.debug("dispatcher START %s", thread_name)
-        print("[INFO] Starting dispatcher thread.")
-        while True:
-            try:
-                line: str | None = q.get(timeout=1)  # Avoid indefinite blocking
-            except queue.Empty:
-                # Check if this process's stop_event is set
-                if stop_event.is_set():
-                    logger.debug("dispatcher EXIT stop_event %s dispatched=%d", thread_name, dispatched)
-                    print("[INFO] Dispatcher stopping due to its own stop_event.")
-                    break
-                continue
-
-            if line is None:  # Sentinel for end-of-stream
-                logger.debug("dispatcher EOF sentinel %s dispatched=%d", thread_name, dispatched)
-                print("[INFO] Dispatcher received EOF sentinel. Exiting.")
-                break
-
-            dispatched += 1
-            # Use the provided scheduler to safely invoke the callback
-            self.scheduler(0, lambda l=line: callback(l))
-
     def schedule_process_check(self, tabid: int | None) -> None:
         """Schedule a periodic check for process termination."""
         self.scheduler(2000, lambda: self.check_termination(tabid))
@@ -345,8 +272,8 @@ class ProcessTracker:
 
         if process.poll() is not None:  # Process has stopped
             exit_code: int | None = process.poll()
-            logger.debug("check_termination DETECTED tab=%s exit_code=%s stdout_qsize=%d stderr_qsize=%d",
-                         tab_id, exit_code, metadata["stdout_queue"].qsize(), metadata["stderr_queue"].qsize())
+            logger.debug("check_termination DETECTED tab=%s exit_code=%s",
+                         tab_id, exit_code)
 
             # Notify the ScriptTab directly
             try:
@@ -396,8 +323,11 @@ class ProcessTracker:
 
         # Signal threads to stop
         metadata["stop_event"].set()
-        metadata["stdout_queue"].put("[INFO] Process terminated by user.\n")
-        metadata["stdout_queue"].put(None)  # Final EOF sentinel
+
+        # Notify the user via the script tab
+        script_tab: ScriptTab = metadata.get("script_tab")
+        if script_tab:
+            self.scheduler(0, lambda: script_tab.insert_output("[INFO] Process terminated by user.\n"))
 
         # Close the process's I/O streams
         if process.stdout:
