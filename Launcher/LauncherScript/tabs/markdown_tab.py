@@ -1,244 +1,252 @@
-# tabs/markdown_tab.py - Markdown rendering tab
+# tabs/markdown_tab.py - Markdown rendering tab using tkinterweb
 from __future__ import annotations
 
 import os
 import re
-import threading
-import tkinter as tk
-from tkinter import ttk
-from typing import Any, Callable
+import webbrowser
+from pathlib import Path
+from typing import Callable
+from urllib.parse import unquote, urlsplit
 
 import mistune
-from tkhtmlview import HTMLScrolledText
-import tkhtmlview.html_parser as _tkhtmlview_parser
+from tkinterweb import HtmlFrame
 
 from .base import Tab
-from config import TEXT_WIDGET_BG_COLOR
 
 
 class MarkdownTab(Tab):
-    """A tab that renders a Markdown file as HTML."""
+    """A tab that renders a Markdown file with GitHub-like dark styling."""
+
     def __init__(
         self,
         title: str,
         md_file_path: str,
         open_tab: Callable[[Tab], None] | None = None,
-        fragment: str | None = None
+        fragment: str | None = None,
     ) -> None:
         super().__init__(title)
         self.md_file_path: str = md_file_path
         self.open_tab: Callable[[Tab], None] | None = open_tab
         self.fragment: str | None = fragment
-        self._md_content: str = ""
-        self._html_body: str = ""
-        self.html_widget: HTMLScrolledText | None = None
+        self.html_widget: HtmlFrame | None = None
 
     def build_content(self) -> None:
-        """Read the Markdown file and render it as HTML."""
-        with open(self.md_file_path, "r", encoding="utf-8") as f:
-            self._md_content = f.read()
+        """Read Markdown, convert to HTML, and render it in HtmlFrame."""
+        md_path: Path = Path(self.md_file_path).resolve()
+        md_dir: Path = md_path.parent
 
-        html_body: str = mistune.html(self._md_content)
+        with open(md_path, "r", encoding="utf-8-sig") as f:
+            md_content: str = f.read()
 
-        # CommonMark "loose lists" wrap every <li> content in <p>, which tkhtmlview renders as a blank line
-        # before the text — splitting bullet numbers from their content. Strip the <p> wrapper; where a
-        # list item has multiple paragraphs (e.g. text + image), collapse the </p><p> boundary to <br>.
-        html_body = re.sub(r'<li>\s*<p>', '<li>', html_body)
-        html_body = re.sub(r'</p>\s*</li>', '</li>', html_body)
-        html_body = re.sub(r'</p>\s*<p>', '<br>', html_body)
+        html_body: str = mistune.html(md_content)
+        html_body = self._add_heading_ids(html_body)
+        html_body = self._inject_inline_code_styles(html_body)
 
-        # Apply GitHub dark mode colors via inline styles (tkhtmlview supports per-element inline styles)
-        html_body = re.sub(r'<a\s', '<a style="color: #58a6ff" ', html_body)
-        html_body = re.sub(r'<h([1-6])>', r'<h\1 style="color: #f0f6fc">', html_body)
-        html_body = re.sub(r'<pre>', '<pre style="background-color: #1e1e2e">', html_body)
+        document: str = self._build_document(html_body)
 
-        # tkhtmlview fetches remote images synchronously (requests.get per <img>).  Render
-        # immediately with placeholders so the tab appears fast, then fetch in the background
-        # and re-render once they are cached.
-        remote_img_urls: list[str] = re.findall(r'<img\s[^>]*src="(https?://[^"]*)"[^>]*/?>',  html_body)
-        if remote_img_urls:
-            self._html_body = html_body  # full version for the background re-render
-            html_body = re.sub(r'<img\s[^>]*src="https?://[^"]*"[^>]*/?>',
-                               '<em style="color: #484f58">[image]</em>', html_body)
-
-        # tkhtmlview defaults foreground to "black" via DEFAULT_STACK regardless of the widget fg kwarg.
-        # Patch it to a soft dark-mode gray before set_html (which deepcopies DEFAULT_STACK), then restore.
-        _orig_fg: Any = _tkhtmlview_parser.DEFAULT_STACK["config"]["foreground"]
-        _tkhtmlview_parser.DEFAULT_STACK["config"]["foreground"] = [("__DEFAULT__", "#c9d1d9")]
-
-        # Note: must use background= (long form) — tkhtmlview's _w_init checks for that key specifically
-        self.html_widget = HTMLScrolledText(
+        self.html_widget = HtmlFrame(
             self.frame,
-            background=TEXT_WIDGET_BG_COLOR,
-            padx=10,
-            pady=5,
+            on_link_click=self._handle_link_click,
+            messages_enabled=False,
+            dark_theme_enabled=True,
+            shrink=False,
         )
-        self.html_widget.set_html(html_body)
-
-        _tkhtmlview_parser.DEFAULT_STACK["config"]["foreground"] = _orig_fg
-
-        self._apply_content_fixes()
-
-        # Replace tkhtmlview's plain tk.Scrollbar with a ttk.Scrollbar so it picks up the app dark theme
-        self.html_widget.vbar.destroy()
-        scrollbar: ttk.Scrollbar = ttk.Scrollbar(self.html_widget.frame, orient="vertical", command=self.html_widget.yview)
-        scrollbar.pack(side="right", fill="y")
-        self.html_widget.configure(yscrollcommand=scrollbar.set)
-
         self.html_widget.pack(expand=True, fill="both")
 
-        # Scroll to the heading that matches the #fragment, if one was specified
-        if self.fragment:
-            self._scroll_to_heading(self.fragment)
+        base_url: str = md_dir.as_uri() + "/"
+        self.html_widget.load_html(document, base_url=base_url, fragment=self.fragment)
 
-        # Kick off background fetch for remote images; widget re-renders when they arrive
-        if remote_img_urls:
-            threading.Thread(target=self._fetch_and_rerender,
-                             args=(remote_img_urls,), daemon=True).start()
+    def _handle_link_click(self, url: str) -> None:
+        """Open .md links in new app tabs, external links in browser, others in-frame."""
+        if self.html_widget is None:
+            return
 
-    def _apply_content_fixes(self) -> None:
-        """Re-apply widget-content fixes after every set_html()."""
-        assert self.html_widget is not None
-        self._rebind_links()
+        parts = urlsplit(url)
 
-        # tkhtmlview positions bullets via tab stops (bullet at px 30, text at px 35) but never sets
-        # lmargin2, so wrapped lines fall back to the left edge.  Fix the indent.
-        for line_num, line in enumerate(self.html_widget.get("1.0", tk.END).split('\n'), start=1):
-            if line.startswith('\t'):
-                self.html_widget.tag_add("_li_indent", f"{line_num}.0", f"{line_num}.end")
-        self.html_widget.tag_config("_li_indent", lmargin2=35)
+        if parts.scheme in ("http", "https", "mailto"):
+            webbrowser.open(url)
+            return
 
-        self.html_widget.config(state=tk.DISABLED)
+        path_part: str = parts.path or ""
+        fragment: str | None = parts.fragment if parts.fragment else None
 
-    def _fetch_and_rerender(self, urls: list[str]) -> None:
-        """Fetch remote images in parallel, then schedule a re-render on the main thread."""
-        from concurrent.futures import ThreadPoolExecutor
-        import requests
-        from PIL import Image
-        from io import BytesIO
-        from copy import deepcopy
-
-        def fetch_one(url: str) -> tuple[str, Image.Image | None]:
-            try:
-                return url, Image.open(BytesIO(requests.get(url, timeout=15).content))
-            except Exception:
-                return url, None
-
-        with ThreadPoolExecutor(max_workers=len(urls)) as pool:
-            results: list[tuple[str, Image.Image | None]] = list(pool.map(fetch_one, urls))
-
-        # Pre-populate the parser's image cache so set_html() won't re-fetch
-        assert self.html_widget is not None
-        for url, img in results:
-            if img is not None:
-                self.html_widget.html_parser.cached_images[url] = deepcopy(img)
-
-        # Schedule re-render on the Tk main thread
-        self.html_widget.after(0, self._rerender_with_images)
-
-    def _rerender_with_images(self) -> None:
-        """Re-render the widget with remote images now that they are cached."""
-        if not self.frame or not self.frame.winfo_exists():
-            return  # tab was closed while images were downloading
-
-        assert self.html_widget is not None
-        # Preserve scroll position across the re-render
-        yview_top: float = self.html_widget.yview()[0]
-
-        _orig_fg: Any = _tkhtmlview_parser.DEFAULT_STACK["config"]["foreground"]
-        _tkhtmlview_parser.DEFAULT_STACK["config"]["foreground"] = [("__DEFAULT__", "#c9d1d9")]
-
-        self.html_widget.set_html(self._html_body)
-
-        _tkhtmlview_parser.DEFAULT_STACK["config"]["foreground"] = _orig_fg
-
-        self._apply_content_fixes()
-
-        # Restore scroll position
-        self.html_widget.yview_moveto(yview_top)
-
-    def _rebind_links(self) -> None:
-        """Rebind relative .md links to open as new tabs; anchor links to scroll; leave http(s) to browser."""
-        assert self.html_widget is not None
-        md_dir: str = os.path.dirname(os.path.abspath(self.md_file_path))
-        for slot in self.html_widget.html_parser.hlink_slots:
-            url: str = slot.URL
-            # Leave absolute URLs to tkhtmlview's default webbrowser handler
-            if url.startswith(("http://", "https://", "mailto:")):
-                continue
-            # Split into path and #fragment
-            parts: list[str] = url.split("#", 1)
-            path_part: str = parts[0]
-            fragment: str | None = parts[1] if len(parts) > 1 else None
-
-            if not path_part:
-                # Anchor-only link (#section) — scroll to heading in current tab
-                if fragment:
-                    self.html_widget.tag_unbind(slot.tag_name, "<Button-1>")
-                    self.html_widget.tag_bind(
-                        slot.tag_name, "<Button-1>",
-                        lambda _event, frag=fragment: self._scroll_to_heading(frag)
-                    )
-                continue
-
-            if not self.open_tab:
-                continue
-            resolved: str = os.path.normpath(os.path.join(md_dir, path_part))
-            if resolved.lower().endswith(".md") and os.path.isfile(resolved):
-                self.html_widget.tag_unbind(slot.tag_name, "<Button-1>")
-                self.html_widget.tag_bind(
-                    slot.tag_name, "<Button-1>",
-                    lambda _event, path=resolved, frag=fragment: self.open_tab(MarkdownTab(
-                        title=os.path.basename(path),
-                        md_file_path=path,
+        # Handle relative or file:// markdown links by opening in a new app tab.
+        if path_part and path_part.lower().endswith(".md") and self.open_tab:
+            resolved = self._resolve_local_path(parts.scheme, path_part)
+            if resolved and resolved.lower().endswith(".md") and os.path.isfile(resolved):
+                self.open_tab(
+                    MarkdownTab(
+                        title=os.path.basename(resolved),
+                        md_file_path=resolved,
                         open_tab=self.open_tab,
-                        fragment=frag
-                    ))
+                        fragment=fragment,
+                    )
                 )
-
-    def _scroll_to_heading(self, fragment: str) -> None:
-        """Find the heading whose slug matches fragment and scroll the widget to it."""
-        assert self.html_widget is not None
-        for line in self._md_content.splitlines():
-            stripped: str = line.strip()
-            if not stripped.startswith("#"):
-                continue
-            heading_text: str = stripped.lstrip("#").strip()
-            # Render through mistune so CommonMark rules apply (e.g. mid-word underscores in
-            # filenames stay literal), then strip the HTML tags to get the plain text that
-            # tkhtmlview actually inserted into the widget.
-            plain: str = re.sub(r'<[^>]+>', '', mistune.html(heading_text)).strip()
-            if self._make_slug(plain) == fragment:
-                # search() returns the first match — skip any hits that are inside list
-                # items or body text (e.g. the same word in a ToC entry) by requiring the
-                # match to be the only content on its line.
-                idx: str = "1.0"
-                while True:
-                    idx = self.html_widget.search(plain, idx, tk.END)
-                    if not idx:
-                        break
-                    line_start: str = self.html_widget.index(f"{idx} linestart")
-                    line_end: str = self.html_widget.index(f"{idx} lineend")
-                    if self.html_widget.get(line_start, line_end) == plain:
-                        self.html_widget.see(idx)
-                        # see() does the minimum scroll to make idx visible,
-                        # which often lands it in the centre.  Nudge it near
-                        # the top (2 lines of context above) so it feels like
-                        # a normal "jump to heading".
-                        self.html_widget.update_idletasks()
-                        target_line: int = int(self.html_widget.index(idx).split('.')[0])
-                        top_line: int = int(self.html_widget.index("@0,0").split('.')[0])
-                        scroll_by: int = (target_line - top_line) - 2
-                        if scroll_by > 0:
-                            self.html_widget.yview_scroll(scroll_by, "units")
-                        break
-                    idx = self.html_widget.index(f"{idx} +1c")
                 return
+
+        # Let tkinterweb handle anchors and non-markdown local links.
+        self.html_widget.load_url(url)
+
+    def _resolve_local_path(self, scheme: str, path_part: str) -> str | None:
+        """Resolve link paths from relative/file URLs to local absolute paths."""
+        if scheme == "file":
+            local: str = unquote(path_part)
+            # file:///C:/... => /C:/... on Windows
+            if re.match(r"^/[A-Za-z]:/", local):
+                local = local[1:]
+            return os.path.normpath(local)
+
+        if scheme:
+            return None
+
+        md_dir: str = os.path.dirname(os.path.abspath(self.md_file_path))
+        return os.path.normpath(os.path.join(md_dir, unquote(path_part)))
+
+    def _build_document(self, html_body: str) -> str:
+        """Wrap rendered Markdown body in a full HTML document with dark theme styles."""
+        return f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <style>
+    :root {{
+      --bg: #0d1117;
+      --fg: #c9d1d9;
+      --heading: #f0f6fc;
+      --muted: #8b949e;
+      --border: #30363d;
+      --code-bg: #30363d;
+      --link: #58a6ff;
+    }}
+    html, body {{
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      line-height: 1.5;
+      font-size: 16px;
+    }}
+    body {{
+      padding: 12px 14px;
+      overflow-x: auto;
+    }}
+    h1, h2, h3, h4, h5, h6 {{
+      color: var(--heading);
+      margin: 18px 0 12px;
+      line-height: 1.25;
+    }}
+    h1, h2 {{
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.3em;
+    }}
+    p, ul, ol, pre, blockquote {{
+      margin: 0 0 12px;
+    }}
+    ul, ol {{
+      padding-left: 1.7em;
+    }}
+    li + li {{
+      margin-top: 0.25em;
+    }}
+    a {{
+      color: var(--link);
+      text-decoration: none;
+    }}
+    a:hover {{
+      text-decoration: underline;
+    }}
+    code {{
+      background-color: var(--code-bg) !important;
+      color: #e6edf3 !important;
+      border: none !important;
+      border-radius: 4px !important;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 88% !important;
+      font-weight: 600 !important;
+      letter-spacing: 0 !important;
+      padding: 0.16em 0.4em !important;
+      text-shadow: none !important;
+    }}
+    pre {{
+      background: #161b22;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: auto;
+      padding: 12px;
+    }}
+    pre code {{
+      background: transparent;
+      border: 0;
+      border-radius: 0;
+      font-weight: 400;
+      padding: 0;
+      font-size: 100%;
+    }}
+    img {{
+      max-width: none;
+      height: auto;
+    }}
+    hr {{
+      border: 0;
+      border-top: 1px solid var(--border);
+      margin: 20px 0;
+    }}
+    blockquote {{
+      color: var(--muted);
+      border-left: 0.25em solid var(--border);
+      padding: 0 1em;
+    }}
+  </style>
+</head>
+<body>
+{html_body}
+</body>
+</html>"""
+
+    def _add_heading_ids(self, html_body: str) -> str:
+        """Add GitHub-style slug ids to headings so #fragment links can scroll reliably."""
+        slug_counts: dict[str, int] = {}
+
+        def repl(match: re.Match[str]) -> str:
+            level: str = match.group(1)
+            inner_html: str = match.group(2)
+            text: str = re.sub(r"<[^>]+>", "", inner_html).strip()
+            base_slug: str = self._make_slug(text)
+            count: int = slug_counts.get(base_slug, 0)
+            slug_counts[base_slug] = count + 1
+            slug: str = base_slug if count == 0 else f"{base_slug}-{count}"
+            return f'<h{level} id="{slug}">{inner_html}</h{level}>'
+
+        return re.sub(r"<h([1-6])>(.*?)</h\1>", repl, html_body, flags=re.DOTALL)
+
+    def _inject_inline_code_styles(self, html_body: str) -> str:
+        """Force code-chip styling inline so it is honored even if CSS selectors are limited."""
+        code_style = (
+            "background-color:#30363d !important;"
+            "color:#e6edf3 !important;"
+            "border:none !important;"
+            "border-radius:4px !important;"
+            "font-size:88% !important;"
+            "font-weight:600 !important;"
+            "letter-spacing:0 !important;"
+            "padding:0.16em 0.4em !important;"
+            "text-shadow:none !important;"
+        )
+
+        def repl(match: re.Match[str]) -> str:
+            attrs: str = match.group(1) or ""
+            if 'style="' in attrs:
+                attrs = re.sub(r'style="([^"]*)"', lambda m: f'style="{m.group(1)};{code_style}"', attrs)
+                return f"<code{attrs}>"
+            return f'<code{attrs} style="{code_style}">'
+
+        return re.sub(r"<code([^>]*)>", repl, html_body)
 
     @staticmethod
     def _make_slug(text: str) -> str:
-        """GitHub-style heading slug: lowercase, punctuation stripped, whitespace collapsed to hyphens."""
-        slug: str = text.lower()
-        slug = re.sub(r'[^\w\s-]', '', slug)
-        slug = re.sub(r'[\s]+', '-', slug)
+        slug: str = text.lower().strip()
+        slug = re.sub(r"[^\w\s-]", "", slug)
+        slug = re.sub(r"\s+", "-", slug)
         return slug
