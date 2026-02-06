@@ -10,7 +10,7 @@ If the printer setup was correct it should look like this:
 
 If it doesn't look like this follow this guide to get the VirtualTextPrinter working on your Windows installation.
 
-First thing to try is to open properties for the netowrk port, to see if it is set up like follows in the Windows settings page "Printers & Scanners".  If changing this does not work than proceed to the next section.
+First thing to try is to open properties for the network port to verify it is set up as shown in the Windows "Printers & Scanners" settings page. If changing this does not work, proceed to the next section.
 
 ![image](https://github.com/user-attachments/assets/6f40caee-2b30-4077-92d6-dd7b13b98172)
 
@@ -29,7 +29,7 @@ First thing to try is to open properties for the netowrk port, to see if it is s
      ![image](https://github.com/user-attachments/assets/eebc7ba7-e313-4071-a0e5-10867866b733)
 
 4. Retry running "virtual_pos_printer" once more to see if printer installs correctly.
-  - If it does not work, follow steps 1-3 once more and then procede with the next section that will show how to manually configure the printer yourself.
+  - If it does not work, follow steps 1-3 once more and then proceed with the next section that shows how to manually configure the printer.
 
 # How to manually set up VirtualTextPrinter
 
@@ -68,4 +68,4 @@ First thing to try is to open properties for the netowrk port, to see if it is s
 
 If the port is configured correctly, then the "virtual_pos_printer" script should run correctly.
 
-As a final step ensure that the printer "VirtualTextPrinter" is set as the printer in the "ACAS PRINTER" section of the Fenix EFB settings.
+As a final step ensure that the printer "VirtualTextPrinter" is set as the printer in the "ACARS PRINTER" section of the Fenix EFB settings.

@@ -19,5 +19,10 @@ This script intercepts print jobs and displays them as on-screen popups. It is p
 ## Usage Guide
   - Notes can be dragged with left mouse click (hold).  Right-click to close a note.
   - Use Ctrl+MouseWheel up/down to resize a note (with mouse cursor on top of note).
-  - Use Ctrl+Shift+P shortcut to define a new note spawning location (it will use the current mouse position).
+  - Use **Ctrl+Shift+Alt+P** to define a new note spawn location (uses current mouse position).
   - If you have any issues with the automated printer installation see this guide: [Printer Troubleshooting Guide](https://github.com/cgtrout/MSFS-PyScriptManager/blob/main/Docs/Printer_Troubleshooting_Guide.md)
+
+## Ports and Integration Notes
+- The virtual printer listener binds to loopback `127.0.0.1:9102`.
+- The optional toolbar addon integration endpoint is exposed at `http://127.0.0.1:40001/latest`.
+- `enable_popups` in `/Settings/settings.json` controls whether native Windows popup notes are shown.

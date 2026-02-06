@@ -19,6 +19,11 @@
           "command_name": "open_settings_editor",
           "command_arg": "/Settings/metar_load.json",
           "description": "Open Settings"
+        },
+        {
+          "command_name": "open_help",
+          "command_arg": "/Docs/metar_load.md",
+          "description": "Open Help"
         }
       ]
     },
@@ -36,6 +41,42 @@
         {
           "command_name": "open_help",
           "command_arg": "/Docs/custom_status_bar.md",
+          "description": "Open Help"
+        }
+      ]
+    },
+    "plot_altitude.py": {
+      "commands": [
+        {
+          "command_name": "open_help",
+          "command_arg": "/Docs/plot_altitude.md",
+          "description": "Open Help"
+        }
+      ]
+    },
+    "plot_joystick.py": {
+      "commands": [
+        {
+          "command_name": "open_help",
+          "command_arg": "/Docs/plot_joystick.md",
+          "description": "Open Help"
+        }
+      ]
+    },
+    "fenix_radio.py": {
+      "commands": [
+        {
+          "command_name": "open_help",
+          "command_arg": "/Docs/fenix_radio.md",
+          "description": "Open Help"
+        }
+      ]
+    },
+    "fbw_a380_checklist.py": {
+      "commands": [
+        {
+          "command_name": "open_help",
+          "command_arg": "/Docs/fbw_a380_checklist.md",
           "description": "Open Help"
         }
       ]
