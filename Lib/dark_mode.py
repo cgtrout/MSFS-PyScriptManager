@@ -45,25 +45,27 @@ class DarkmodeUtils:
 
     @staticmethod
     def apply_dark_mode(root):
-        """Apply dark mode to the top-level Tkinter window, scheduled via root.after()."""
+        """Apply dark mode to the top-level Tkinter window as early as possible."""
+        if not DarkmodeUtils.is_windows_11():
+            return
 
-        def _apply():
-            """Inner function to apply dark mode once the window is ready."""
+        def _apply_once() -> bool:
             try:
                 root.update_idletasks()
-                if DarkmodeUtils.is_windows_11():
-                    top_level_hwnd = DarkmodeUtils.get_top_level_hwnd(int(root.winfo_id()))
-
-                    if DarkmodeUtils.is_valid_window(top_level_hwnd):
-                        DarkmodeUtils.dark_title_bar(top_level_hwnd)
-
-                        # Force a redraw to apply changes immediately
-                        #ctypes.windll.user32.RedrawWindow(top_level_hwnd, None, None, 0x85)
-
+                top_level_hwnd = DarkmodeUtils.get_top_level_hwnd(int(root.winfo_id()))
+                if DarkmodeUtils.is_valid_window(top_level_hwnd):
+                    DarkmodeUtils.dark_title_bar(top_level_hwnd)
+                    return True
             except Exception as e:
                 print(f"[ERROR] apply_dark_mode: {e}")
+            return False
 
-        # Schedule the function to run after a short delay (ensures the window is ready)
-        root.after(0, _apply)
+        # Try immediately first to avoid visible delay.
+        if _apply_once():
+            return
+
+        # Fallback retries for windows not yet fully realized.
+        root.after_idle(_apply_once)
+        root.after(50, _apply_once)
 
 
