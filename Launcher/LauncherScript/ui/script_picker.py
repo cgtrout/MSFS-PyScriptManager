@@ -4,7 +4,7 @@ import json
 import logging
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog
 
 try:
     import tkfilebrowser
@@ -17,6 +17,12 @@ try:
 except ImportError as e:
     logging.getLogger(__name__).warning("Optional dependency 'Lib.dark_mode' is unavailable: %s", e)
     DarkmodeUtils = None
+
+from .filebrowser_tweaks import (
+    apply_filebrowser_dark_theme,
+    create_hidden_filebrowser,
+    prime_dark_theme_defaults,
+)
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -41,20 +47,29 @@ class ScriptPickerDialog:
 
         file_path: str = ""
         if tkfilebrowser is not None:
+            prime_dark_theme_defaults(self.root)
             dialog_width: int = 1200
             dialog_height: int = 720
-            dialog = tkfilebrowser.FileBrowser(
+            dialog = create_hidden_filebrowser(
+                tkfilebrowser.FileBrowser,
                 mode="openfile",
                 multiple_selection=False,
                 **dialog_kwargs,
             )
+            # Hide first paint to avoid a light-theme flash before custom styling is applied.
+            dialog.withdraw()
             self._position_dialog_over_main_window(dialog, dialog_width, dialog_height)
-            self._apply_filebrowser_dark_theme(dialog)
+            apply_filebrowser_dark_theme(dialog)
             self._customize_filebrowser_shortcuts(dialog)
             self._hide_cache_directories(dialog)
             self._add_filebrowser_description_column(dialog)
             if DarkmodeUtils is not None:
                 DarkmodeUtils.apply_dark_mode(dialog)
+            dialog.update_idletasks()
+            dialog.attributes("-alpha", 1.0)
+            dialog.deiconify()
+            dialog.lift()
+            dialog.focus_force()
             dialog.wait_window(dialog)
             file_path = dialog.get_result()
         else:
@@ -74,105 +89,6 @@ class ScriptPickerDialog:
         x: int = root_x + max((root_w - width) // 2, 0)
         y: int = root_y + max((root_h - height) // 2, 0)
         dialog.geometry(f"{width}x{height}+{x}+{y}")
-
-    def _apply_filebrowser_dark_theme(self, dialog: tk.Toplevel) -> None:
-        """Apply a darker theme override to tkfilebrowser widgets."""
-        bg_root = "#1F1F1F"
-        bg_panel = "#202225"
-        bg_field = "#191A1C"
-        bg_alt = "#25282C"
-        fg_text = "#E6E6E6"
-        fg_muted = "#CFCFCF"
-        sel_bg = "#2B4E6E"
-        sel_fg = "#FFFFFF"
-        border = "#34363A"
-
-        dialog.configure(background=bg_root)
-
-        style = ttk.Style(dialog)
-        style.configure(".", background=bg_root, foreground=fg_text)
-        style.configure("TFrame", background=bg_root)
-        style.configure("TLabel", background=bg_root, foreground=fg_text)
-        style.configure("TButton", background=bg_panel, foreground=fg_text, bordercolor=border)
-        style.map(
-            "TButton",
-            background=[("active", bg_alt), ("pressed", bg_alt)],
-            foreground=[("disabled", fg_muted)],
-        )
-        style.configure("TEntry", fieldbackground=bg_field, foreground=fg_text)
-        style.map("TEntry", fieldbackground=[("readonly", bg_field)])
-        style.configure(
-            "TCombobox",
-            fieldbackground=bg_field,
-            background=bg_panel,
-            foreground=fg_text,
-            arrowcolor=fg_text,
-        )
-        style.map(
-            "TCombobox",
-            fieldbackground=[("readonly", bg_field)],
-            foreground=[("readonly", fg_text)],
-            selectbackground=[("readonly", sel_bg)],
-            selectforeground=[("readonly", sel_fg)],
-        )
-
-        style.configure(
-            "right.tkfilebrowser.Treeview",
-            background=bg_field,
-            fieldbackground=bg_field,
-            foreground=fg_text,
-            bordercolor=border,
-        )
-        style.configure(
-            "left.tkfilebrowser.Treeview",
-            background=bg_panel,
-            fieldbackground=bg_panel,
-            foreground=fg_text,
-            bordercolor=border,
-        )
-        style.map(
-            "right.tkfilebrowser.Treeview",
-            background=[("selected", sel_bg)],
-            foreground=[("selected", sel_fg)],
-        )
-        style.map(
-            "left.tkfilebrowser.Treeview",
-            background=[("selected", sel_bg)],
-            foreground=[("selected", sel_fg)],
-        )
-        style.configure(
-            "right.tkfilebrowser.Treeview.Heading",
-            background=bg_panel,
-            foreground=fg_text,
-        )
-        style.configure(
-            "left.tkfilebrowser.Treeview.Heading",
-            background=bg_panel,
-            foreground=fg_text,
-        )
-        style.configure(
-            "types.tkfilebrowser.TCombobox",
-            fieldbackground=bg_field,
-            background=bg_panel,
-            foreground=fg_text,
-            arrowcolor=fg_text,
-        )
-        style.configure("listbox.tkfilebrowser.TFrame", background=bg_field)
-
-        right_tree = getattr(dialog, "right_tree", None)
-        if right_tree is not None:
-            right_tree.tag_configure("0", background=bg_field, foreground=fg_text)
-            right_tree.tag_configure("1", background=bg_alt, foreground=fg_text)
-
-        listbox = getattr(dialog, "listbox", None)
-        if listbox is not None:
-            listbox.configure(
-                background=bg_field,
-                foreground=fg_text,
-                selectbackground=sel_bg,
-                selectforeground=sel_fg,
-                highlightthickness=0,
-            )
 
     def _customize_filebrowser_shortcuts(self, dialog: tk.Toplevel) -> None:
         """Replace default filebrowser shortcuts with project-specific paths."""
