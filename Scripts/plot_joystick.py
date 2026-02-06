@@ -40,9 +40,14 @@ class JoystickApp:
         self.sm = None
         self.aq = None
         self.conn = SimConnectConnectionHelper(retry_delay=30)
+        self.last_simconnect_attempt = 0.0
         self.selected_joystick = None
         self.joystick_names = []
         self.joysticks = []
+        self.rudder_joystick = None
+        self.rudder_joystick_name = None
+        self.rudder_axis_id = None
+        self.show_values = False
         self.trim_update_interval = 0.5
         # Used to cache values from
         self.cached_trim_values = {
@@ -64,6 +69,7 @@ class JoystickApp:
         self.dot = None
         self.elevator_trim_marker = None
         self.aileron_trim_marker = None
+        self.rudder_marker = None
         self.coord_label = None
 
         self.root = None
@@ -71,9 +77,16 @@ class JoystickApp:
         self.fig, self.ax = None, None
 
         self.last_joystick_pos = None
+        self.last_rudder_value = "unset"
 
         # Load settings
-        self.desired_joystick_name, self.window_position = self._load_settings()
+        (
+            self.desired_joystick_name,
+            self.window_position,
+            self.rudder_joystick_name,
+            self.rudder_axis_id,
+            self.show_values,
+        ) = self._load_settings()
 
         # Initialize pygame for joystick handling
         if not self.test_mode:
@@ -131,7 +144,24 @@ class JoystickApp:
         else:
             print_warning(f"Saved joystick '{self.desired_joystick_name}' not found. No joystick selected.")
 
-    def _save_settings(self, joystick_name=None, position=None):
+        self.rudder_joystick = self._get_joystick_by_name(self.rudder_joystick_name)
+        self._validate_rudder_binding()
+
+    def _get_joystick_by_name(self, joystick_name):
+        if not joystick_name:
+            return None
+        if joystick_name not in self.joystick_names:
+            return None
+        return self.joysticks[self.joystick_names.index(joystick_name)]
+
+    def _save_settings(
+        self,
+        joystick_name=None,
+        position=None,
+        rudder_joystick_name="__KEEP__",
+        rudder_axis_id="__KEEP__",
+        show_values="__KEEP__",
+    ):
         """Save settings like joystick name and window position."""
         settings = {}
         try:
@@ -144,6 +174,12 @@ class JoystickApp:
             settings["desired_joystick_name"] = joystick_name
         if position:
             settings["window_position"] = position
+        if rudder_joystick_name != "__KEEP__":
+            settings["rudder_joystick_name"] = rudder_joystick_name
+        if rudder_axis_id != "__KEEP__":
+            settings["rudder_axis_id"] = rudder_axis_id
+        if show_values != "__KEEP__":
+            settings["show_values"] = bool(show_values)
 
         with open(self.settings_file, "w") as f:
             json.dump(settings, f)
@@ -153,21 +189,66 @@ class JoystickApp:
         try:
             with open(self.settings_file, "r") as f:
                 data = json.load(f)
-                return data.get("desired_joystick_name", ""), data.get("window_position", "+0+40")
+                rudder_joystick_name = data.get("rudder_joystick_name", None)
+                if not isinstance(rudder_joystick_name, str) or not rudder_joystick_name.strip():
+                    rudder_joystick_name = None
+                rudder_axis_id = data.get("rudder_axis_id", None)
+                if not isinstance(rudder_axis_id, int):
+                    rudder_axis_id = None
+                show_values = data.get("show_values", False)
+                if not isinstance(show_values, bool):
+                    show_values = False
+                return (
+                    data.get("desired_joystick_name", ""),
+                    data.get("window_position", "+0+40"),
+                    rudder_joystick_name,
+                    rudder_axis_id,
+                    show_values,
+                )
         except (FileNotFoundError, json.JSONDecodeError):
-            return "", "+0+40"
+            return "", "+0+40", None, None, False
 
-    def _initialize_simconnect(self):
-        """Wait for SimConnect and initialize requests."""
-        if self.conn.connect(blocking=True):
+    def _axis_in_range(self, joystick, axis_id):
+        if joystick is None or axis_id is None:
+            return False
+        return 0 <= axis_id < joystick.get_numaxes()
+
+    def _validate_rudder_binding(self):
+        if self.rudder_joystick_name and self.rudder_joystick is None:
+            print_warning(f"Rudder device '{self.rudder_joystick_name}' not found. Clearing rudder binding.")
+            self.rudder_joystick_name = None
+            self.rudder_axis_id = None
+            self._save_settings(rudder_joystick_name=None, rudder_axis_id=None)
+            return
+
+        if self.rudder_axis_id is None:
+            return
+
+        if not self._axis_in_range(self.rudder_joystick, self.rudder_axis_id):
+            device_name = self.rudder_joystick_name or "<none>"
+            print_warning(f"Rudder axis {self.rudder_axis_id} is not valid for device '{device_name}'. Clearing axis.")
+            self.rudder_axis_id = None
+            self._save_settings(rudder_axis_id=None)
+
+    def _initialize_simconnect(self, blocking=False):
+        """Initialize SimConnect requests; non-blocking by default."""
+        self.last_simconnect_attempt = time.monotonic()
+        if self.conn.connect(blocking=blocking):
             self.sm = self.conn.sm
             self.aq = self.conn.get_requests()
             self.patch_rotor_trim(self.aq)
             print_info("Connected to SimConnect.")
+            return True
+        return False
 
     def _fetch_trim_data(self):
         """Fetch trim data in a background thread."""
         while True:
+            if not (self.sm and self.aq):
+                now = time.monotonic()
+                if (now - self.last_simconnect_attempt) >= self.conn.retry_delay:
+                    self.last_simconnect_attempt = now
+                    self._initialize_simconnect(blocking=False)
             if self.sm and self.aq:
                 try:
                     # Fetch data
@@ -188,7 +269,6 @@ class JoystickApp:
                     self.conn.disconnect()
                     self.sm = None
                     self.aq = None
-                    self._initialize_simconnect()
             time.sleep(self.trim_update_interval)
 
     def _update_plot(self):
@@ -203,13 +283,22 @@ class JoystickApp:
             t = time.time()
             new_x = math.sin(t * 0.5)
             new_y = math.sin(t * 0.7)
+            new_rudder = math.sin(t * 0.9)
         elif self.selected_joystick:
             pygame.event.pump()
             new_x = self.selected_joystick.get_axis(0)
             new_y = self.selected_joystick.get_axis(1)
+            if self._axis_in_range(self.rudder_joystick, self.rudder_axis_id):
+                new_rudder = self.rudder_joystick.get_axis(self.rudder_axis_id)
+            else:
+                new_rudder = None
         else:
             new_x, new_y = 0, 0
-            self.coord_label.config(text="No Joy!\nRight-click\nto select")
+            if self.show_values:
+                self.coord_label.config(text="No Joy!\nRight-click\nto select")
+                self.coord_label.place(relx=1.0, rely=1.0, x=-2, y=-2, anchor='se')
+            else:
+                self.coord_label.place_forget()
             self.fig.canvas.blit(self.fig.bbox)
             self.root.after(100, self._update_plot)
             return
@@ -233,7 +322,7 @@ class JoystickApp:
                 }
 
         # Skip artist updates if nothing changed, but re-blit in case Tk cleared the canvas
-        if (new_x, new_y) == self.last_joystick_pos and new_trim_values == self.last_trim_values:
+        if (new_x, new_y) == self.last_joystick_pos and new_trim_values == self.last_trim_values and new_rudder == self.last_rudder_value:
             self.fig.canvas.blit(self.fig.bbox)
             self.root.after(50, self._update_plot)
             return
@@ -241,6 +330,7 @@ class JoystickApp:
         # Save new state
         self.last_joystick_pos = (new_x, new_y)
         self.last_trim_values = new_trim_values.copy()
+        self.last_rudder_value = new_rudder
 
         # Update dynamic artists
         self.dot.set_xdata([new_x])
@@ -261,13 +351,25 @@ class JoystickApp:
             self.elevator_trim_marker.set_visible(abs(new_trim_values["elevator_trim"]) > threshold)
             self.aileron_trim_marker.set_visible(abs(new_trim_values["aileron_trim"]) > threshold)
 
-        self.coord_label.config(text=f"X: {new_x:>5.2f} Y: {new_y:>5.2f}")
+        if new_rudder is not None:
+            self.rudder_marker.set_xdata([new_rudder, new_rudder])
+            self.rudder_marker.set_visible(True)
+            rudder_text = f"{new_rudder:>5.2f}"
+        else:
+            self.rudder_marker.set_visible(False)
+            rudder_text = "  N/A"
+
+        if self.show_values:
+            self.coord_label.config(text=f"X: {new_x:>5.2f} Y: {new_y:>5.2f}\nR: {rudder_text}")
+            self.coord_label.place(relx=1.0, rely=1.0, x=-2, y=-2, anchor='se')
+        else:
+            self.coord_label.place_forget()
 
         # Manual Blitting:
         # Restore the static background
         self.fig.canvas.restore_region(self.static_background)
         # Redraw the updated dynamic artists
-        for artist in [self.dot, self.elevator_trim_marker, self.aileron_trim_marker]:
+        for artist in [self.dot, self.elevator_trim_marker, self.aileron_trim_marker, self.rudder_marker]:
             self.fig.draw_artist(artist)
         # Blit the updated region to the display
         self.fig.canvas.blit(self.fig.bbox)
@@ -301,6 +403,8 @@ class JoystickApp:
 
         self.elevator_trim_marker = self.ax.axhline(0, color=self.TRIM_COLOR, lw=0.8, linestyle='--', visible=False)
         self.aileron_trim_marker = self.ax.axvline(0, color=self.TRIM_COLOR, lw=0.8, linestyle='--', visible=False)
+        self.ax.plot([-1.0, 1.0], [0.88, 0.88], color="#303030", lw=1.0)
+        self.rudder_marker, = self.ax.plot([0, 0], [0.82, 0.94], color='cyan', lw=1.2, visible=False)
 
         canvas = FigureCanvasTkAgg(self.fig, master=self.root)
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
@@ -322,7 +426,7 @@ class JoystickApp:
     def run(self):
         self._create_gui()
         if not self.test_mode:
-            self._initialize_simconnect()
+            self._initialize_simconnect(blocking=False)
             trim_thread = threading.Thread(target=self._fetch_trim_data, daemon=True)
             trim_thread.start()
         self.root.after(50, self._update_plot)
@@ -354,8 +458,42 @@ class JoystickApp:
     def _show_context_menu(self, event):
         """Show a context menu for joystick selection."""
         self.menu.delete(0, tk.END)  # Clear previous menu items
-        for idx, name in enumerate(self.joystick_names):
-            self.menu.add_command(label=name, command=lambda n=name: self._handle_joystick_selection(n))
+        joystick_menu = tk.Menu(self.menu, tearoff=0, bg="#333333", fg="white", activebackground="#555555", activeforeground="white")
+        for name in self.joystick_names:
+            marker = " *" if name == self.desired_joystick_name else ""
+            joystick_menu.add_command(label=f"{name}{marker}", command=lambda n=name: self._handle_joystick_selection(n))
+        if not self.joystick_names:
+            joystick_menu.add_command(label="No devices", state=tk.DISABLED)
+        self.menu.add_cascade(label="Set Joystick Device", menu=joystick_menu)
+        self.menu.add_separator()
+        device_menu = tk.Menu(self.menu, tearoff=0, bg="#333333", fg="white", activebackground="#555555", activeforeground="white")
+        for device_name in self.joystick_names:
+            marker = " *" if device_name == self.rudder_joystick_name else ""
+            device_menu.add_command(
+                label=f"{device_name}{marker}",
+                command=lambda n=device_name: self._set_rudder_device(n)
+            )
+        if not self.joystick_names:
+            device_menu.add_command(label="No devices", state=tk.DISABLED)
+        self.menu.add_cascade(label="Set Rudder Device", menu=device_menu)
+
+        if self.rudder_joystick:
+            rudder_axis_menu = tk.Menu(self.menu, tearoff=0, bg="#333333", fg="white", activebackground="#555555", activeforeground="white")
+            axis_count = self.rudder_joystick.get_numaxes()
+            for axis_id in range(axis_count):
+                marker = " *" if axis_id == self.rudder_axis_id else ""
+                rudder_axis_menu.add_command(
+                    label=f"Axis {axis_id}{marker}",
+                    command=lambda i=axis_id: self._set_rudder_axis(i)
+                )
+            self.menu.add_cascade(label="Set Rudder Axis", menu=rudder_axis_menu)
+        else:
+            self.menu.add_command(label="Set Rudder Axis (select rudder device first)", state=tk.DISABLED)
+        self.menu.add_separator()
+        self.menu.add_command(
+            label=f"{'Hide' if self.show_values else 'Show'} Values",
+            command=self._toggle_show_values
+        )
         self.menu.tk_popup(event.x_root, event.y_root)
 
     def _handle_joystick_selection(self, name):
@@ -367,9 +505,42 @@ class JoystickApp:
 
         # Reset last known values to force an update
         self.last_joystick_pos = (None, None)
+        self.last_rudder_value = "unset"
         self.last_trim_values = {}
 
         print_info(f"Joystick '{name}' saved and reloaded.")
+
+    def _set_rudder_device(self, device_name):
+        self.rudder_joystick_name = device_name
+        self.rudder_joystick = self._get_joystick_by_name(device_name)
+        self.rudder_axis_id = None
+        self._save_settings(rudder_joystick_name=device_name, rudder_axis_id=None)
+        self.last_rudder_value = "unset"
+        print_info(f"Rudder device set to '{device_name}'.")
+
+    def _set_rudder_axis(self, axis_id):
+        if not self.rudder_joystick:
+            print_warning("Cannot set rudder axis without a selected rudder device.")
+            return
+        self.rudder_axis_id = axis_id
+        self._save_settings(rudder_axis_id=axis_id)
+        self.last_rudder_value = "unset"
+        print_info(f"Rudder axis set to {axis_id} on '{self.rudder_joystick_name}'.")
+
+    def _toggle_show_values(self):
+        self.show_values = not self.show_values
+        self._save_settings(show_values=self.show_values)
+        if self.show_values:
+            if self.selected_joystick is None and not self.test_mode:
+                self.coord_label.config(text="No Joy!\nRight-click\nto select")
+            self.coord_label.place(relx=1.0, rely=1.0, x=-2, y=-2, anchor='se')
+        else:
+            self.coord_label.place_forget()
+        # Force next update tick to redraw even if input values are unchanged.
+        self.last_joystick_pos = (None, None)
+        self.last_trim_values = {}
+        self.last_rudder_value = "unset"
+        print_info(f"Show values: {self.show_values}")
 
 if __name__ == "__main__":
     # Get the directory one level up from the current script's directory

@@ -16,11 +16,12 @@ from typing import Callable
 from config import (
     DARK_BG_COLOR, BUTTON_BG_COLOR, BUTTON_FG_COLOR,
     BUTTON_ACTIVE_BG_COLOR, BUTTON_ACTIVE_FG_COLOR,
-    SCRIPT_LOAD_DELAY_MS, project_root, scripts_path, read_update_config
+    SCRIPT_LOAD_DELAY_MS, data_path, project_root, scripts_path, read_update_config
 )
 from tab_manager import TabManager
 from process_tracker import ProcessTracker
 from tabs import ScriptTab, PerfTab, CommandLineTab
+from ui.script_picker import ScriptPickerDialog
 from update_checker import (
     read_app_version, _parse_version, _format_version_numbers,
     is_newer_version, load_update_cache, save_update_cache, fetch_latest_release
@@ -60,6 +61,12 @@ class ScriptLauncherApp:
         self.create_toolbar()
 
         self.tab_manager: TabManager = TabManager(root, self.root.after)
+        self.script_picker: ScriptPickerDialog = ScriptPickerDialog(
+            root=self.root,
+            scripts_dir=scripts_path,
+            project_root=project_root,
+            data_dir=data_path,
+        )
 
         # Bind Events
         self.bind_events()
@@ -129,6 +136,7 @@ class ScriptLauncherApp:
                 display_current = _format_version_numbers(_parse_version(current_version)) or current_version
                 print(f"[INFO] VERSION CHECK: MSFS-PyScriptManager Up to date ({display_current})")
         except Exception as e:
+            logger.exception("Update check failed with an exception.")
             print(f"[WARNING] Update check failed: {e}")
 
     def _show_update_prompt(self, current_version: str, latest_version: str, latest_url: str) -> None:
@@ -164,6 +172,7 @@ class ScriptLauncherApp:
             photo = tk.PhotoImage(file="Data/letter-m-svgrepo-com.png")
             self.root.wm_iconphoto(False, photo)
         except tk.TclError as e:
+            logger.exception("Failed to load app icon.")
             print(f"Error loading icon: {e}")
 
     def create_toolbar(self) -> None:
@@ -193,13 +202,11 @@ class ScriptLauncherApp:
 
     def select_and_run_script(self) -> None:
         """Opens file dialog for script selection and then runs it"""
-        file_path: str = filedialog.askopenfilename( title="Select Python Script",
-                                                filetypes=[("Python Files", "*.py")],
-                                                initialdir=str(scripts_path) )
-        if not file_path:
+        script_path: Path | None = self.script_picker.pick_script()
+        if script_path is None:
             print("[INFO] No file selected. Operation cancelled.")
             return
-        self.load_script(Path(file_path))
+        self.load_script(script_path)
 
     def load_script(self, script_path: Path, script_args: list[str] | None = None) -> None:
         """Load and run a script in a new ScriptTab."""
@@ -376,6 +383,7 @@ class ScriptLauncherApp:
             try:
                 autoplay_path.write_text("", encoding="utf-8")
             except Exception as e:
+                logger.exception("Autoplay setup failed while creating %s", autoplay_path)
                 print(f"[WARNING] Autoplay: Failed to create empty group file: {e}")
 
     def save_script_group(self) -> None:
