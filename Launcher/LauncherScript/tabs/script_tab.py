@@ -257,11 +257,13 @@ class ScriptTab(Tab):
         title: str,
         script_path: Path,
         process_tracker: ProcessTracker,
+        script_args: list[str] | None = None,
         open_tab: Callable[[Tab], None] | None = None
     ) -> None:
         super().__init__(title)
         self.script_path: Path = script_path
         self.script_name: str = script_path.name
+        self.script_args: list[str] = script_args or []
         self.process_tracker: ProcessTracker = process_tracker
         self.open_tab: Callable[[Tab], None] | None = open_tab
 
@@ -467,8 +469,12 @@ class ScriptTab(Tab):
 
     def run_script(self) -> None:
         """Run the script using ProcessTracker."""
-        # Build the command
-        command: list[str] = [str(pythonw_path.resolve()), "-u", str(self.script_path.resolve())]
+        # Build the command with script arguments
+        command: list[str] = [
+            str(pythonw_path.resolve()),
+            "-u",
+            str(self.script_path.resolve())
+        ] + self.script_args
 
         # Start the process with the updated environment
         self.process_tracker.start_process(

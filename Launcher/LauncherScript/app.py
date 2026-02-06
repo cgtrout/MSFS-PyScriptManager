@@ -188,12 +188,13 @@ class ScriptLauncherApp:
             return
         self.load_script(Path(file_path))
 
-    def load_script(self, script_path: Path) -> None:
+    def load_script(self, script_path: Path, script_args: list[str] | None = None) -> None:
         """Load and run a script in a new ScriptTab."""
         script_tab: ScriptTab = ScriptTab(
             title=script_path.name,
             script_path=script_path,
             process_tracker=self.process_tracker,
+            script_args=script_args,
             open_tab=self.tab_manager.add_tab
         )
         self.tab_manager.add_tab(script_tab)
@@ -252,11 +253,12 @@ class ScriptLauncherApp:
         if not script_path.exists():
             return False, f"Script '{script_path}' not found."
 
-        # Launch the script in a new ScriptTab
+        # Launch the script in a new ScriptTab with arguments
         script_tab: ScriptTab = ScriptTab(
             title=script_path.name,
             script_path=script_path,
             process_tracker=self.process_tracker,
+            script_args=extra_args,
             open_tab=self.tab_manager.add_tab
         )
         self.tab_manager.add_tab(script_tab)
@@ -329,7 +331,7 @@ class ScriptLauncherApp:
         with open(file_path, "w", encoding="utf-8") as f:
             f.writelines(f"{path}\n" for path in script_paths)
 
-    def load_script_from_path(self, script_path_str: str | Path) -> None:
+    def load_script_from_path(self, script_path_str: str | Path, script_args: list[str] | None = None) -> None:
         """Load and run a script from a specified file path."""
         script_path: Path = Path(script_path_str)
 
@@ -342,6 +344,7 @@ class ScriptLauncherApp:
             title=script_path.name,
             script_path=script_path,
             process_tracker=self.process_tracker,
+            script_args=script_args,
             open_tab=self.tab_manager.add_tab
         )
         self.tab_manager.add_tab(script_tab)
