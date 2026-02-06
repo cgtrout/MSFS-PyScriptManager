@@ -19,6 +19,7 @@ from config import (
     SCRIPT_LOAD_DELAY_MS, FAST_CRASH_THRESHOLD_S,
     MAX_RESTART_ATTEMPTS, RESTART_INITIAL_DELAY_MS, logs_path,
 )
+from _lib.pythonpath import prepend_pythonpath
 
 if TYPE_CHECKING:
     from tabs.script_tab import ScriptTab
@@ -67,10 +68,10 @@ class ProcessTracker:
     ) -> None:
         """Start a subprocess and manage its I/O."""
 
-        # Add Lib path
-        lib_path: str = str((Path(__file__).resolve().parents[1] / "Lib").resolve())
-        custom_env: dict[str, str] = os.environ.copy()  # Create a local environment copy
-        custom_env["PYTHONPATH"] = f"{lib_path};{custom_env.get('PYTHONPATH', '')}"
+        # Add Lib path to the child environment only.
+        lib_path: Path = Path(__file__).resolve().parents[1] / "Lib"
+        custom_env: dict[str, str] = os.environ.copy()
+        prepend_pythonpath(custom_env, lib_path)
 
         try:
             process: subprocess.Popen[str] = subprocess.Popen(
