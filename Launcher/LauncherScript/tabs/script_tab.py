@@ -15,7 +15,7 @@ from _lib import AnsiParser
 from _lib.parse_ansi import AnsiStyle
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
-from Lib.settings_changer import JsonSaveEditor
+from _lib.settings_changer import JsonSaveEditor
 
 from .base import Tab
 from config import (
