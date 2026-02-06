@@ -2,11 +2,14 @@
 
 ## Launcher and Script Development Notes
 - The launcher EXE is provided for convenience, but you can also launch the script manually.
-- You can launch `Launcher/Launcher.py` from `WinPython/WinPython Command Prompt.exe` if you prefer not to launch from the EXE.
+- You can launch `Launcher/Launcher.py` from `WinPython/WinPython Command Prompt.exe` or even system python if you prefer not to launch from the EXE.
 - The EXE can be built by launching `Build.bat` in `Launcher/LauncherApp` (the TCC C compiler is included: https://bellard.org/tcc/).
 - You can create your own scripts and run them as well.
 - If you need to add libraries, use `WinPython/WinPython Command Prompt.exe` and run `pip` from there to install into the WinPython directory.
 - Recommended editor: [Visual Studio Code](https://code.visualstudio.com/download). The built-in `Edit` button opens the selected script in VS Code if it is installed.
+
+## VS Code Integration
+- VS Code `F5` debug runs Launcher.py with the interpreter currently selected in the Python extension (if you want to debug with WinPython, use Ctrl+Shift+P Python:Select Interpreter).
 
 ## WinPython Notes
 - Uses WinPython to allow standalone installation: https://github.com/winpython
