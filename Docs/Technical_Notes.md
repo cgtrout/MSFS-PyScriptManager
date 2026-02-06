@@ -24,10 +24,3 @@
   - `[BYO]`
   - `AutoInstallDeps=true|false`
 
-## Update Checker Config
-- The launcher checks GitHub releases on startup by default.
-- Update checker settings are read from `Launcher/launcher.ini` under `[Update]`:
-  - `RepoOwner`
-  - `RepoName`
-  - `CheckOnStartup=true|false`
-  - `CheckIntervalHours=<hours>`
