@@ -1,52 +1,35 @@
 """
-Pipe Reader Stress Test — run through the Launcher.
+Pipe stress test — exercises edge cases in subprocess I/O handling.
 
-Exercises the failure modes fixed in process_tracker._read_output:
-    EOF loop        — reader threads spun forever after child exit
-    queue.Full      — reader thread died silently under high output
-    UTF-8 splits    — UnicodeDecodeError when multibyte char crossed a
-                      4096-byte os.read() boundary
-    stop_event      — stdin_writer thread leaked on normal exit
+Tests: UTF-8 multibyte splits at read boundaries, partial line flushing,
+stdout burst flooding, and stderr interleaving.
 
-What to check in the Launcher tab:
-    - Each [PHASE] header appears in order
-    - The [DONE] line at the end appears
-    - Tab footer shows "Script '...' completed successfully"
-    - If queue overflow triggered, the launcher's own console (not the
-      script tab) will show a [WARNING] Output queue full line — that is
-      the fix working, not a failure.
-
-Standalone:
-    python Tests/test_pipe_stress.py
+Can also be run standalone:  python Tests/test_pipe_stress.py
 """
 
+import subprocess
 import sys
-import time
+from pathlib import Path
+
+SCRIPT = Path(__file__).resolve()
 
 # =============================================================================
 # Configuration
 # =============================================================================
 
-# Each unit is 28 bytes of UTF-8 multibyte chars.  With the newline appended
-# the repeating block is exactly 29 bytes.  29 is prime and 4096 = 2^12, so
-# gcd(29, 4096) = 1.  That means across a large enough contiguous write every
-# possible byte offset within the unit will appear at a 4096-byte read
-# boundary, *guaranteeing* that multibyte chars are split mid-sequence — not
-# a probabilistic flake, a deterministic trigger.
-#
-# Byte breakdown:  🎉(4) 日(3) 本(3) 語(3) 中(3) 文(3) 한(3) 국(3) 어(3) = 28
-MULTIBYTE_UNIT  = "\U0001f389\u65e5\u672c\u8a9e\u4e2d\u6587\ud55c\uad6d\uc5b4"
-MULTIBYTE_LINES = 3000          # 3000 * 29 = 87 000 bytes -> ~21 reads
-
-BURST_COUNT     = 30_000        # stdout flood; queue maxsize = 1000
+MULTIBYTE_UNIT = "\U0001f389\u65e5\u672c\u8a9e\u4e2d\u6587\ud55c\uad6d\uc5b4"
+MULTIBYTE_LINES = 3000
+BURST_COUNT = 30_000
 
 # =============================================================================
-# Phases
+# Phases (used by standalone mode)
 # =============================================================================
+
+import time
+
 
 def phase_partial_line() -> str:
-    """Write a prompt with no trailing newline, pause, then complete it.
-    Exercises the partial-line flush and the last_flushed_partial guard."""
+    """Partial-line flush and completion."""
     print("[PHASE 1] Partial line", flush=True)
     sys.stdout.write("  waiting")
     sys.stdout.flush()
@@ -57,14 +40,7 @@ def phase_partial_line() -> str:
 
 
 def phase_multibyte() -> str:
-    """Single large write forcing multibyte splits at every read boundary.
-
-    Written to sys.stdout.buffer so the OS sees one contiguous block.  The
-    reader's os.read(fd, 4096) will slice it into chunks that land inside
-    multibyte sequences.  An incremental decoder handles this silently; a
-    per-chunk .decode("utf-8") would raise UnicodeDecodeError on the reader
-    thread.
-    """
+    """Large write forcing multibyte splits at every read boundary."""
     print("[PHASE 2] Multibyte boundary stress", flush=True)
     block = (MULTIBYTE_UNIT + "\n") * MULTIBYTE_LINES
     raw = block.encode("utf-8")
@@ -75,23 +51,16 @@ def phase_multibyte() -> str:
 
 
 def phase_burst() -> str:
-    """Flood stdout as fast as possible.
-
-    The output queue is maxsize=1000.  If the dispatcher falls behind
-    (slow UI, busy machine) put_nowait would overflow.  The fix drops and
-    warns once instead of crashing the reader thread.  Look for the warning
-    in the launcher's own console, not in this tab.
-    """
+    """Flood stdout to stress queue handling."""
     print(f"[PHASE 3] Burst {BURST_COUNT} lines", flush=True)
     for i in range(BURST_COUNT):
         print(f"[BURST] {i}")
-    # This line arrives after the flood.  If you see it, the reader survived.
     print(f"  last burst index: {BURST_COUNT - 1}", flush=True)
     return f"{BURST_COUNT} lines"
 
 
 def phase_stderr_interleave() -> str:
-    """Hammer both stdout and stderr reader threads at the same time."""
+    """Hammer both stdout and stderr simultaneously."""
     print("[PHASE 4] Stderr interleave (500 pairs)", flush=True)
     for i in range(500):
         print(f"  [out] {i}", flush=True)
@@ -100,7 +69,7 @@ def phase_stderr_interleave() -> str:
 
 
 # =============================================================================
-# Main
+# Standalone runner
 # =============================================================================
 
 def main() -> None:
@@ -111,7 +80,7 @@ def main() -> None:
         ("stderr interleave", phase_stderr_interleave),
     ]
 
-    results: list[tuple[str, str, str]] = []   # (name, status, detail)
+    results: list[tuple[str, str, str]] = []
     for name, fn in phases:
         try:
             detail = fn()
@@ -119,10 +88,6 @@ def main() -> None:
         except Exception as e:
             results.append((name, "FAIL", str(e)))
 
-    # ---------------------------------------------------------------------
-    # Results table — this is also the EOF canary.  If it appears, the
-    # reader flushed its buffer and the None sentinel reached the dispatcher.
-    # ---------------------------------------------------------------------
     print("\n" + "=" * 52, flush=True)
     print(" RESULTS", flush=True)
     print("=" * 52, flush=True)
@@ -133,9 +98,51 @@ def main() -> None:
     all_passed = all(s == "PASS" for _, s, _ in results)
     if all_passed:
         print("  All phases passed.", flush=True)
-        print("  Tab footer 'completed successfully' = EOF + stop_event OK.", flush=True)
     else:
         print("  SOME PHASES FAILED — check output above.", flush=True)
+        sys.exit(1)
+
+
+# =============================================================================
+# Pytest tests — run this script as a subprocess and verify output
+# =============================================================================
+
+import pytest
+
+
+@pytest.fixture(scope="module")
+def stress_result():
+    """Run the stress test once and share the result across all tests."""
+    return subprocess.run(
+        [sys.executable, "-u", str(SCRIPT)],
+        capture_output=True, text=True, encoding="utf-8", timeout=60,
+        stdin=subprocess.DEVNULL
+    )
+
+
+def test_all_phases_pass(stress_result):
+    """All four stress phases should complete with PASS status."""
+    assert stress_result.returncode == 0, f"Script failed (code {stress_result.returncode}):\n{stress_result.stderr}"
+    assert "[PASS] partial line" in stress_result.stdout
+    assert "[PASS] multibyte" in stress_result.stdout
+    assert "[PASS] burst" in stress_result.stdout
+    assert "[PASS] stderr interleave" in stress_result.stdout
+
+
+def test_results_table_appears(stress_result):
+    """The results table (EOF canary) should appear, proving the script ran to completion."""
+    assert "RESULTS" in stress_result.stdout
+    assert "All phases passed." in stress_result.stdout
+
+
+def test_multibyte_output_intact(stress_result):
+    """Multibyte characters should survive the subprocess pipe without corruption."""
+    assert MULTIBYTE_UNIT in stress_result.stdout, "Multibyte characters corrupted in pipe"
+
+
+def test_burst_completes(stress_result):
+    """The burst phase should emit all lines without crashing."""
+    assert f"last burst index: {BURST_COUNT - 1}" in stress_result.stdout
 
 
 if __name__ == "__main__":
