@@ -184,6 +184,8 @@ else:
     python_path = project_root / python_dir_str / "python.exe"
     pythonw_path = project_root / python_dir_str / "pythonw.exe"
 
+print(f"Python Path: {python_path}")
+
 # Handle VS Code path (can be None for system Python if not found)
 if vscode_path_str:
     vscode_path_obj = Path(vscode_path_str)
