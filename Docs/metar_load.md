@@ -1,12 +1,11 @@
 ﻿# METAR Loader (`metar_load.py`)
 
-`metar_load.py` fetches METAR data for an ICAO airport and can print selected output to `VirtualTextPrinter`.
 
 ## What It Does
 - Pulls METAR data from online sources (tries multiple providers).
 - Matches best report to simulator time (or real-world UTC, based on settings).
 - Shows results in a selectable list.
-- Prints selected METAR text to `VirtualTextPrinter`.
+- Prints selected METAR text to the configured virtual printer (`printer_name` in `Settings/settings.json`).
 
 ## How to Run
 - Start `MSFS-PyScriptManager.exe`.
@@ -23,4 +22,4 @@ You can use the launcher's **Open Settings** button for this script.
 
 ## Notes
 - If simulator connection is unavailable, the script falls back to real-world time.
-- Printing requires `virtual_pos_printer.py` to be running with `VirtualTextPrinter` configured.
+- Printing requires `virtual_pos_printer.py` to be running with the same `printer_name` configured in `Settings/settings.json`.

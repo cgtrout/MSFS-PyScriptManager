@@ -24,11 +24,28 @@ except ImportError:
     sys.exit(1)
 
 SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "..", "Settings", "metar_load.json")
+VIRTUAL_PRINTER_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "..", "Settings", "settings.json")
+DEFAULT_VIRTUAL_PRINTER_NAME = "VirtualTextPrinter"
 
-printer_name = "VirtualTextPrinter"  # Replace with your specific printer name
 conn = SimConnectConnectionHelper(retry_delay=30)
 SIMCONNECT_RETRY_INTERVAL = 30
 last_simconnect_attempt = 0.0
+
+
+def load_virtual_printer_name():
+    """Load virtual printer name from shared settings."""
+    if not os.path.exists(VIRTUAL_PRINTER_SETTINGS_FILE):
+        return DEFAULT_VIRTUAL_PRINTER_NAME
+
+    try:
+        with open(VIRTUAL_PRINTER_SETTINGS_FILE, "r", encoding="utf-8") as f:
+            settings = json.load(f)
+        return settings.get("printer_name", DEFAULT_VIRTUAL_PRINTER_NAME)
+    except (json.JSONDecodeError, OSError):
+        return DEFAULT_VIRTUAL_PRINTER_NAME
+
+
+printer_name = load_virtual_printer_name()
 
 class MetarSource:
     """Base class for a METAR source."""
@@ -189,7 +206,7 @@ class MetarFetcher:
 
         raise Exception(f"Failed to fetch METAR data for {airport_code}.")
 
-def print_metar_data(metar_data, printer_name="VirtualTextPrinter"):
+def print_metar_data(metar_data, printer_name=None):
     """Print the METAR data using the Windows printing API."""
     try:
         # Use the specified printer or fallback to the default
@@ -438,11 +455,12 @@ def find_best_metar(metar_dict):
 
 def main():
     """Main function to initialize the GUI with reference-accurate styling."""
-    global root, entry
+    global root, entry, printer_name
 
     initialize_simconnect()
     root = tk.Tk()
     root.withdraw()
+    printer_name = load_virtual_printer_name()
 
     settings = load_settings()
     use_simulator_time = settings.get("use_simulator_time", True)

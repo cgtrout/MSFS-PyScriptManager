@@ -31,8 +31,9 @@ except ImportError:
 # Constants
 DEFAULT_FONT = ("Consolas", 12)
 PRINTER_SERVER_ADDRESS = '127.0.0.1'
-PRINTER_SERVER_PORT = 9102
+DEFAULT_PRINTER_SERVER_PORT = 9102
 HTTP_SERVER_PORT = 40001
+DEFAULT_PRINTER_NAME = "VirtualTextPrinter"
 SETTINGS_DIR = os.path.join(os.path.dirname(__file__), '../Settings')
 SETTINGS_FILE = os.path.join(SETTINGS_DIR, 'settings.json')
 
@@ -63,9 +64,11 @@ class PlaySound:
 class PrinterServer:
     """Handles the virtual printer TCP server"""
 
-    def __init__(self, printer_queue, http_queue):
+    def __init__(self, printer_queue, http_queue, host, port):
         self.printer_queue = printer_queue
         self.http_queue = http_queue
+        self.host = host
+        self.port = port
         self.socket = self.initialize_server()
         self.http_request_pattern = re.compile(
             r'^\s*(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|CONNECT|TRACE)\s+'
@@ -77,9 +80,9 @@ class PrinterServer:
         """Initialize the TCP printer server"""
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_socket.bind((PRINTER_SERVER_ADDRESS, PRINTER_SERVER_PORT))
+        server_socket.bind((self.host, self.port))
         server_socket.listen(5)
-        print(f"Printer server listening on {PRINTER_SERVER_ADDRESS}:{PRINTER_SERVER_PORT}")
+        print(f"Printer server listening on {self.host}:{self.port}")
         return server_socket
 
     def run(self):
@@ -202,12 +205,23 @@ class VirtualPosPrinter:
     def __init__(self):
         # Initialize Settings
         self.settings = self.load_settings()
+        self.printer_name = self.settings.get("printer_name", DEFAULT_PRINTER_NAME)
+        self.printer_port = self.parse_printer_port(self.settings.get("printer_port", DEFAULT_PRINTER_SERVER_PORT))
         self.spawn_position = tuple(self.settings.get("spawn_position", (100, 100)))
+        self.popup_max_height_ratio = self.parse_popup_max_height_ratio(
+            self.settings.get("popup_max_height_ratio", 0.8)
+        )
+        self.popup_max_height_px = self.parse_popup_max_height_px(
+            self.settings.get("popup_max_height_px", 0)
+        )
+        self.popup_scroll_lines_per_tick = self.parse_popup_scroll_lines_per_tick(
+            self.settings.get("popup_scroll_lines_per_tick", 6)
+        )
         self.play_sound_path = os.path.abspath(os.path.join(SETTINGS_DIR, self.settings.get("play_sound", "")))
         self.play_volume = self.settings.get("play_volume", 0.25)
 
         # Ensure port is available
-        self.ensure_port_available(PRINTER_SERVER_PORT)
+        self.ensure_port_available(self.printer_port)
 
         # Setup printer
         self.setup_printer()
@@ -228,7 +242,7 @@ class VirtualPosPrinter:
         self.sound_player = PlaySound(self.settings["play_sound"], self.settings["play_volume"])
 
         # Start Servers
-        self.server = PrinterServer(self.printer_queue, self.http_queue)
+        self.server = PrinterServer(self.printer_queue, self.http_queue, PRINTER_SERVER_ADDRESS, self.printer_port)
         self.server.start()
         self.http_server = HttpServer(self.http_queue, self.sound_player)
         self.http_server.start()
@@ -243,23 +257,129 @@ class VirtualPosPrinter:
         """Load settings from file or create a new one if missing"""
         os.makedirs(SETTINGS_DIR, exist_ok=True)
 
-        if os.path.exists(SETTINGS_FILE):
-            with open(SETTINGS_FILE, 'r', encoding="utf-8") as f:
-                return json.load(f)
-
-        # Default settings
         default_settings = {
+            "printer_name": DEFAULT_PRINTER_NAME,
+            "printer_port": DEFAULT_PRINTER_SERVER_PORT,
             "spawn_position": (100, 100),
+            "popup_max_height_ratio": 0.8,
+            "popup_max_height_px": 0,
+            "popup_scroll_lines_per_tick": 6,
             "enable_popups": True,
             "play_sound": "../Data/receipt-printer-01-43872.mp3",
             "play_volume": 0.13
         }
+
+        if os.path.exists(SETTINGS_FILE):
+            with open(SETTINGS_FILE, 'r', encoding="utf-8") as f:
+                existing_settings = json.load(f)
+
+            # Backfill missing keys without overwriting user values.
+            merged_settings = {**default_settings, **existing_settings}
+            if merged_settings != existing_settings:
+                with open(SETTINGS_FILE, 'w', encoding="utf-8") as f:
+                    json.dump(merged_settings, f, indent=4)
+            return merged_settings
 
         # Write default settings to file
         with open(SETTINGS_FILE, 'w', encoding="utf-8") as f:
             json.dump(default_settings, f, indent=4)
 
         return default_settings
+
+    @staticmethod
+    def parse_printer_port(value):
+        """Parse and validate printer port from settings."""
+        try:
+            port = int(value)
+        except (TypeError, ValueError):
+            print_error(
+                f"Invalid 'printer_port' value '{value}' in settings. "
+                f"Using default {DEFAULT_PRINTER_SERVER_PORT}."
+            )
+            return DEFAULT_PRINTER_SERVER_PORT
+
+        if 1 <= port <= 65535:
+            return port
+
+        print_error(
+            f"Out-of-range 'printer_port' value '{value}' in settings. "
+            f"Using default {DEFAULT_PRINTER_SERVER_PORT}."
+        )
+        return DEFAULT_PRINTER_SERVER_PORT
+
+    @staticmethod
+    def parse_popup_max_height_ratio(value):
+        """Parse popup max-height ratio from settings."""
+        try:
+            ratio = float(value)
+        except (TypeError, ValueError):
+            print_error(
+                f"Invalid 'popup_max_height_ratio' value '{value}' in settings. "
+                "Using default 0.8."
+            )
+            return 0.8
+
+        if 0.2 <= ratio <= 1.0:
+            return ratio
+
+        print_error(
+            f"Out-of-range 'popup_max_height_ratio' value '{value}' in settings. "
+            "Using default 0.8."
+        )
+        return 0.8
+
+    @staticmethod
+    def parse_popup_max_height_px(value):
+        """Parse popup max-height override in pixels from settings."""
+        try:
+            pixels = int(value)
+        except (TypeError, ValueError):
+            print_error(
+                f"Invalid 'popup_max_height_px' value '{value}' in settings. "
+                "Using default 0 (disabled)."
+            )
+            return 0
+
+        if pixels >= 0:
+            return pixels
+
+        print_error(
+            f"Out-of-range 'popup_max_height_px' value '{value}' in settings. "
+            "Using default 0 (disabled)."
+        )
+        return 0
+
+    @staticmethod
+    def parse_popup_scroll_lines_per_tick(value):
+        """Parse mousewheel scroll speed for scrollable popups."""
+        try:
+            lines = int(value)
+        except (TypeError, ValueError):
+            print_error(
+                f"Invalid 'popup_scroll_lines_per_tick' value '{value}' in settings. "
+                "Using default 6."
+            )
+            return 6
+
+        if 1 <= lines <= 50:
+            return lines
+
+        print_error(
+            f"Out-of-range 'popup_scroll_lines_per_tick' value '{value}' in settings. "
+            "Using default 6."
+        )
+        return 6
+
+    def get_popup_max_height(self):
+        """Get popup max height in pixels, clamped to the visible screen area."""
+        screen_height = max(200, int(self.root.winfo_screenheight()))
+        safe_screen_cap = max(120, screen_height - 80)
+        configured_height = (
+            self.popup_max_height_px
+            if self.popup_max_height_px > 0
+            else int(screen_height * self.popup_max_height_ratio)
+        )
+        return max(120, min(configured_height, safe_screen_cap))
 
     def capture_mouse_position(self):
         """Set spawn position based on current mouse position"""
@@ -296,9 +416,52 @@ class VirtualPosPrinter:
         window_font = font.Font(family=self.default_font.cget("family"),
                                 size=self.default_font.cget("size"))
 
-        label = tk.Label(window, text=data, font=window_font,
-                         bg='white', padx=10, pady=10, anchor='w', justify='left')
-        label.pack()
+        line_count = max(1, data.count("\n") + 1)
+        line_height = max(1, int(window_font.metrics("linespace")))
+        estimated_content_height = line_count * line_height + 20
+        max_height = self.get_popup_max_height()
+        needs_scroll = estimated_content_height > max_height
+
+        scroll_text_widget = None
+        close_widgets = [window]
+        drag_widgets = [window]
+        wheel_widgets = [window]
+
+        if needs_scroll:
+            content_frame = tk.Frame(window, bg="white")
+            content_frame.pack(fill="both", expand=True)
+
+            scrollbar = tk.Scrollbar(content_frame, orient="vertical")
+            scrollbar.pack(side="right", fill="y")
+
+            visible_lines = max(4, int((max_height - 20) / line_height))
+            scroll_text_widget = tk.Text(
+                content_frame,
+                font=window_font,
+                bg="white",
+                padx=10,
+                pady=10,
+                wrap="word",
+                yscrollcommand=scrollbar.set,
+                height=visible_lines,
+                relief="flat",
+                highlightthickness=0,
+                bd=0
+            )
+            scroll_text_widget.insert("1.0", data)
+            scroll_text_widget.configure(state="disabled")
+            scroll_text_widget.pack(side="left", fill="both", expand=True)
+            scrollbar.configure(command=scroll_text_widget.yview)
+            close_widgets.extend([content_frame, scrollbar, scroll_text_widget])
+            drag_widgets.extend([content_frame, scroll_text_widget])
+            wheel_widgets.extend([content_frame, scroll_text_widget])
+        else:
+            label = tk.Label(window, text=data, font=window_font,
+                             bg='white', padx=10, pady=10, anchor='w', justify='left')
+            label.pack()
+            close_widgets.append(label)
+            drag_widgets.append(label)
+            wheel_widgets.append(label)
 
         # Cascade windows if needed
         if self.active_windows:
@@ -309,7 +472,13 @@ class VirtualPosPrinter:
         else:
             new_x, new_y = self.spawn_position
 
-        window.geometry(f"+{new_x}+{new_y}")
+        window.update_idletasks()
+        if needs_scroll:
+            req_width = window.winfo_reqwidth()
+            req_height = min(window.winfo_reqheight(), max_height)
+            window.geometry(f"{req_width}x{req_height}+{new_x}+{new_y}")
+        else:
+            window.geometry(f"+{new_x}+{new_y}")
         self.active_windows.append((new_x, new_y))
 
         def on_close():
@@ -319,22 +488,38 @@ class VirtualPosPrinter:
                 self.active_windows.remove((new_x, new_y))
             window.destroy()
 
-        window.bind("<ButtonRelease-3>", lambda event: on_close())
+        for widget in close_widgets:
+            widget.bind("<ButtonRelease-3>", lambda event: on_close())
 
         # Enable window dragging
-        mouse_x, mouse_y = 0, 0
+        start_mouse_x, start_mouse_y = 0, 0
+        start_window_x, start_window_y = 0, 0
+        drag_active = False
 
         def on_mouse_press(event):
-            nonlocal mouse_x, mouse_y
-            mouse_x, mouse_y = event.x, event.y
+            nonlocal start_mouse_x, start_mouse_y, start_window_x, start_window_y, drag_active
+            if isinstance(event.widget, tk.Scrollbar):
+                drag_active = False
+                return
+            drag_active = True
+            start_mouse_x, start_mouse_y = event.x_root, event.y_root
+            start_window_x, start_window_y = window.winfo_x(), window.winfo_y()
 
         def on_mouse_drag(event):
-            x = window.winfo_x() - mouse_x + event.x
-            y = window.winfo_y() - mouse_y + event.y
-            window.geometry(f"+{x}+{y}")
+            if not drag_active or isinstance(event.widget, tk.Scrollbar):
+                return
+            new_x = start_window_x + (event.x_root - start_mouse_x)
+            new_y = start_window_y + (event.y_root - start_mouse_y)
+            window.geometry(f"+{new_x}+{new_y}")
 
-        window.bind("<Button-1>", on_mouse_press)
-        window.bind("<B1-Motion>", on_mouse_drag)
+        for widget in drag_widgets:
+            widget.bind("<Button-1>", on_mouse_press)
+            widget.bind("<B1-Motion>", on_mouse_drag)
+
+        # Prevent text-selection drag behavior from fighting popup dragging.
+        if scroll_text_widget is not None:
+            scroll_text_widget.bind("<Button-1>", lambda event: (on_mouse_press(event), "break")[1])
+            scroll_text_widget.bind("<B1-Motion>", lambda event: (on_mouse_drag(event), "break")[1])
 
         # Keep the popup always on top
         window.attributes('-topmost', True)
@@ -342,26 +527,50 @@ class VirtualPosPrinter:
         window.focus_force()
 
         # Allow font resizing via Ctrl + Mouse Wheel
-        def scale_font(event):
+        def handle_mouse_wheel(event):
             if event.state & 0x0004:  # Detect if Control key is pressed
                 window.focus_force()
-                current_size = window_font.cget("size")
+                current_size = int(window_font.cget("size"))
                 new_size = current_size + 2 if event.delta > 0 else max(6, current_size - 2)
                 window_font.config(size=new_size)
 
-        window.bind("<Enter>", lambda event: window.bind("<MouseWheel>", scale_font))
-        window.bind("<Leave>", lambda event: window.unbind("<MouseWheel>"))
+                if scroll_text_widget is not None:
+                    new_line_height = max(1, int(window_font.metrics("linespace")))
+                    visible_lines = max(4, int((max_height - 20) / new_line_height))
+                    scroll_text_widget.configure(height=visible_lines)
+                    window.update_idletasks()
+                    req_width = window.winfo_reqwidth()
+                    req_height = min(window.winfo_reqheight(), max_height)
+                    window.geometry(f"{req_width}x{req_height}+{window.winfo_x()}+{window.winfo_y()}")
+                return "break"
+
+            if scroll_text_widget is not None:
+                if not event.delta:
+                    return "break"
+
+                # event.delta can be smaller than 120 on some high-resolution wheels;
+                # always scroll at least one step in the intended direction.
+                direction = -1 if event.delta > 0 else 1
+                wheel_steps = max(1, abs(int(event.delta)) // 120)
+                scroll_units = direction * wheel_steps * self.popup_scroll_lines_per_tick
+                scroll_text_widget.yview_scroll(scroll_units, "units")
+                return "break"
+            return None
+
+        for widget in wheel_widgets:
+            widget.bind("<MouseWheel>", handle_mouse_wheel)
 
     def setup_printer(self):
         """Setup printer in Windows"""
-        printer_name = "VirtualTextPrinter"
+        printer_name = self.printer_name
+        printer_port = self.printer_port
         driver_name = "Generic / Text Only"
 
         print_color("---CHECKING PRINTER STATUS--------------------------------------", color="yellow", bold=False)
 
         powershell_script = f"""
         try {{
-            $portName = "{PRINTER_SERVER_ADDRESS}_{PRINTER_SERVER_PORT}"
+            $portName = "{PRINTER_SERVER_ADDRESS}_{printer_port}"
             $printerName = "{printer_name}"
             $driverName = "{driver_name}"
 
@@ -379,7 +588,7 @@ class VirtualPosPrinter:
             Write-Host "Checking printer port..."
             if (!(Get-PrinterPort -Name $portName -ErrorAction SilentlyContinue)) {{
                 Write-Host "Printer port is missing. Creating port..."
-                Add-PrinterPort -Name $portName -PrinterHostAddress "{PRINTER_SERVER_ADDRESS}" -PortNumber {PRINTER_SERVER_PORT}
+                Add-PrinterPort -Name $portName -PrinterHostAddress "{PRINTER_SERVER_ADDRESS}" -PortNumber {printer_port}
                 Write-Host "Printer port created successfully."
             }} else {{
                 Write-Host "Printer port is already configured."
@@ -393,6 +602,16 @@ class VirtualPosPrinter:
                 Write-Host "Printer installed successfully."
             }} else {{
                 Write-Host "Printer is already installed."
+
+                # Ensure existing printer is bound to the configured port.
+                $currentPort = (Get-Printer -Name $printerName).PortName
+                if ($currentPort -ne $portName) {{
+                    Write-Host "Printer is on '$currentPort'. Reassigning to '$portName'..."
+                    Set-Printer -Name $printerName -PortName $portName
+                    Write-Host "Printer reassigned successfully."
+                }} else {{
+                    Write-Host "Printer is already assigned to the expected port."
+                }}
             }}
 
             Write-Host " "
@@ -438,11 +657,14 @@ class VirtualPosPrinter:
         """Print user instructions to screen"""
         print()
         print_color("=== Instructions ===", color="green")
-        print_color("- Use [yellow(]Ctrl+Alt+Shift+P[)] to change the print location of pop-ups.")
-        print_color("- In the Fenix A32x EFB, set the printer to [yellow(]'VirtualTextPrinter'[)] to enable printing.")
-        print("- Right-click on a note to close it.")
-        print("- To modify the settings for this script, click the 'Open Settings' button")
-        print("- For more information, visit the project Github page for MSFS-PyScriptManager.")
+        print_color("- Press [yellow(]Ctrl+Alt+Shift+P[)] to set the popup print location.")
+        print_color(f"- In the Fenix A32x EFB, set the printer to [yellow(]'{self.printer_name}'[)] to enable printing.")
+        print_color(f"- Current printer port: [yellow(]{self.printer_port}[)]")
+        print("- Right-click a popup print to close it.")
+        print("- Click 'Open Settings' to change script settings.")
+        print("- Keep this script running for printer popups to work.")
+        print("- Add this script to 'Scripts/_autoplay.script_group' to start it automatically.")
+        print("- Click 'OpenHelp' for detailed usage instructions.")
 
     def run(self):
         """Start the Tkinter main loop"""
