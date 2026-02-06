@@ -15,7 +15,10 @@ from typing import TYPE_CHECKING, Any, Callable, IO, TypedDict
 
 import psutil
 
-from config import SCRIPT_LOAD_DELAY_MS, logs_path
+from config import (
+    SCRIPT_LOAD_DELAY_MS, FAST_CRASH_THRESHOLD_S,
+    MAX_RESTART_ATTEMPTS, RESTART_INITIAL_DELAY_MS, logs_path,
+)
 
 if TYPE_CHECKING:
     from tabs.script_tab import ScriptTab
@@ -51,6 +54,7 @@ class ProcessTracker:
         self.script_name: str | None = None
         self.lock: Lock = Lock()
         self.shutdown_event: MultiprocessingEvent = shutdown_event  # Store the shutdown event
+        self._restart_state: dict[int | None, dict[str, int | float]] = {}  # Per-tab crash tracking
 
     def start_process(
         self,
@@ -81,6 +85,8 @@ class ProcessTracker:
             print(f"[INFO] Started process: {script_name}, PID: {process.pid}, Tab ID: {tab_id}")
 
             self.script_name = script_name
+            self._restart_state.setdefault(tab_id, {"crash_count": 0, "start_time": 0.0})
+            self._restart_state[tab_id]["start_time"] = time.monotonic()
 
             # Create stdin queue and stop event
             stdin_queue: queue.Queue[str | None] = queue.Queue(maxsize=1000)
@@ -280,16 +286,11 @@ class ProcessTracker:
                 if script_tab:
                     if exit_code == 0:
                         script_tab.insert_output(f"[INFO] Script '{script_name}' completed successfully.\n")
+                        self._restart_state.pop(tab_id, None)
                     else:
                         script_tab.insert_output(f"[ERROR] Script '{script_name}' terminated unexpectedly with code {exit_code}.\n")
                         script_tab.insert_output("\n\n\n\n\n")
-
-                        # AutoRestart on delay in case this is in a crash loop as this will limit
-                        # performance impact
-                        script_tab.insert_output("Restarting Script..\n")
-
-                        self.scheduler(SCRIPT_LOAD_DELAY_MS,
-                                       lambda: script_tab.reload_script(clear_text=False))
+                        self._handle_crash_restart(tab_id, script_tab)
 
                 # Signal threads to stop and clean up process metadata
                 logger.debug("check_termination SET stop_event tab=%s", tab_id)
@@ -302,6 +303,43 @@ class ProcessTracker:
 
         # Reschedule the next check
         self.schedule_process_check(tab_id)
+
+    def _handle_crash_restart(self, tab_id: int | None, script_tab: ScriptTab) -> None:
+            """Handle auto-restart logic with exponential backoff for fast crashes."""
+            state = self._restart_state.get(tab_id, {"crash_count": 0, "start_time": 0.0})
+            runtime = time.monotonic() - state.get("start_time", 0.0)
+
+            if runtime >= FAST_CRASH_THRESHOLD_S:
+                # Script ran long enough — not a crash loop, restart normally
+                state["crash_count"] = 0
+                self._restart_state[tab_id] = state
+                script_tab.insert_output("Restarting Script..\n")
+                self.scheduler(SCRIPT_LOAD_DELAY_MS,
+                               lambda: script_tab.reload_script(clear_text=False))
+                return
+
+            # Fast crash — apply backoff and retry limit
+            state["crash_count"] = state.get("crash_count", 0) + 1
+            self._restart_state[tab_id] = state
+            crash_count: int = int(state["crash_count"])
+
+            if crash_count > MAX_RESTART_ATTEMPTS:
+                script_tab.insert_output(
+                    f"[ERROR] Script crashed {MAX_RESTART_ATTEMPTS} times in a row. "
+                    f"Auto-restart disabled. Press F5 to retry.\n"
+                )
+            else:
+                delay = RESTART_INITIAL_DELAY_MS * (2 ** (crash_count - 1))
+                script_tab.insert_output(
+                    f"Restarting Script in {delay / 1000:.0f}s "
+                    f"(attempt {crash_count}/{MAX_RESTART_ATTEMPTS})..\n"
+                )
+                self.scheduler(delay,
+                               lambda: script_tab.reload_script(clear_text=False))
+
+    def reset_restart_state(self, tab_id: int | None) -> None:
+        """Reset the crash counter for a tab (e.g., on user-initiated reload)."""
+        self._restart_state.pop(tab_id, None)
 
     def terminate_process(self, tab_id: int | None) -> None:
         """Terminate the process for a given tab ID."""

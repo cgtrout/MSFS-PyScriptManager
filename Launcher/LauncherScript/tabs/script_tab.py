@@ -615,6 +615,10 @@ class ScriptTab(Tab):
         """Reload the script by terminating and restarting the process."""
         print(f"[INFO] Reloading script for Tab ID: {self.tab_id}")
 
+        # User-initiated reloads (F5/button) pass clear_text=True — reset crash counter
+        if clear_text:
+            self.process_tracker.reset_restart_state(self.tab_id)
+
         def _reload() -> None:
             self.process_tracker.terminate_process(self.tab_id)
             if self._line_editor:
