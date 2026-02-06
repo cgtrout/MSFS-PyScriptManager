@@ -1,5 +1,6 @@
 {
     "virtual_pos_printer.py": {
+      "description": "Runs basic text printer for Fenix A32x print-jobs",
       "commands": [
         {
           "command_name": "open_settings_editor",
@@ -14,6 +15,7 @@
       ]
     },
     "metar_load.py": {
+      "description": "Loads METAR weather data",
       "commands": [
         {
           "command_name": "open_settings_editor",
@@ -28,6 +30,7 @@
       ]
     },
     "fenix_lights.py": {
+      "description": "Automates Fenix A32x lighting",
       "commands": [
         {
           "command_name": "open_help",
@@ -37,6 +40,7 @@
       ]
     },
     "custom_status_bar.py": {
+      "description": "Displays a custom status bar with live simulator values and status indicators.",
       "commands": [
         {
           "command_name": "open_help",
@@ -46,6 +50,7 @@
       ]
     },
     "plot_altitude.py": {
+      "description": "Plot graph example",
       "commands": [
         {
           "command_name": "open_help",
@@ -55,6 +60,7 @@
       ]
     },
     "plot_joystick.py": {
+      "description": "Plots joystick input values",
       "commands": [
         {
           "command_name": "open_help",
@@ -64,6 +70,7 @@
       ]
     },
     "fenix_radio.py": {
+      "description": "Shows Fenix radio values",
       "commands": [
         {
           "command_name": "open_help",
@@ -72,7 +79,11 @@
         }
       ]
     },
+    "fenix_disable_efb.py": {
+      "description": "Disables the Fenix EFB"
+    },
     "fbw_a380_checklist.py": {
+      "description": "Runs an FBW A380 checklist workflow with guided checklist actions",
       "commands": [
         {
           "command_name": "open_help",
@@ -82,6 +93,7 @@
       ]
     },
     "z_intro_script.py": {
+      "description": "Introduction script",
       "commands": [
         {
           "command_name": "open_help",

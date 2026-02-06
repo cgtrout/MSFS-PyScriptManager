@@ -24,4 +24,5 @@ pywin32
 pywinpty
 mistune
 tkinterweb
+tkfilebrowser
 pytest
