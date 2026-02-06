@@ -24,6 +24,11 @@ FRAME_BG_COLOR: Final[str] = "#2E2E2E"
 # Delay load between scripts
 SCRIPT_LOAD_DELAY_MS: Final[int] = 20
 
+# Auto-restart backoff settings (for crash loops)
+MAX_RESTART_ATTEMPTS: Final[int] = 3
+RESTART_INITIAL_DELAY_MS: Final[int] = 1000       # 1s initial backoff
+FAST_CRASH_THRESHOLD_S: Final[float] = 30.0        # Crashes within this time count as "fast crashes"
+
 # GitHub repository for update checks
 UPDATE_REPO_OWNER: Final[str] = "cgtrout"
 UPDATE_REPO_NAME: Final[str] = "MSFS-PyScriptManager"

@@ -114,12 +114,6 @@ def main() -> None:
     else:
         logger.info("No --shutdown-pipe argument provided. Skipping pipe-based shutdown logic.")
 
-    # Add lib_path to PYTHONPATH
-    lib_path: str = str((Path(__file__).resolve().parents[1] / "Lib").resolve())
-    if lib_path not in os.environ.get("PYTHONPATH", "").split(";"):
-        os.environ["PYTHONPATH"] = f"{lib_path};{os.environ.get('PYTHONPATH', '')}"
-        logger.info(f"Added '{lib_path}' to PYTHONPATH.")
-
     logger.info("Starting the application.")
 
     print("Starting Launcher.py -- main()")
