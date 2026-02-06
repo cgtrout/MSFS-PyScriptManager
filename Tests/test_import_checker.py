@@ -1,10 +1,13 @@
 """
 Import Checker - Tests that all project dependencies can be imported.
 
-Usage:
-    python import_checker.py              # Test with current Python
-    python import_checker.py --discover   # Test all WinPython versions found
-    python import_checker.py --list       # List discovered WinPython versions
+Standalone usage:
+    python test_import_checker.py              # Test with current Python
+    python test_import_checker.py --discover   # Test all WinPython versions found
+    python test_import_checker.py --list       # List discovered WinPython versions
+
+Pytest usage:
+    pytest Tests/test_import_checker.py -v
 """
 
 import sys
@@ -13,6 +16,8 @@ import subprocess
 import importlib
 from pathlib import Path
 from typing import NamedTuple
+
+import pytest
 
 
 # =============================================================================
@@ -220,7 +225,7 @@ def get_python_version(python_exe: Path) -> str:
         result = subprocess.run(
             [str(python_exe), "--version"],
             capture_output=True, text=True, timeout=10,
-            startupinfo=startupinfo
+            startupinfo=startupinfo, stdin=subprocess.DEVNULL
         )
         return result.stdout.strip() or result.stderr.strip()
     except Exception as e:
@@ -253,7 +258,7 @@ def run_multi_python_tests(project_root: Path, pythons: list[Path]) -> int:
             result = subprocess.run(
                 [str(python_exe), str(this_script), "--quick"],
                 capture_output=True, text=True, timeout=120,
-                startupinfo=startupinfo
+                startupinfo=startupinfo, stdin=subprocess.DEVNULL
             )
             print(result.stdout)
             if result.stderr:
@@ -290,7 +295,57 @@ def run_multi_python_tests(project_root: Path, pythons: list[Path]) -> int:
 
 
 # =============================================================================
-# Main
+# Pytest parametrized tests
+# =============================================================================
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_REQUIREMENTS_PATH = _PROJECT_ROOT / "Launcher" / "requirements.txt"
+_LIB_PATH = _PROJECT_ROOT / "Lib"
+
+BUILTINS = ["tkinter", "sqlite3", "ssl", "ctypes", "multiprocessing"]
+
+
+def _requirements_packages() -> list[str]:
+    """Get packages from requirements.txt, excluding skipped ones."""
+    return [p for p in parse_requirements(_REQUIREMENTS_PATH) if p.lower() not in SKIP_PACKAGES]
+
+
+def _lib_modules() -> list[str]:
+    """Get importable modules from Lib/."""
+    return discover_lib_modules(_LIB_PATH)
+
+
+@pytest.mark.parametrize("module", BUILTINS)
+def test_builtin_import(module: str) -> None:
+    """Built-in modules should be importable."""
+    importlib.import_module(module)
+
+
+@pytest.mark.parametrize("package", _requirements_packages())
+def test_requirement_import(package: str) -> None:
+    """Each package from requirements.txt should be importable."""
+    candidates = get_import_names_for_package(package)
+    errors = []
+    for name in candidates:
+        try:
+            importlib.import_module(name)
+            return  # success
+        except ImportError as e:
+            errors.append(f"{name}: {e}")
+    pytest.fail(f"Could not import {package}: {'; '.join(errors)}")
+
+
+@pytest.mark.parametrize("module", _lib_modules())
+def test_lib_module_import(module: str) -> None:
+    """Each module in Lib/ should be importable."""
+    lib_str = str(_LIB_PATH)
+    if lib_str not in sys.path:
+        sys.path.insert(0, lib_str)
+    importlib.import_module(module)
+
+
+# =============================================================================
+# Main (standalone usage)
 # =============================================================================
 
 def main():

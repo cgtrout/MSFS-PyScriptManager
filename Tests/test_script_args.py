@@ -1,22 +1,21 @@
-"""Test script to verify command-line argument passing works correctly."""
+"""Test that sys.argv and project path setup work correctly."""
 import sys
 from pathlib import Path
 
-# Add project root to path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
 
-from Lib.color_print import print_info, print_color
+def test_argv_is_populated():
+    """sys.argv should always be a non-empty list."""
+    assert isinstance(sys.argv, list)
+    assert len(sys.argv) >= 1
 
-print_info("Script started!")
-print_color(f"Script name: {sys.argv[0]}", color="cyan")
-print_color(f"Number of arguments: {len(sys.argv) - 1}", color="cyan")
 
-if len(sys.argv) > 1:
-    print_color("\nReceived arguments:", color="green", bold=True)
-    for i, arg in enumerate(sys.argv[1:], start=1):
-        print_color(f"  arg[{i}]: {arg!r}", color="yellow")
-else:
-    print_color("\nNo arguments received.", color="yellow")
+def test_project_root_on_path():
+    """Project root should be on sys.path (set by conftest.py)."""
+    project_root = str(Path(__file__).resolve().parent.parent)
+    assert project_root in sys.path
 
-print_info("Test complete!")
+
+def test_lib_importable():
+    """Lib.color_print should be importable from the project root."""
+    from Lib.color_print import print_info
+    assert callable(print_info)

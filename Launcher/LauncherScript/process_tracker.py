@@ -69,9 +69,11 @@ class ProcessTracker:
         """Start a subprocess and manage its I/O."""
 
         # Add Lib path to the child environment only.
-        lib_path: Path = Path(__file__).resolve().parents[1] / "Lib"
+        # process_tracker.py lives in Launcher/LauncherScript; scripts import via `from Lib...`,
+        # so PYTHONPATH must include project root (which contains the Lib package).
+        project_root: Path = Path(__file__).resolve().parents[2]
         custom_env: dict[str, str] = os.environ.copy()
-        prepend_pythonpath(custom_env, lib_path)
+        prepend_pythonpath(custom_env, project_root)
 
         try:
             process: subprocess.Popen[str] = subprocess.Popen(

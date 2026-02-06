@@ -167,8 +167,8 @@ class CommandLineTab(Tab):
             if message:
                 self.insert_output(f"[INFO] {message}\n")
         else:
-            # If not handled, send the command to the shell
-            self.run_shell_command(user_input)
+            # If callback provided a shell command override, use it; otherwise use raw input
+            self.run_shell_command(message if message else user_input)
 
         # Clear the input field
         self.input_entry.delete(0, tk.END)

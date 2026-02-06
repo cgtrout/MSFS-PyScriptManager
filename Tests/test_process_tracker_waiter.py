@@ -2,48 +2,19 @@
 ProcessTracker waiter-thread tests.
 
 Run:
-    python -m unittest Tests/test_process_tracker_waiter.py -v
+    pytest Tests/test_process_tracker_waiter.py -v
 """
 
 from __future__ import annotations
 
-import subprocess
 import sys
 import threading
 import time
 import unittest
 import builtins
-import atexit
-from pathlib import Path
 from typing import Callable
 
-ROOT = Path(__file__).resolve().parents[1]
-LAUNCHER_SCRIPT = ROOT / "Launcher" / "LauncherScript"
-if str(LAUNCHER_SCRIPT) not in sys.path:
-    sys.path.insert(0, str(LAUNCHER_SCRIPT))
-
-from process_tracker import ProcessTracker  # noqa: E402
-
-SUMMARY_RESULTS: list[tuple[str, str]] = []
-
-
-def _emit_final_summary() -> None:
-    if not SUMMARY_RESULTS:
-        return
-    out = sys.stderr
-    out.write("\n=== ProcessTracker Waiter Summary ===\n")
-    for name, status in SUMMARY_RESULTS:
-        out.write(f" - [{status}] {name}\n")
-    out.write("Validated:\n")
-    out.write(" - clean exit detection + tracker cleanup\n")
-    out.write(" - non-zero exit triggers crash restart\n")
-    out.write(" - stale waiter callback ignored on reused tab_id\n")
-    out.write(" - user termination does not emit crash messaging\n")
-    out.write(" - rapid churn stress: many fast exits cleaned up\n")
-    out.flush()
-
-
-atexit.register(_emit_final_summary)
+from process_tracker import ProcessTracker
 
 
 class _Scheduler:
@@ -95,16 +66,6 @@ class ProcessTrackerWaiterTests(unittest.TestCase):
         # Suppress noisy runtime prints from worker threads during test execution.
         cls._original_print = builtins.print
         builtins.print = lambda *args, **kwargs: None
-
-    def tearDown(self) -> None:
-        result = "PASS"
-        if self._outcome and self._outcome.result:
-            test_result = self._outcome.result
-            failed = any(test is self for test, _ in test_result.failures)
-            errored = any(test is self for test, _ in test_result.errors)
-            if failed or errored:
-                result = "FAIL"
-        SUMMARY_RESULTS.append((self._testMethodName, result))
 
     @classmethod
     def tearDownClass(cls) -> None:
