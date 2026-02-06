@@ -151,8 +151,13 @@ class ProcessTracker:
                 name=f"StdinWriter-{tab_id}"
             ).start()
 
-            # Start process monitoring
-            self.schedule_process_check(tab_id)
+            # Start process monitoring with a dedicated waiter thread.
+            threading.Thread(
+                target=self._wait_for_process_exit,
+                args=(tab_id, process),
+                daemon=True,
+                name=f"ProcessWaiter-{tab_id}"
+            ).start()
 
         except Exception as e:
             print(f"[ERROR] Failed to start process for Tab ID {tab_id}: {e}")
@@ -261,48 +266,50 @@ class ProcessTracker:
             except Exception as e:
                 print(f"[WARNING] Failed to close stdin for Tab ID {tab_id}: {e}")
 
-    def schedule_process_check(self, tabid: int | None) -> None:
-        """Schedule a periodic check for process termination."""
-        self.scheduler(2000, lambda: self.check_termination(tabid))
-
-    def check_termination(self, tab_id: int | None) -> None:
-        """Check if the process has terminated and notify the associated ScriptTab."""
-        with self.lock:
-            metadata = self.processes.get(tab_id)
-            if not metadata:
-                return  # Process already cleaned up or not found
-
-        process: subprocess.Popen[str] = metadata["process"]
-        script_tab: ScriptTab = metadata.get("script_tab")
-        script_name: str = metadata.get("script_name", "Unknown")
-
-        if process.poll() is not None:  # Process has stopped
-            exit_code: int | None = process.poll()
-            logger.debug("check_termination DETECTED tab=%s exit_code=%s",
-                         tab_id, exit_code)
-
-            # Notify the ScriptTab directly
-            try:
-                if script_tab:
-                    if exit_code == 0:
-                        script_tab.insert_output(f"[INFO] Script '{script_name}' completed successfully.\n")
-                        self._restart_state.pop(tab_id, None)
-                    else:
-                        script_tab.insert_output(f"[ERROR] Script '{script_name}' terminated unexpectedly with code {exit_code}.\n")
-                        script_tab.insert_output("\n\n\n\n\n")
-                        self._handle_crash_restart(tab_id, script_tab)
-
-                # Signal threads to stop and clean up process metadata
-                logger.debug("check_termination SET stop_event tab=%s", tab_id)
-                metadata["stop_event"].set()
-                with self.lock:
-                    self.processes.pop(tab_id, None)
-            except Exception as e:
-                print(f"[ERROR] Error notifying ScriptTab for Tab ID {tab_id}: {e}")
+    def _wait_for_process_exit(self, tab_id: int | None, process: subprocess.Popen[str]) -> None:
+        """Block until process exits, then marshal termination handling to scheduler thread."""
+        try:
+            process.wait()
+        except Exception as e:
+            print(f"[ERROR] Failed while waiting for process exit for Tab ID {tab_id}: {e}")
             return
 
-        # Reschedule the next check
-        self.schedule_process_check(tab_id)
+        self.scheduler(0, lambda: self._handle_process_exit(tab_id, process))
+
+    def _handle_process_exit(self, tab_id: int | None, process: subprocess.Popen[str]) -> None:
+        """Handle process termination on the scheduler thread."""
+        with self.lock:
+            metadata = self.processes.get(tab_id)
+            # Ignore stale callbacks if tab_id now points at a different process
+            # or the metadata was already removed by user-initiated termination.
+            if not metadata or metadata.get("process") is not process:
+                return
+
+        script_tab: ScriptTab = metadata.get("script_tab")
+        script_name: str = metadata.get("script_name", "Unknown")
+        exit_code: int | None = process.poll()
+        logger.debug("_handle_process_exit DETECTED tab=%s exit_code=%s",
+                     tab_id, exit_code)
+
+        try:
+            if script_tab:
+                if exit_code == 0:
+                    script_tab.insert_output(f"[INFO] Script '{script_name}' completed successfully.\n")
+                    self._restart_state.pop(tab_id, None)
+                else:
+                    script_tab.insert_output(f"[ERROR] Script '{script_name}' terminated unexpectedly with code {exit_code}.\n")
+                    script_tab.insert_output("\n\n\n\n\n")
+                    self._handle_crash_restart(tab_id, script_tab)
+
+            # Signal threads to stop and clean up process metadata
+            logger.debug("_handle_process_exit SET stop_event tab=%s", tab_id)
+            metadata["stop_event"].set()
+            with self.lock:
+                current = self.processes.get(tab_id)
+                if current and current.get("process") is process:
+                    self.processes.pop(tab_id, None)
+        except Exception as e:
+            print(f"[ERROR] Error notifying ScriptTab for Tab ID {tab_id}: {e}")
 
     def _handle_crash_restart(self, tab_id: int | None, script_tab: ScriptTab) -> None:
             """Handle auto-restart logic with exponential backoff for fast crashes."""
