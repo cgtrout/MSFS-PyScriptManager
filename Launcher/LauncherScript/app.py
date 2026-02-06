@@ -150,6 +150,7 @@ class ScriptLauncherApp:
             if isinstance(tab, CommandLineTab):
                 # Select the existing CommandLineTab
                 self.tab_manager.notebook.select(tab.frame)
+                return
 
         # No CommandLineTab exists, create a new one
         self.add_command_line_tab()
