@@ -15,7 +15,7 @@ from typing import Callable
 from config import (
     DARK_BG_COLOR, BUTTON_BG_COLOR, BUTTON_FG_COLOR,
     BUTTON_ACTIVE_BG_COLOR, BUTTON_ACTIVE_FG_COLOR,
-    SCRIPT_LOAD_DELAY_MS, scripts_path, read_update_config
+    SCRIPT_LOAD_DELAY_MS, project_root, scripts_path, read_update_config
 )
 from tab_manager import TabManager
 from process_tracker import ProcessTracker
@@ -237,8 +237,10 @@ class ScriptLauncherApp:
             return self.switch_tab_by_name(args)
         elif command == "reload":
             return self.handle_reload_command()
+        elif command == "test":
+            return self.handle_test_command(args)
         else:
-            return False, f"Unknown command: {command}"
+            return False, None  # Not handled; let shell process it
 
     def handle_python_command(self, args: list[str], current_dir: Path | str) -> tuple[bool, str | None]:
         """Handle intercepted Python commands with directory context."""
@@ -282,6 +284,19 @@ class ScriptLauncherApp:
         """Switch to the tab with the specified script name."""
         self.tab_manager.reload_all_scripts()
         return True, None  # Success
+
+    def handle_test_command(self, args: list[str]) -> tuple[bool, str | None]:
+        """Run pytest in a new ScriptTab."""
+        script_path = project_root / "Tests" / "run_tests.py"
+        script_tab = ScriptTab(
+            title="Tests",
+            script_path=script_path,
+            process_tracker=self.process_tracker,
+            script_args=args,
+            open_tab=self.tab_manager.add_tab
+        )
+        self.tab_manager.add_tab(script_tab)
+        return True, None
 
     def autoplay_script_group(self) -> None:
         """
