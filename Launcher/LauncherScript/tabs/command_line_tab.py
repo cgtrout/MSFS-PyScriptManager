@@ -134,8 +134,9 @@ class CommandLineTab(Tab):
             self.process = winpty.PtyProcess.spawn("cmd", cwd=scripts_dir, env=custom_env)
             threading.Thread(target=self._read_output, daemon=True).start()
 
-            self.insert_output(f"[INFO] Shell started in {scripts_dir}. Type commands below.\n")
-            self.run_shell_command("dir *.py")
+            self.insert_output(
+                f"[INFO] Shell started in {scripts_dir}.\nType commands below (try 'help' for built-ins).\n"
+            )
         except Exception as e:
             self.insert_output(f"[ERROR] Failed to start shell: {e}\n")
 
