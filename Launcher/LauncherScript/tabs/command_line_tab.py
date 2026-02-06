@@ -185,8 +185,12 @@ class CommandLineTab(Tab):
         except Exception as e:
             self.insert_output(f"[ERROR] Failed to send command to shell: {e}\n")
 
-    def autocomplete(self, event: tk.Event[tk.Misc]) -> str:
+    def autocomplete(self, event: tk.Event[tk.Misc]) -> str | None:
         """Handle tab-completion logic."""
+        # Do not consume Ctrl+Tab/Ctrl+Shift+Tab; allow global tab switching.
+        if event.state & 0x0004:
+            return None
+
         assert self.input_entry is not None
         # Get the current input and cursor position
         current_input: str = self.input_entry.get()
