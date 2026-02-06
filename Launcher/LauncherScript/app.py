@@ -1,6 +1,7 @@
 # app.py - Main ScriptLauncherApp class
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 import threading
 import time
@@ -27,6 +28,17 @@ from update_checker import (
 from _lib import is_shift_held
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+
+type CommandHandler = Callable[[list[str], Path | str], tuple[bool, str | None]]
+
+
+@dataclass(frozen=True)
+class CommandSpec:
+    aliases: tuple[str, ...]
+    usage: str
+    help_message: str
+    handler: CommandHandler
 
 
 class ScriptLauncherApp:
@@ -138,6 +150,7 @@ class ScriptLauncherApp:
             if isinstance(tab, CommandLineTab):
                 # Select the existing CommandLineTab
                 self.tab_manager.notebook.select(tab.frame)
+                return
 
         # No CommandLineTab exists, create a new one
         self.add_command_line_tab()
@@ -231,16 +244,63 @@ class ScriptLauncherApp:
 
     def handle_command(self, command: str, args: list[str], current_dir: Path | str) -> tuple[bool, str | None]:
         """Generalized command handler with directory context."""
-        if command in ["python", "py"]:
-            return self.handle_python_command(args, current_dir)
-        elif command in ["switch", "s"]:
-            return self.switch_tab_by_name(args)
-        elif command == "reload":
-            return self.handle_reload_command()
-        elif command == "test":
-            return self.handle_test_command(args)
-        else:
+        self._ensure_command_registry()
+        spec: CommandSpec | None = self._command_index.get(command)
+        if spec is None:
             return False, None  # Not handled; let shell process it
+        return spec.handler(args, current_dir)
+
+    def _ensure_command_registry(self) -> None:
+        """Initialize command registry on first use."""
+        if hasattr(self, "_command_specs") and hasattr(self, "_command_index"):
+            return
+
+        self._command_specs: list[CommandSpec] = [
+            CommandSpec(
+                aliases=("help",),
+                usage="help",
+                help_message="Show this help message",
+                handler=lambda _args, _cwd: self.handle_help_command()
+            ),
+            CommandSpec(
+                aliases=("python", "py"),
+                usage="python|py <script> ...",
+                help_message="Run a Python script in a new ScriptTab",
+                handler=self.handle_python_command
+            ),
+            CommandSpec(
+                aliases=("switch", "s"),
+                usage="switch|s <script_name>",
+                help_message="Switch to an existing ScriptTab by file name",
+                handler=lambda args, _cwd: self.switch_tab_by_name(args)
+            ),
+            CommandSpec(
+                aliases=("reload",),
+                usage="reload",
+                help_message="Reload all running ScriptTabs",
+                handler=lambda _args, _cwd: self.handle_reload_command()
+            ),
+            CommandSpec(
+                aliases=("test",),
+                usage="test [pytest args]",
+                help_message="Run the test suite in a new ScriptTab",
+                handler=lambda args, _cwd: self.handle_test_command(args)
+            ),
+        ]
+        self._command_index: dict[str, CommandSpec] = {
+            alias: spec
+            for spec in self._command_specs
+            for alias in spec.aliases
+        }
+
+    def handle_help_command(self) -> tuple[bool, str]:
+        """Display built-in console commands."""
+        self._ensure_command_registry()
+        lines: list[str] = ["Built-in commands:"]
+        for spec in self._command_specs:
+            lines.append(f"  {spec.usage:<23} {spec.help_message}")
+        help_text: str = "\n".join(lines) + "\n"
+        return True, help_text
 
     def handle_python_command(self, args: list[str], current_dir: Path | str) -> tuple[bool, str | None]:
         """Handle intercepted Python commands with directory context."""

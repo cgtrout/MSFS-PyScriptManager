@@ -23,6 +23,10 @@ class CommandLineTab(Tab):
     """A tab that provides a terminal-like command-line interface."""
 
     ANSI_ESCAPE_PATTERN: ClassVar[Pattern[str]] = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    CMD_TITLE_ARTIFACT_PATTERN: ClassVar[Pattern[str]] = re.compile(
+        r"(?:\x1b\])?0;[A-Za-z]:\\[^\r\n]*?cmd\.exe(?:\x07)?",
+        re.IGNORECASE,
+    )
 
     def __init__(self, title: str, command_callback: Callable[[str, list[str], Path | str], tuple[bool, str | None]]) -> None:
         super().__init__(title)
@@ -130,8 +134,9 @@ class CommandLineTab(Tab):
             self.process = winpty.PtyProcess.spawn("cmd", cwd=scripts_dir, env=custom_env)
             threading.Thread(target=self._read_output, daemon=True).start()
 
-            self.insert_output(f"[INFO] Shell started in {scripts_dir}. Type commands below.\n")
-            self.run_shell_command("dir *.py")
+            self.insert_output(
+                f"[INFO] Shell started in {scripts_dir}.\nType commands below (try 'help' for built-ins).\n"
+            )
         except Exception as e:
             self.insert_output(f"[ERROR] Failed to start shell: {e}\n")
 
@@ -185,8 +190,12 @@ class CommandLineTab(Tab):
         except Exception as e:
             self.insert_output(f"[ERROR] Failed to send command to shell: {e}\n")
 
-    def autocomplete(self, event: tk.Event[tk.Misc]) -> str:
+    def autocomplete(self, event: tk.Event[tk.Misc]) -> str | None:
         """Handle tab-completion logic."""
+        # Do not consume Ctrl+Tab/Ctrl+Shift+Tab; allow global tab switching.
+        if event.state & 0x0004:
+            return None
+
         assert self.input_entry is not None
         # Get the current input and cursor position
         current_input: str = self.input_entry.get()
@@ -401,15 +410,13 @@ class CommandLineTab(Tab):
                 # Normalize carriage returns (\r) by removing them
                 clean_output = clean_output.replace('\r', '')
 
-                # Directly remove the specific artifact
-                artifact_to_remove: str = "0;C:\\Windows\\system32\\cmd.EXE\x07"
-                filtered_output: str = clean_output.replace(artifact_to_remove, "")
+                filtered_output: str = self._sanitize_shell_output(clean_output)
 
                 # Insert filtered output
                 self.insert_output(filtered_output)
 
-                # Detect paths directly in the clean output
-                for match in re.finditer(r"^[A-Za-z]:\\.*>", clean_output, re.MULTILINE):
+                # Detect paths directly in filtered output
+                for match in re.finditer(r"^[A-Za-z]:\\.*>", filtered_output, re.MULTILINE):
                     # Extract the path without the trailing '>'
                     detected_path: str = match.group(0).rstrip(">")
                     self.cached_cwd = detected_path
@@ -417,6 +424,11 @@ class CommandLineTab(Tab):
 
         except Exception as e:
             self.insert_output(f"[ERROR] Failed to read console output: {e}\n")
+
+    @classmethod
+    def _sanitize_shell_output(cls, text: str) -> str:
+        """Remove cmd title artifacts that can leak into output."""
+        return cls.CMD_TITLE_ARTIFACT_PATTERN.sub("", text)
 
     def insert_output(self, text: str) -> None:
         """Insert shell output into the output widget."""
