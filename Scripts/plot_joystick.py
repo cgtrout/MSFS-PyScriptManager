@@ -22,6 +22,7 @@ try:
     from Lib.dark_mode import DarkmodeUtils
     from Lib.gc_tweak import optimize_gc
     from Lib.connection_helpers import SimConnectConnectionHelper
+    from SimConnect import SimConnect, AircraftRequests
 except ImportError:
     print("Failed to import 'Lib' directory. Please ensure Lib/* is present")
     sys.exit(1)
@@ -71,6 +72,8 @@ class JoystickApp:
         self.aileron_trim_marker = None
         self.rudder_marker = None
         self.coord_label = None
+        self.sim_status_label = None
+        self._sim_status_shown = False
 
         self.root = None
         self.menu = None
@@ -230,16 +233,25 @@ class JoystickApp:
             self.rudder_axis_id = None
             self._save_settings(rudder_axis_id=None)
 
-    def _initialize_simconnect(self, blocking=False):
-        """Initialize SimConnect requests; non-blocking by default."""
+    def _initialize_simconnect(self):
+        """Try to connect to SimConnect directly (no subprocess process-check)."""
         self.last_simconnect_attempt = time.monotonic()
-        if self.conn.connect(blocking=blocking):
+        try:
+            self.conn.sm = SimConnect()
+            self.conn.aq = AircraftRequests(
+                self.conn.sm,
+                _time=self.conn.request_time,
+                _attemps=self.conn.request_attempts,
+            )
             self.sm = self.conn.sm
-            self.aq = self.conn.get_requests()
+            self.aq = self.conn.aq
             self.patch_rotor_trim(self.aq)
             print_info("Connected to SimConnect.")
             return True
-        return False
+        except Exception:
+            self.conn.sm = None
+            self.conn.aq = None
+            return False
 
     def _fetch_trim_data(self):
         """Fetch trim data in a background thread."""
@@ -248,7 +260,7 @@ class JoystickApp:
                 now = time.monotonic()
                 if (now - self.last_simconnect_attempt) >= self.conn.retry_delay:
                     self.last_simconnect_attempt = now
-                    self._initialize_simconnect(blocking=False)
+                    self._initialize_simconnect()
             if self.sm and self.aq:
                 try:
                     # Fetch data
@@ -272,6 +284,16 @@ class JoystickApp:
             time.sleep(self.trim_update_interval)
 
     def _update_plot(self):
+        # Update sim connection status indicator
+        sim_connected = bool(self.sm and self.aq)
+        if sim_connected and self._sim_status_shown:
+            self.sim_status_label.place_forget()
+            self._sim_status_shown = False
+        elif not sim_connected and not self._sim_status_shown:
+            self.sim_status_label.config(text="No SIM")
+            self.sim_status_label.place(relx=0.0, rely=1.0, x=2, y=-2, anchor='sw')
+            self._sim_status_shown = True
+
         # Capture the static background once
         # If not already captured, do a full draw and save the background.
         if not hasattr(self, 'static_background'):
@@ -411,6 +433,13 @@ class JoystickApp:
                                     fg='darkgray', bg='black', bd=0, highlightthickness=0, anchor='se')
         self.coord_label.place(relx=1.0, rely=1.0, x=-2, y=-2, anchor='se')
 
+        # Sim connection status indicator
+        self.sim_status_label = tk.Label(
+            self.root, text='No SIM', font=('Consolas', 6),
+            fg='#555555', bg='black', bd=0, highlightthickness=0, anchor='sw')
+        self.sim_status_label.place(relx=0.0, rely=1.0, x=2, y=-2, anchor='sw')
+        self._sim_status_shown = True
+
         self.fig.canvas.draw()
 
     def _apply_plot_layout_adjustments(self):
@@ -423,7 +452,7 @@ class JoystickApp:
     def run(self):
         self._create_gui()
         if not self.test_mode:
-            self._initialize_simconnect(blocking=False)
+            # Trim thread handles SimConnect connection + retries in the background
             trim_thread = threading.Thread(target=self._fetch_trim_data, daemon=True)
             trim_thread.start()
         self.root.after(50, self._update_plot)

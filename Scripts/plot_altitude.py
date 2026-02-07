@@ -10,6 +10,7 @@ import matplotlib.ticker as mticker
 from tkinter import filedialog
 import csv
 from Lib.connection_helpers import SimConnectConnectionHelper
+from Lib.sim_state import SimStateDetector
 
 # User-Defined Parameters
 alpha_transparency_level = 0.8  # Set transparency (0.0 = fully transparent, 1.0 = fully opaque)
@@ -58,6 +59,9 @@ def initialize_simconnect():
         sm = conn.sm
         aq = conn.get_requests()
         sim_connected = True
+        # Wait until the user is actually in a flight (not menus/loading)
+        detector = SimStateDetector(conn)
+        detector.wait_for_flight()
         return
     sim_connected = False
 

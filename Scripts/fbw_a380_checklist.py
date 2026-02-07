@@ -4,6 +4,7 @@ import logging
 import keyboard  # For global key detection
 import pygetwindow as gw  # For window detection
 from Lib.mobiflight_connection import MobiflightConnection
+from Lib.sim_state import SimStateDetector
 from time import sleep
 
 # Disable warnings - still shows errors
@@ -43,11 +44,9 @@ def main():
         mobiflight.connect()
         mf_requests = mobiflight.get_request_handler()
 
-        # Wait for a real user action: value must change from startup state, then reach ON.
-        mobiflight.wait_for_lvar_change_to_value(
-            "L:A32NX_OVHD_ELEC_EXT_PWR_1_PB_IS_ON, Bool",
-            target_value=1,
-        )
+        # Wait until the user is actually in a flight (not menus/loading)
+        detector = SimStateDetector(mobiflight)
+        detector.wait_for_flight()
 
         # Prime the library - possibly necessary to ensure the connection works properly
         altitude = mf_requests.get("(A:PLANE ALTITUDE,Feet)")

@@ -7,6 +7,7 @@ import sys
 import time
 import logging
 from Lib.mobiflight_connection import MobiflightConnection
+from Lib.sim_state import SimStateDetector
 from Lib.color_print import print_info, print_error
 
 # Disable warnings - still shows errors
@@ -28,8 +29,9 @@ def main():
         mobiflight = MobiflightConnection(client_name="fenix_disable_efb")
         mobiflight.connect()
 
-        # Wait for the required LVAR before proceeding
-        mobiflight.wait_for_lvar("L:S_OH_ELEC_EXT_PWR")
+        # Wait until the user is actually in a flight (not menus/loading)
+        detector = SimStateDetector(mobiflight)
+        detector.wait_for_flight()
 
         # Disable EFBs
         mobiflight.set_and_verify_lvar(EFB_VISIBLE_CAPT, 0)

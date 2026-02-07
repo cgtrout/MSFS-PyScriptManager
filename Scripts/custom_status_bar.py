@@ -34,6 +34,7 @@ try:
     from Lib.dark_mode import DarkmodeUtils
     from Lib.gc_tweak import optimize_gc
     from Lib.sim_process import wait_for_sim_running
+    from Lib.sim_state import SimStateDetector
 
 except ImportError:
     print("Failed to import Lib directory. Please ensure /Lib/* is present")
@@ -297,6 +298,7 @@ class AppState:
         self.sim_connect = None
         self.aircraft_requests = None
         self.sim_connected = False
+        self.waiting_for_active_flight = False
 
         self.template_menu_open = False
 
@@ -956,11 +958,21 @@ def initialize_simconnect():
         state.sim_connect = SimConnect()
         print_info("Connecting to SimConnect... DONE")
         state.aircraft_requests = AircraftRequests(state.sim_connect, _time=10, _attemps=2)
+
+        # Wait until the user is actually in a flight (not menus/loading).
+        # This can legitimately block for a long time if user remains in MSFS menus.
+        state.waiting_for_active_flight = True
+        detector = SimStateDetector(state.sim_connect)
+        detector.wait_for_flight()
+        state.waiting_for_active_flight = False
+
         state.sim_connected = True
         print_debug("Sim is Connected")
     except Exception as e:
         print_debug(f"Sim could not connect {e}")
         state.sim_connected = False
+    finally:
+        state.waiting_for_active_flight = False
 
 def is_simconnect_available() -> bool:
     """Check if SimConnect is available and running."""
@@ -1105,8 +1117,15 @@ def get_formatted_value(variable_names, format_string=None):
 
     # Format the values if a format string is provided
     if format_string:
-        formatted_values = format_string.format(*values)
-        return formatted_values
+        try:
+            formatted_values = format_string.format(*values)
+            return formatted_values
+        except (ValueError, TypeError) as e:
+            print_debug(
+                f"get_formatted_value: Failed to format values {values} "
+                f"with '{format_string}': {e}"
+            )
+            return "Loading..."
 
     # Return raw value(s) if no format string is provided
     result = values[0] if len(values) == 1 else values
@@ -1223,6 +1242,12 @@ class BackgroundUpdater:
         """Check background thread function to see if it has locked up"""
         now = time.time()
         threshold = 30  # seconds before we consider the updater "stuck"
+
+        # If we're explicitly waiting for user to enter an active flight session, avoid
+        # reporting this as a stall.
+        if state.waiting_for_active_flight:
+            self.root.after(10_000, self.background_thread_watchdog_function)
+            return
 
         # Increase threshold if sim not connected.  Waiting for connection to occur during sim load
         # can cause warnings to appear otherwise

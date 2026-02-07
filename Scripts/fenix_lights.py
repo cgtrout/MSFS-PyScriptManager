@@ -15,6 +15,7 @@ from queue import Queue
 import threading
 
 from Lib.mobiflight_connection import MobiflightConnection
+from Lib.sim_state import SimStateDetector
 from Lib.color_print import print_info, print_error
 from Lib.pygame_joy import PygameJoy
 
@@ -170,8 +171,9 @@ def main():
         mobiflight = MobiflightConnection(client_name="fenix_set_lighting_defaults")
         mobiflight.connect()
 
-        # Wait for the required LVAR (ground power) to be active
-        mobiflight.wait_for_lvar(DEFAULT_WAIT_LVAR, DEFAULT_WAIT_VALUE)
+        # Wait until the user is actually in a flight (not menus/loading)
+        detector = SimStateDetector(mobiflight)
+        detector.wait_for_flight()
 
         print_info("Setting interior light values...")
         set_cockpit_lights(mobiflight)

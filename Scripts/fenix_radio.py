@@ -13,6 +13,7 @@ import logging
 
 # Import the new connection helper
 from Lib.mobiflight_connection import MobiflightConnectionHelper
+from Lib.sim_state import SimStateDetector
 
 # Set the SimConnect logging level to ERROR to suppress warnings
 logging.getLogger("SimConnect.SimConnect").setLevel(logging.ERROR)
@@ -159,6 +160,10 @@ def main():
         # Use the new connection library to initialize SimConnect and the Mobiflight variable requests
         mobiflight = MobiflightConnectionHelper(client_name="fenix_radio")
         mobiflight.connect()
+
+        # Wait until the user is actually in a flight (not menus/loading)
+        detector = SimStateDetector(mobiflight)
+        detector.wait_for_flight()
 
         # Set up the tkinter window
         window = tk.Tk()
