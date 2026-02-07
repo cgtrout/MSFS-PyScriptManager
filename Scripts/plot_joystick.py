@@ -3,6 +3,7 @@
 import os
 import json
 import sys
+import logging
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -22,10 +23,16 @@ try:
     from Lib.dark_mode import DarkmodeUtils
     from Lib.gc_tweak import optimize_gc
     from Lib.connection_helpers import SimConnectConnectionHelper
+    from Lib.sim_state import SimStateDetector
     from SimConnect import SimConnect, AircraftRequests
 except ImportError:
     print("Failed to import 'Lib' directory. Please ensure Lib/* is present")
     sys.exit(1)
+
+# Reduce noise from Python-SimConnect internals (request definition spam).
+logging.getLogger("SimConnect").setLevel(logging.ERROR)
+logging.getLogger("SimConnect.SimConnect").setLevel(logging.ERROR)
+logging.getLogger("SimConnect.RequestList").setLevel(logging.ERROR)
 
 class JoystickApp:
     def __init__(self, graph_size_pixels, alpha_transparency_level, settings_file, test_mode=False):
@@ -40,6 +47,7 @@ class JoystickApp:
 
         self.sm = None
         self.aq = None
+        self.sim_state_detector = None
         self.conn = SimConnectConnectionHelper(retry_delay=30)
         self.last_simconnect_attempt = 0.0
         self.selected_joystick = None
@@ -246,11 +254,13 @@ class JoystickApp:
             self.sm = self.conn.sm
             self.aq = self.conn.aq
             self.patch_rotor_trim(self.aq)
+            self.sim_state_detector = SimStateDetector(self.sm)
             print_info("Connected to SimConnect.")
             return True
         except Exception:
             self.conn.sm = None
             self.conn.aq = None
+            self.sim_state_detector = None
             return False
 
     def _fetch_trim_data(self):
@@ -263,6 +273,19 @@ class JoystickApp:
                     self._initialize_simconnect()
             if self.sm and self.aq:
                 try:
+                    if self.sim_state_detector is None:
+                        self.sim_state_detector = SimStateDetector(self.sm)
+
+                    # Avoid trim polling while in menus/loading screens.
+                    if not self.sim_state_detector.is_in_flight():
+                        with self.cache_lock:
+                            self.cached_trim_values["elevator_trim"] = 0
+                            self.cached_trim_values["aileron_trim"] = 0
+                            self.cached_trim_values["rotor_lateral_trim"] = 0
+                            self.cached_trim_values["rotor_longitudinal_trim"] = 0
+                        time.sleep(self.trim_update_interval)
+                        continue
+
                     # Fetch data
                     elevator_trim = self.conn.get("ELEVATOR_TRIM_PCT") or 0
                     aileron_trim = self.conn.get("AILERON_TRIM_PCT") or 0
@@ -281,6 +304,7 @@ class JoystickApp:
                     self.conn.disconnect()
                     self.sm = None
                     self.aq = None
+                    self.sim_state_detector = None
             time.sleep(self.trim_update_interval)
 
     def _update_plot(self):
