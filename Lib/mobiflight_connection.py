@@ -102,6 +102,38 @@ class MobiflightConnectionHelper(BaseConnectionHelper):
                 print_error(f"Error reading LVAR '{lvar}': {e}")
             time.sleep(check_interval)
 
+    def wait_for_lvar_change_to_value(
+        self,
+        lvar,
+        target_value=1,
+        check_interval=0.5,
+        tolerance=0.01,
+    ):
+        """
+        Wait until an LVAR changes from its initial value, then reaches target_value.
+        Useful for avoiding stale/default startup values.
+        """
+        print_info(f"Waiting for LVAR '{lvar}' to change, then reach {target_value}")
+        initial_value = None
+        saw_change = False
+
+        while True:
+            try:
+                value = float(self.mf_requests.get(f"({lvar})"))
+                if initial_value is None:
+                    initial_value = value
+                    print_info(f"Initial '{lvar}' value: {initial_value}")
+
+                if abs(value - initial_value) > tolerance:
+                    saw_change = True
+
+                if saw_change and abs(value - target_value) <= tolerance:
+                    print_info(f"LVAR '{lvar}' changed and reached target {target_value}")
+                    return
+            except Exception as e:
+                print_error(f"Error reading LVAR '{lvar}': {e}")
+            time.sleep(check_interval)
+
     def set_and_verify_lvar(self, lvar, value, tolerance=0.01, max_retries=5, retry_delay=0.1):
         """
         Sets an LVAR to a specified value and verifies it within a tolerance. Retries if necessary.
