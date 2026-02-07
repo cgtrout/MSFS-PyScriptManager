@@ -139,6 +139,7 @@ class MobiflightConnectionHelper(BaseConnectionHelper):
         Sets an LVAR to a specified value and verifies it within a tolerance. Retries if necessary.
         If tolerance is None, disables the verification step entirely.
         """
+        current_value = None
         for attempt in range(1, max_retries + 1):
             # Attempt to set the LVAR
             req_str = f"{value} (> {lvar})"
@@ -152,7 +153,16 @@ class MobiflightConnectionHelper(BaseConnectionHelper):
 
             # Check if the value was successfully applied within the tolerance
             current_value = self.mf_requests.get(f"({lvar})")
-            if abs(current_value - value) <= tolerance:
+            if current_value is None:
+                continue
+
+            try:
+                current_value = float(current_value)
+                target_value = float(value)
+            except (TypeError, ValueError):
+                continue
+
+            if abs(current_value - target_value) <= tolerance:
                 return True
 
         # Enhanced error message with actual vs expected values
