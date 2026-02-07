@@ -1,73 +1,135 @@
-# MSFS-PyScriptManager v1.10 Release Notes - Major Update
+﻿# Release Notes (1.20)
 
+## Download Notes
+Two separate versions are now provided:
 
+- **MSFS-PyScriptManager_1.20.zip** (WinPython version)
+  - Standard release. Contains everything required to run MSFS-PyScriptLauncher
+  - No system Python installation required
+  - Simply extract to run this.
 
-## Table of Contents
-- [Script Changes](#script-changes)
-  - [Custom Status Bar (`custom_status_bar.py`) Enhancements](#custom-status-bar---major-enhancements-custom_status_barpy)
-- [New Scripts Added](#new-scripts-added)
-  - [Metar Load (`metar_load.py`)](#metar-load-script-metar_loadpy)
-  - [Joystick Visualization (`plot_joystick.py`)](#plot-joystick-visualization-plot_joystickpy)
-- [New MobiFlight Scripts](#mobiflight-scripts)
-  - [FBW A380 Checklist (`fbw_a380_checklist.py`)](#fbw-a380-checklist-fbw_a380_checklistpy)
-  - [Fenix Lights (`fenix_lights.py`)](#fenix-lights-fenix_lightspy)
-  - [Fenix Radio (`fenix_radio.py`)](#fenix-radio-fenix_radiopy)
-- [Launcher New Features](#launcher-new-features)
+- **MSFS-PyScriptManager_1.20_byop.zip** (Bring-Your-Own-Python)
+  - Doesn't include WinPython: will use whatever is on system path
+  - Runs automated pip to install any missing dependencies . (Will ask for permission first)
+  - NOTE: Python 3.15 currently doesn't work due to module incompatabilities with 3.15
+
+---
+
+## New Features & Improvements
+
+### Launcher & Interface
+
+#### Script Picker
+- Better file browser interface (switched to `tkfilebrowser`)
+- Shows per-script descriptions using metadata
+
+#### Console
+- Added `help` command
+- Shortcut always opens same instance (no duplicates)
+- Fixed Control-Tab behavior
+- Cleaner output and improved startup guidance
+
+#### Input Handling
+- Complete rewrite to fix interactive scripts
+  - User input now properly buffered
+  - Backspace and editing work correctly
+  - Mouse selection works properly
+
+#### Other Improvements
+- **Markdown viewer**: Switched to `tkinterweb` for better performance and reliability
+- **Testing**: Added `test` command to run pytest suite from console
 
 ## Script Changes
 
-### Custom Status Bar - Major Enhancements (custom_status_bar.py)
+### plot_joystick
+- Added rudder indicator with configurable bindings (drawn horizontally at top)
+- Added optional value display toggle (via right-click menu)
+- Added support for rotorcraft trim indicator (`ROTOR_LATERAL_TRIM_PCT`)
 
-- **Much more customizable than before!**
-  - On the first run, a new template file is created `/status_bar_template.py`.  This is a Python file that will be loaded that can be used to extensively change the appearance and behavior of the status bar.
-  - For example: now in the template with some minor changes you can use [@leftos](https://github.com/leftos) idea to have the timer show a countdown from the EOBT (Est Off-Block_time) to show if you are ahead or behind schedule before engines are on.
-  - Added new template functions `VARIF` / `##` dynamic templates - thanks @leftos for idea/implementation.
-- See the documentation for more details: [Custom Status Bar Documentation](Docs/custom_status_bar.md)
+### virtual_pos_printer
+- Configure printer name and port directly in settings
+- Added scrolling support for large print jobs
 
-# New Scripts Added:
-### metar_load.py
-- Load either a real time metar or a historical metar based on simulator date/time.
+### fbw_a380
+- Added input debounce to prevent multiple activations from single press
 
-### plot_joystick.py
-- Shows a draggable joystick visualization.
-- Shows axis and trim values state.
-- Trim dynamically set to either helicopter or plane trims.
+### Core Improvements
+- **All scripts**: Improved sim state detection (knows when in menu vs. in-flight)
+- **All scripts**: Better reliability when connecting to flight simulator
+- **Included resources**: GitHub users now get `chrisaut-toolbar-printouts` built-in
 
-# New MobiFlight Scripts
-> ⚠️ **Important** - 
-> The following new scripts require a MobiFlight WASM module installation: See [Notes on Mobiflight Integration](README.md#notes-on-mobiflight-integration). ⚠️
+---
 
-### fenix_lights.py (Requires MobiFlight WASM Community Module)
-- Initializes flight deck lighting to preassigned values.
-- This will also work around the full bright MSFS 2024 lighting bug (all lights are toggled on/off).
-- At start up it will give option to assign a joystick axis to control the screen lighting with one axis.
-- Also will take left most screen brightness knob and propogate its brightness value to all screens.
+## Bug Fixes
 
-### fenix_radio.py (Requires MobiFlight WASM Community Module)
-- Shows a draggable overlay panel that shows radio channel state (RMP1)
-- Intended for those with a hardware controller that does not display values.
+### virtual_pos_printer
+- Fixed Windows firewall prompt being triggered
 
-### fbw_a380_checklist.py (Requires MobiFlight WASM Community Module)
-- Allows keyboard control of built in FBW A380 Checklist system.
-- **Key Bindings:**
-    - `CONFIRM`= "shift+enter"
-    - `DOWN` = "shift+down"
-    - `UP` = "shift+up"
-    - `TOGGLE` = "shift+delete"
+### metar_load
+- Fixed loading weather data from NOAA service
+- METAR window now reliably comes to focus when opened
 
-## Launcher (MSFS-PyScriptManager) New Features
-- Settings Changer: for certain scripts a "Open Settings" button is added to open an integrated save file editor.
-- Autoclose: even if MSFS-PyScriptManager is forced closed, it will properly shutdown all running Python processes - this allows full launch/shutdown automation with tools such as MSFS Addons Linker (https://flightsim.to/file/1572/msfs-addons-linker).
-- Input Support: can now run scripts that use keyboard input.
-- Integrated console(shell): This allows console commands to be run in the launcher directly.
-- Dark Mode Support: On Win11 support dark mode of titlebars.
-- Added "Restart All" button: to easily relaunch all running scripts.
-- Added "Stop" button: stop an individual script.
-- Color print() support (ANSI).
-- Tab Drag/Drop.
-- Performance Metrics Tab: Shows performance stats on running scripts.
+### custom_status_bar
+- Improved simulator detection using new shared library
 
-## Credits
-I want to extend a huge thank-you to [@leftos](https://github.com/leftos) for the invaluable feedback, insightful issue reports, and meaningful contributions to the project. Your support, along with the submitted PRs, has been incredibly helpful!
+### Launcher
+- **Error handling**: Window no longer closes when errors occur (keeps error message visible)
+- **Process management**: Fixed output corruption under heavy load; more reliable shutdown
+- **Process startup**: Fixed libraries loading before dependencies were ready
+- **Logging**: Fixed NUL characters appearing in shutdown logs
 
+---
 
+## Behind the Scenes
+
+### Launcher Architecture
+- Refactored `launcher.py` into modular app package
+- Added type hints throughout launcher code
+- Simplified process tracking and stdout/stderr handling
+- Added script arguments support
+
+### Process Management & Robustness
+- Fixed EOF handling in pipe readers
+- Added incremental UTF-8 decoder for robust text handling
+- Implemented back-pressure handling to prevent dropped output under heavy load
+- Fixed stdin-writer thread cleanup on shutdown
+- Added termination polling for reliable process monitoring
+- Improved AutoRestart behavior
+- Added deterministic pipe stress tests
+
+### Shared Libraries & Infrastructure
+- **sim_state.py**: New library to detect simulator state (menu vs. in-flight)
+  - Uses CAMERA STATE via raw SimConnect DLL
+  - Distinguishes between cockpit, external, drone, loading, and menu states
+- **connection_helpers.py**: Standardized connection interface for all scripts
+  - `SimConnectConnectionHelper`: For direct SimConnect access
+  - `MobiFlightConnectionHelper`: For MobiFlight WASM access
+  - Both support automatic sim state detection and connection timing
+- **mobiflight_connection.py**: Updated to use helper pattern
+  - Fixed `None` handling in `set_and_verify_lvar`
+- **window_focus.py**: Low-level Windows API to reliably force window focus
+
+### Python Compatibility
+- Python 3.14 support now supported
+- Requirements.txt file added to automate loading of required modules (if not present)
+- Added BYO-Python fallback when WinPython not found
+  - Searches PATH for python.exe/pythonw.exe
+  - Clearer error messages and instructions
+- Improved WinPython selection prompts (Y/N when only one found)
+- Added command-line argument to select specific WinPython instance
+
+### Testing & Quality Assurance
+- Centralized all testing on pytest
+- Created `pyproject.toml` for test configuration
+- Added console `test` command to run full suite
+- Added `import_checker.py` tool to validate package requirements
+- Added pipe reliability stress tests
+
+### Quality of Life
+- Logs moved to dedicated `Logs/` directory
+- Autostart groups file auto-created if missing
+- New version detection / recommendation.
+
+### Packaging & Resources
+- Linked `chrisaut-toolbar-printouts` as git submodule
+- More files included for GitHub users

@@ -1,19 +1,104 @@
 {
     "virtual_pos_printer.py": {
+      "description": "Runs basic text printer for Fenix A32x print-jobs",
       "commands": [
         {
           "command_name": "open_settings_editor",
           "command_arg": "/Settings/settings.json",
           "description": "Open Settings"
+        },
+        {
+          "command_name": "open_help",
+          "command_arg": "/Docs/virtual_pos_printer.md",
+          "description": "Open Help"
         }
       ]
     },
     "metar_load.py": {
+      "description": "Loads METAR weather data",
       "commands": [
         {
           "command_name": "open_settings_editor",
           "command_arg": "/Settings/metar_load.json",
           "description": "Open Settings"
+        },
+        {
+          "command_name": "open_help",
+          "command_arg": "/Docs/metar_load.md",
+          "description": "Open Help"
+        }
+      ]
+    },
+    "fenix_lights.py": {
+      "description": "Automates Fenix A32x lighting",
+      "commands": [
+        {
+          "command_name": "open_help",
+          "command_arg": "/Docs/fenix_lights.md",
+          "description": "Open Help"
+        }
+      ]
+    },
+    "custom_status_bar.py": {
+      "description": "Displays a custom status bar with live simulator values and status indicators.",
+      "commands": [
+        {
+          "command_name": "open_help",
+          "command_arg": "/Docs/custom_status_bar.md",
+          "description": "Open Help"
+        }
+      ]
+    },
+    "plot_altitude.py": {
+      "description": "Plot graph example",
+      "commands": [
+        {
+          "command_name": "open_help",
+          "command_arg": "/Docs/plot_altitude.md",
+          "description": "Open Help"
+        }
+      ]
+    },
+    "plot_joystick.py": {
+      "description": "Plots joystick input values",
+      "commands": [
+        {
+          "command_name": "open_help",
+          "command_arg": "/Docs/plot_joystick.md",
+          "description": "Open Help"
+        }
+      ]
+    },
+    "fenix_radio.py": {
+      "description": "Shows Fenix radio values",
+      "commands": [
+        {
+          "command_name": "open_help",
+          "command_arg": "/Docs/fenix_radio.md",
+          "description": "Open Help"
+        }
+      ]
+    },
+    "fenix_disable_efb.py": {
+      "description": "Disables the Fenix EFB"
+    },
+    "fbw_a380_checklist.py": {
+      "description": "Runs an FBW A380 checklist workflow with guided checklist actions",
+      "commands": [
+        {
+          "command_name": "open_help",
+          "command_arg": "/Docs/fbw_a380_checklist.md",
+          "description": "Open Help"
+        }
+      ]
+    },
+    "z_intro_script.py": {
+      "description": "Introduction script",
+      "commands": [
+        {
+          "command_name": "open_help",
+          "command_arg": "/readme.md",
+          "description": "Open README"
         }
       ]
     }

@@ -4,7 +4,8 @@ import logging
 import keyboard  # For global key detection
 import pygetwindow as gw  # For window detection
 from Lib.mobiflight_connection import MobiflightConnection
-from time import sleep
+from Lib.sim_state import SimStateDetector
+from time import monotonic, sleep
 
 # Disable warnings - still shows errors
 logging.getLogger("SimConnect.SimConnect").setLevel(logging.ERROR)
@@ -22,6 +23,7 @@ KEY_CHECKLIST_UP = "shift+up"
 KEY_CHECKLIST_TOGGLE = "shift+delete"
 
 MSFS_WINDOW_TITLE = "Microsoft Flight Simulator"  # Title of the MSFS window for focus checking
+DEBOUNCE_SECONDS = 0.02  # Filter brief key-state flicker that can cause duplicate presses
 
 def set_lvar(mf_requests, lvar, value):
     """Sets an LVAR to a specified value."""
@@ -43,8 +45,9 @@ def main():
         mobiflight.connect()
         mf_requests = mobiflight.get_request_handler()
 
-        # Wait for the required LVAR before proceeding
-        mobiflight.wait_for_lvar("A:EXTERNAL POWER ON:1, Bool")
+        # Wait until the user is actually in a flight (not menus/loading)
+        detector = SimStateDetector(mobiflight)
+        detector.wait_for_flight()
 
         # Prime the library - possibly necessary to ensure the connection works properly
         altitude = mf_requests.get("(A:PLANE ALTITUDE,Feet)")
@@ -52,30 +55,35 @@ def main():
 
         print("Press Shift + Enter, Shift + Up, Shift + Down, or Shift + Delete when MSFS is the active window to trigger respective buttons.")
 
+        key_bindings = [
+            (KEY_CHECKLIST_CONFIRM, LVAR_CHECKLIST_CONFIRM),
+            (KEY_CHECKLIST_UP, LVAR_CHECKLIST_UP),
+            (KEY_CHECKLIST_DOWN, LVAR_CHECKLIST_DOWN),
+            (KEY_CHECKLIST_TOGGLE, LVAR_CHECKLIST_TOGGLE),
+        ]
+        stable_states = {lvar: 0 for _, lvar in key_bindings}
+        candidate_states = stable_states.copy()
+        candidate_since = {lvar: monotonic() for _, lvar in key_bindings}
+
         # Continuously listen for key events in a loop
         while True:
             # Only proceed if MSFS is the active window
             if is_msfs_active():
-                # Check for specific key combinations and trigger corresponding LVARs
-                if keyboard.is_pressed(KEY_CHECKLIST_CONFIRM):
-                    set_lvar(mf_requests, LVAR_CHECKLIST_CONFIRM, 1)
-                else:
-                    set_lvar(mf_requests, LVAR_CHECKLIST_CONFIRM, 0)
+                now = monotonic()
+                for hotkey, lvar in key_bindings:
+                    raw_state = 1 if keyboard.is_pressed(hotkey) else 0
 
-                if keyboard.is_pressed(KEY_CHECKLIST_UP):
-                    set_lvar(mf_requests, LVAR_CHECKLIST_UP, 1)
-                else:
-                    set_lvar(mf_requests, LVAR_CHECKLIST_UP, 0)
+                    if raw_state != candidate_states[lvar]:
+                        candidate_states[lvar] = raw_state
+                        candidate_since[lvar] = now
+                        continue
 
-                if keyboard.is_pressed(KEY_CHECKLIST_DOWN):
-                    set_lvar(mf_requests, LVAR_CHECKLIST_DOWN, 1)
-                else:
-                    set_lvar(mf_requests, LVAR_CHECKLIST_DOWN, 0)
-
-                if keyboard.is_pressed(KEY_CHECKLIST_TOGGLE):
-                    set_lvar(mf_requests, LVAR_CHECKLIST_TOGGLE, 1)
-                else:
-                    set_lvar(mf_requests, LVAR_CHECKLIST_TOGGLE, 0)
+                    if (
+                        candidate_states[lvar] != stable_states[lvar]
+                        and (now - candidate_since[lvar]) >= DEBOUNCE_SECONDS
+                    ):
+                        stable_states[lvar] = candidate_states[lvar]
+                        set_lvar(mf_requests, lvar, stable_states[lvar])
 
             # Short sleep to avoid excessive CPU usage
             sleep(0.05)

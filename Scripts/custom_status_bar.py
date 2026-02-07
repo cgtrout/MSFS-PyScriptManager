@@ -15,6 +15,7 @@ import threading
 import time
 import tkinter as tk
 import traceback
+from pathlib import Path
 from tkinter import messagebox
 from datetime import datetime, timezone, timedelta
 from enum import Enum
@@ -32,10 +33,16 @@ try:
     from Lib.color_print import *  # pylint: disable=unused-wildcard-import, wildcard-import
     from Lib.dark_mode import DarkmodeUtils
     from Lib.gc_tweak import optimize_gc
+    from Lib.sim_process import wait_for_sim_running
+    from Lib.sim_state import SimStateDetector
 
 except ImportError:
     print("Failed to import Lib directory. Please ensure /Lib/* is present")
     sys.exit(1)
+
+project_root = Path(__file__).resolve().parents[1]
+logs_path = project_root / "Logs"
+logs_path.mkdir(parents=True, exist_ok=True)
 
 # Default templates file - this will be created if it doesn't exist
 # in the settings directory as /Settings/status_bar_templates.py
@@ -291,6 +298,7 @@ class AppState:
         self.sim_connect = None
         self.aircraft_requests = None
         self.sim_connected = False
+        self.waiting_for_active_flight = False
 
         self.template_menu_open = False
 
@@ -565,7 +573,7 @@ class ServiceManager:
         self.background_updater = BackgroundUpdater(self.app_state, root)
 
         # Log File
-        self.log_file_path = "traceback.log"
+        self.log_file_path = str(logs_path / "traceback.log")
         self.traceback_log_file = open(self.log_file_path, "w", encoding="utf-8")
         faulthandler.enable(file=self.traceback_log_file)
 
@@ -605,7 +613,7 @@ class ServiceManager:
         except Exception: # pylint: disable=broad-exception-caught
             return False
 
-    def log_global_state(self, event=None, log_path="detailed_state_log.log", max_depth=2):
+    def log_global_state(self, event=None, log_path=None, max_depth=2):
         """
         Log the global state and nested attributes to a file, prioritizing user-defined globals.
 
@@ -615,6 +623,8 @@ class ServiceManager:
             max_depth (int): Maximum recursion depth for nested attributes.
         """
         import inspect # pylint: disable=import-outside-toplevel # Deliberate lazy load
+        if log_path is None:
+            log_path = str(logs_path / "detailed_state_log.log")
 
         def is_user_defined(var_name, var_value):
             """
@@ -939,64 +949,30 @@ def convert_real_world_time_to_sim_time(real_world_time):
         return real_world_time  # Return the original time as fallback
 
 # --- SimConnect Lookup Functions ----------------------------------------------------------------
-def is_sim_running(min_runtime=120):
-    """Return True if an MSFS process has been running for at least min_runtime seconds."""
-    try:
-        cmd = (
-            'wmic process where "name like \'FlightSimulator%%.exe\'" '
-            'get Name,CreationDate,ProcessId /format:csv'
-        )
-        raw_output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
-        output = raw_output.decode(errors="ignore").strip()
-        if "No Instance(s) Available" in output:
-            output = ""
-
-        if output:
-            print_debug("MSFS is running")
-    except subprocess.CalledProcessError:
-        return False
-
-    now = time.time()
-    reader = csv.DictReader(StringIO(output))
-
-    for row in reader:
-        name = row.get("Name", "").strip()
-        creation = row.get("CreationDate", "").split('.')[0].strip()
-        pid = row.get("ProcessId", "").strip()
-
-        if not (name.startswith("FlightSimulator") and creation and pid.isdigit()):
-            continue
-
-        try:
-            start_time = time.mktime(time.strptime(creation, "%Y%m%d%H%M%S"))
-        except ValueError:
-            print(f"[ERROR] Could not parse creation time: {creation}")
-            continue
-
-        runtime = now - start_time
-        if runtime >= min_runtime:
-            print_info(f"Found MSFS process: {name} (PID: {pid}, Running for {runtime:.1f} sec)")
-            return True
-        else:
-            print_info(f"Found {name} (PID: {pid}), but only running for {runtime:.1f} sec (Waiting...)")
-            return False
-
-    return False
-
 def initialize_simconnect():
     """Initialize the connection to SimConnect."""
     try:
-        if not is_sim_running():
+        if not wait_for_sim_running():
             return
         print_info("Connecting to SimConnect...")
         state.sim_connect = SimConnect()
         print_info("Connecting to SimConnect... DONE")
         state.aircraft_requests = AircraftRequests(state.sim_connect, _time=10, _attemps=2)
+
+        # Wait until the user is actually in a flight (not menus/loading).
+        # This can legitimately block for a long time if user remains in MSFS menus.
+        state.waiting_for_active_flight = True
+        detector = SimStateDetector(state.sim_connect)
+        detector.wait_for_flight()
+        state.waiting_for_active_flight = False
+
         state.sim_connected = True
         print_debug("Sim is Connected")
     except Exception as e:
         print_debug(f"Sim could not connect {e}")
         state.sim_connected = False
+    finally:
+        state.waiting_for_active_flight = False
 
 def is_simconnect_available() -> bool:
     """Check if SimConnect is available and running."""
@@ -1141,8 +1117,15 @@ def get_formatted_value(variable_names, format_string=None):
 
     # Format the values if a format string is provided
     if format_string:
-        formatted_values = format_string.format(*values)
-        return formatted_values
+        try:
+            formatted_values = format_string.format(*values)
+            return formatted_values
+        except (ValueError, TypeError) as e:
+            print_debug(
+                f"get_formatted_value: Failed to format values {values} "
+                f"with '{format_string}': {e}"
+            )
+            return "Loading..."
 
     # Return raw value(s) if no format string is provided
     result = values[0] if len(values) == 1 else values
@@ -1259,6 +1242,12 @@ class BackgroundUpdater:
         """Check background thread function to see if it has locked up"""
         now = time.time()
         threshold = 30  # seconds before we consider the updater "stuck"
+
+        # If we're explicitly waiting for user to enter an active flight session, avoid
+        # reporting this as a stall.
+        if state.waiting_for_active_flight:
+            self.root.after(10_000, self.background_thread_watchdog_function)
+            return
 
         # Increase threshold if sim not connected.  Waiting for connection to occur during sim load
         # can cause warnings to appear otherwise

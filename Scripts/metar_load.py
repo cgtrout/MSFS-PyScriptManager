@@ -6,9 +6,9 @@ import json
 import requests
 import re
 from datetime import datetime, timedelta, timezone
-from SimConnect import SimConnect, AircraftRequests
 import subprocess
 import threading
+import time
 import sys
 import win32print
 
@@ -16,14 +16,36 @@ try:
     # Import all color print functions
     from Lib.color_print import *
     from Lib.dark_mode import DarkmodeUtils
+    from Lib.connection_helpers import SimConnectConnectionHelper
+    from Lib.window_focus import center_window, focus_window_by_title
 
 except ImportError:
     print("Failed to import 'Lib.color_print'. Please ensure /Lib/color_print.py is present")
     sys.exit(1)
 
 SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "..", "Settings", "metar_load.json")
+VIRTUAL_PRINTER_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "..", "Settings", "settings.json")
+DEFAULT_VIRTUAL_PRINTER_NAME = "VirtualTextPrinter"
 
-printer_name = "VirtualTextPrinter"  # Replace with your specific printer name
+conn = SimConnectConnectionHelper(retry_delay=30)
+SIMCONNECT_RETRY_INTERVAL = 30
+last_simconnect_attempt = 0.0
+
+
+def load_virtual_printer_name():
+    """Load virtual printer name from shared settings."""
+    if not os.path.exists(VIRTUAL_PRINTER_SETTINGS_FILE):
+        return DEFAULT_VIRTUAL_PRINTER_NAME
+
+    try:
+        with open(VIRTUAL_PRINTER_SETTINGS_FILE, "r", encoding="utf-8") as f:
+            settings = json.load(f)
+        return settings.get("printer_name", DEFAULT_VIRTUAL_PRINTER_NAME)
+    except (json.JSONDecodeError, OSError):
+        return DEFAULT_VIRTUAL_PRINTER_NAME
+
+
+printer_name = load_virtual_printer_name()
 
 class MetarSource:
     """Base class for a METAR source."""
@@ -74,7 +96,7 @@ class NoaaSource(MetarSource):
         invalid_airports = set()
         for metar in raw_data:
             raw_observation = metar.get("rawOb")
-            station_id = metar.get("stationId")
+            station_id = metar.get("icaoId")
             if station_id != self.airport_code.upper():
                 invalid_airports.add(station_id)
             if raw_observation:
@@ -131,7 +153,7 @@ class MetarFetcher:
         """Parse the date and time from a METAR line."""
         try:
             parts = metar_line.split()
-            datetime_part = parts[1]  # e.g., "090900Z"
+            datetime_part = parts[2]  # e.g., "090900Z"
 
             day = int(datetime_part[:2])
             time_utc = datetime_part[2:6]
@@ -184,7 +206,7 @@ class MetarFetcher:
 
         raise Exception(f"Failed to fetch METAR data for {airport_code}.")
 
-def print_metar_data(metar_data, printer_name="VirtualTextPrinter"):
+def print_metar_data(metar_data, printer_name=None):
     """Print the METAR data using the Windows printing API."""
     try:
         # Use the specified printer or fallback to the default
@@ -213,8 +235,9 @@ def show_metar_data(source_name, metar_dict):
         source_name (str): The name of the METAR data source.
         metar_dict (dict): Dictionary with datetime keys and METAR strings as values.
     """
-    # Create the new result window
-    result_window = tk.Toplevel(root)
+    # Create the new result window as an independent window (not a Toplevel)
+    # Using Tk() instead of Toplevel(root) avoids focus issues with withdrawn parent
+    result_window = tk.Tk()
     result_window.title(f"METAR Data - {source_name}")
     result_window.configure(bg="#2e2e2e")  # Softer dark gray background
 
@@ -302,7 +325,12 @@ def show_metar_data(source_name, metar_dict):
 
     def results_close():
         result_window.destroy()
-        root.quit()
+        focus_window_by_title("MSFS-PyScriptManager")
+        # Quit the original root as well
+        try:
+            root.quit()
+        except:
+            pass  # Root may already be destroyed
 
     def print_and_close(event=None):
         print_metar_data(get_selected_content(), printer_name) if get_selected_content() else None,
@@ -321,12 +349,30 @@ def show_metar_data(source_name, metar_dict):
     )
     print_button.grid(row=3, column=0, padx=10, pady=5)
 
-    result_window.bind("<Return>", print_and_close)
+    # Guard against the Enter key used to submit ICAO from immediately
+    # triggering this window's Return binding on open.
+    opened_at = time.monotonic()
+
+    def on_return(event=None):
+        if (time.monotonic() - opened_at) < 0.35:
+            return "break"
+        print_and_close(event)
+        return "break"
+
+    result_window.bind("<Return>", on_return)
     result_window.bind("<Escape>", lambda event: results_close())
     result_window.protocol("WM_DELETE_WINDOW", results_close)
 
-    # Center the window
-    center_window(result_window)
+    # Center the window and keep it on top to ensure visibility
+    center_window(
+        result_window,
+        keep_on_top=True,
+        launcher_title="MSFS-PyScriptManager",
+        use_cascade=True,
+        cascade_mode="offset",
+        cascade_offset=20,
+    )
+    result_window.after(1, metar_listbox.focus_set)
 
 def gui_fetch_metar(root, airport_code):
     """Fetch METAR data with a non-blocking popup loading window."""
@@ -409,11 +455,12 @@ def find_best_metar(metar_dict):
 
 def main():
     """Main function to initialize the GUI with reference-accurate styling."""
-    global root, entry
+    global root, entry, printer_name
 
     initialize_simconnect()
     root = tk.Tk()
     root.withdraw()
+    printer_name = load_virtual_printer_name()
 
     settings = load_settings()
     use_simulator_time = settings.get("use_simulator_time", True)
@@ -490,8 +537,12 @@ def get_simulator_datetime():
     settings = load_settings()
 
     if settings.get("use_simulator_time", True):
-        global sim_connected
+        global sim_connected, last_simconnect_attempt
         try:
+            if not sim_connected:
+                now = time.monotonic()
+                if (now - last_simconnect_attempt) >= SIMCONNECT_RETRY_INTERVAL:
+                    initialize_simconnect()
             if not sim_connected:
                 raise ValueError("SimConnect is not connected.")
 
@@ -513,50 +564,16 @@ def initialize_simconnect():
     Initialize the connection to SimConnect and set up global variables.
     Establishes a connection to the simulator and prepares for data retrieval.
     """
-    global sm, aq, sim_connected
-    try:
-        # Initialize the SimConnect connection
-        sm = SimConnect()  # Create the SimConnect object to establish communication
-        aq = AircraftRequests(sm, _time=0)  # Create the AircraftRequests object for querying data
+    global sm, aq, sim_connected, last_simconnect_attempt
+    last_simconnect_attempt = time.monotonic()
+    print_info("Trying to connect to sim...")
+    if conn.connect(blocking=False):
+        sm = conn.sm
+        aq = conn.get_requests()
         sim_connected = True
         print("SimConnect initialized successfully.")
-    except Exception as e:
-        sim_connected = False
-        print(f"Failed to initialize SimConnect: {e}")
-
-def center_window(window):
-    """
-    Center a Tkinter window on the screen.
-
-    Args:
-        window: The window to center (e.g., root or Toplevel instance).
-        width: The width of the window.
-        height: The height of the window.
-    """
-    # Ensure the window's dimensions are realized
-    window.update_idletasks()
-
-    width = window.winfo_width()
-    height = window.winfo_height()
-
-    # Get the screen dimensions
-    screen_width = window.winfo_screenwidth()
-    screen_height = window.winfo_screenheight()
-
-    # Calculate position coordinates
-    x = (screen_width - width) // 2
-    y = (screen_height - height) // 2
-
-    # Set the geometry of the window
-    window.geometry(f"{width}x{height}+{x}+{y}")
-
-    # Bring the window to the foreground
-    window.deiconify()  # Make the window visible if it was hidden
-    window.lift()       # Raise the window above others
-    window.attributes("-topmost", True)  # Temporarily make it always on top
-    window.attributes("-topmost", False)  # Disable "always on top"
-    window.focus_force()  # Focus on the window
-    window.focus_set()
+        return
+    sim_connected = False
 
 if __name__ == "__main__":
     main()

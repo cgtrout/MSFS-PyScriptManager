@@ -11,8 +11,9 @@ from PIL import Image, ImageDraw, ImageFont, ImageTk
 from threading import Thread
 import logging
 
-# Import the new connection library instead of doing manual connection below
-from Lib.mobiflight_connection import MobiflightConnection
+# Import the new connection helper
+from Lib.mobiflight_connection import MobiflightConnectionHelper
+from Lib.sim_state import SimStateDetector
 
 # Set the SimConnect logging level to ERROR to suppress warnings
 logging.getLogger("SimConnect.SimConnect").setLevel(logging.ERROR)
@@ -82,15 +83,15 @@ def set_and_get_lvar(mf_requests, lvar, value):
     return result
 
 # Function to fetch and update frequency values for RMP1
-def fetch_values(mf_requests, label_active_value, label_stby_value):
+def fetch_values(connection, label_active_value, label_stby_value):
     # Keep track of the last displayed text values to avoid unnecessary updates
     last_active_text = None
     last_standby_text = None
 
     while True:
         # Fetch the active and standby values for RMP1
-        active_value_raw = mf_requests.get(RMP1_ACTIVE)
-        standby_value_raw = mf_requests.get(RMP1_STDBY)
+        active_value_raw = connection.get(RMP1_ACTIVE)
+        standby_value_raw = connection.get(RMP1_STDBY)
 
         if active_value_raw is None or standby_value_raw is None:
             print("fetch_values: pulled values are invalid")
@@ -157,9 +158,12 @@ def main():
         position = settings.get("position", {"x": 0, "y": 0})
 
         # Use the new connection library to initialize SimConnect and the Mobiflight variable requests
-        mobiflight = MobiflightConnection(client_name="fenix_radio")
+        mobiflight = MobiflightConnectionHelper(client_name="fenix_radio")
         mobiflight.connect()
-        mf_requests = mobiflight.get_request_handler()
+
+        # Wait until the user is actually in a flight (not menus/loading)
+        detector = SimStateDetector(mobiflight)
+        detector.wait_for_flight()
 
         # Set up the tkinter window
         window = tk.Tk()
@@ -198,7 +202,7 @@ def main():
         window.bind("<Button-3>", lambda event: window.destroy())
 
         # Start a thread to continuously update the radio frequency values
-        fetch_thread = Thread(target=fetch_values, args=(mf_requests, label_active_value, label_stby_value), daemon=True)
+        fetch_thread = Thread(target=fetch_values, args=(mobiflight, label_active_value, label_stby_value), daemon=True)
         fetch_thread.start()
 
         window.mainloop()

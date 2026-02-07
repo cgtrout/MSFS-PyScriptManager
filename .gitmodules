@@ -2,3 +2,7 @@
 	path = Lib/MSFSPythonSimConnectMobiFlightExtension
 	url = https://github.com/cgtrout/MSFSPythonSimConnectMobiFlightExtension.git
 	branch = multi-client-support
+[submodule "Data/Community_Install"]
+	path = Data/Community_Install
+	url = https://github.com/chrisaut/chrisaut-toolbar-printouts.git
+	branch = master

@@ -5,11 +5,12 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib import animation
 import tkinter as tk
-from SimConnect import SimConnect, AircraftRequests
 import math
 import matplotlib.ticker as mticker
 from tkinter import filedialog
 import csv
+from Lib.connection_helpers import SimConnectConnectionHelper
+from Lib.sim_state import SimStateDetector
 
 # User-Defined Parameters
 alpha_transparency_level = 0.8  # Set transparency (0.0 = fully transparent, 1.0 = fully opaque)
@@ -49,18 +50,20 @@ auto_scroll = True  # New: Automatically scroll to the right if set to True
 sm = None
 aq = None
 sim_connected = False
-RECONNECT_INTERVAL = 5000
 latest_value = 0  # Store the latest fetched value
+conn = SimConnectConnectionHelper(retry_delay=30)
 
 def initialize_simconnect():
     global sm, aq, sim_connected
-    try:
-        sm = SimConnect()
-        aq = AircraftRequests(sm)
+    if conn.connect(blocking=True):
+        sm = conn.sm
+        aq = conn.get_requests()
         sim_connected = True
-    except Exception:
-        sim_connected = False
-        root.after(RECONNECT_INTERVAL, initialize_simconnect)
+        # Wait until the user is actually in a flight (not menus/loading)
+        detector = SimStateDetector(conn)
+        detector.wait_for_flight()
+        return
+    sim_connected = False
 
 # Fetch data from SimConnect
 def get_data():
@@ -73,6 +76,7 @@ def get_data():
     except Exception:
         # Handle disconnection or other issues, try to reconnect
         sim_connected = False
+        conn.disconnect()
         initialize_simconnect()
         return 0
 

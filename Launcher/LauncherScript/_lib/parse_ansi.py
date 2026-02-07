@@ -1,16 +1,24 @@
 # parse_ansi.py - used to parse ANSI escape sequences in text and apply colors and styles to the text.
 #   This is for displaying colored text in ScriptTab.
+from typing import ClassVar, TypedDict
+
+
+class AnsiStyle(TypedDict):
+    color: str | None
+    bold: bool
+
+
 class AnsiParser:
-    ANSI_COLOR_MAP = {
+    ANSI_COLOR_MAP: ClassVar[dict[str, str]] = {
         '30': '#000000', '31': '#FF0000', '32': '#00FF00', '33': '#FFFF00',
         '34': '#0000FF', '35': '#FF00FF', '36': '#00FFFF', '37': '#FFFFFF'
     }
 
-    def __init__(self):
-        self.current_style = {"color": None, "bold": False}
-        self.partial_sequence = ""  # Buffer to store incomplete ANSI sequences
+    def __init__(self) -> None:
+        self.current_style: AnsiStyle = {"color": None, "bold": False}
+        self.partial_sequence: str = ""  # Buffer to store incomplete ANSI sequences
 
-    def parse_ansi_colors(self, text):
+    def parse_ansi_colors(self, text: str) -> list[tuple[str, AnsiStyle]]:
         """
         Parse ANSI sequences and return text segments with associated styles.
         This version includes detailed debugging and partial sequence handling.
@@ -74,10 +82,10 @@ class AnsiParser:
 
         return segments
 
-def test_partial_matches():
+def test_partial_matches() -> None:
     # Test cases: input chunks and expected partial matches
-     # Additional test cases
-    test_cases = [
+    # Additional test cases
+    test_cases: list[tuple[str, str]] = [
         # Test max length for escape sequences
         ("\x1b[" + "1;" * 15 + "31mText", ""),  # Valid sequence right at the max length
         ("\x1b[" + "1;" * 16 + "31mText", ""),  # Exceeds max length, should discard

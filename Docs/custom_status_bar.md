@@ -14,7 +14,7 @@
 - Note that in my own extensive use of this script, I have never seen this issue.  However, if you do experience it, the workaround is to restart the script by clicking the **"Restart"** button on the bottom of the selected tab.
 - To help diagnose and fix this issue, I need more data:
   - If you encounter this bug, please consider sending me log files for troubleshooting.
-  - You can generate a log file by pressing Ctrl + Shift + Alt + L while the script is running. The file will be saved as detailed_state_log.log.
+  - You can generate a log file by pressing Ctrl + Shift + Alt + L while the script is running. The file will be saved under Logs/detailed_state_log.log.
   
 ## Setting the Countdown Timer 
 If the status bar is double-clicked, it will bring up a settings dialog for the countdown timer:
