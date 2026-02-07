@@ -6,7 +6,7 @@
 - Displays live joystick X/Y movement.
 - Displays an optional rudder indicator from a user-selected device + axis.
 - Displays trim lines for fixed-wing or helicopter trim values.
-- Supports right-click joystick selection menu.
+- Supports right-click menu for joystick selection and optional value display toggle.
 - Persists selected joystick and window position.
 
 ## How to Run

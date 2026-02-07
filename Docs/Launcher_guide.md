@@ -35,9 +35,11 @@ Open the command line by either:
 The command line runs a persistent `cmd.exe` session rooted to the project script environment, so commands like `pip` are available from this tab. The initial directory is `/Scripts`.
 
 The launcher also intercepts these custom commands:
+- `help`: display available commands and usage information.
 - `python` / `py <script.py>`: open a script in a new launcher script tab.
 - `switch` / `s <script.py>`: focus an already-running script tab by script name.
 - `reload`: restart all running script tabs.
+- `test`: run the pytest test suite.
 
 Autocomplete:
 - Press **Tab** to autocomplete file names.

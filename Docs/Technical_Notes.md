@@ -14,7 +14,7 @@
 ## WinPython Notes
 - Uses WinPython to allow standalone installation: https://github.com/winpython
 - Supports multiple versions of WinPython.
-- To switch versions, run `MSFS-PyScriptManager.exe --pick` (opens a menu to switch to other installed versions).
+- To switch WinPython versions, run `MSFS-PyScriptManager.exe --pick` (opens a menu to switch to other installed versions).
 - Extract new WinPython versions into the `WinPython` directory, then use the `--pick` command to switch.
 - The launcher uses `Launcher/requirements.txt` to ensure required modules are installed through pip.
 - The active Python install is configured in `Launcher/launcher.ini` under `[Python]` with `PythonDir=<relative path>`.
@@ -26,4 +26,14 @@
 - This preference is saved in `Launcher/launcher.ini` under:
   - `[BYO]`
   - `AutoInstallDeps=true|false`
+- It is recommended to use the full release with the bundled WinPython for maximum compatability, but this gives you other options if you prefer not to use that version.
+
+## BYOP Python Version Compatibility
+- Python 3.15 is currently not supported due to module incompatibilities.
+- Recommended: Use Python 3.14 or earlier.
+
+## Logging and Testing
+- Logs are stored in the `Logs/` directory.
+- Testing uses pytest, configured via `pyproject.toml`.
+- Run tests from the console using the `test` command.
 
