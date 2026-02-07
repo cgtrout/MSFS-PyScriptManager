@@ -207,7 +207,12 @@ class VirtualPosPrinter:
         self.settings = self.load_settings()
         self.printer_name = self.settings.get("printer_name", DEFAULT_PRINTER_NAME)
         self.printer_port = self.parse_printer_port(self.settings.get("printer_port", DEFAULT_PRINTER_SERVER_PORT))
-        self.spawn_position = tuple(self.settings.get("spawn_position", (100, 100)))
+        self.spawn_position = self.parse_spawn_position(self.settings.get("spawn_position", (100, 100)))
+        self.settings["spawn_position"] = list(self.spawn_position)
+        print_info(
+            f"startup settings loaded: spawn_position_raw={self.settings.get('spawn_position')} "
+            f"parsed={self.spawn_position}"
+        )
         self.popup_max_height_ratio = self.parse_popup_max_height_ratio(
             self.settings.get("popup_max_height_ratio", 0.8)
         )
@@ -285,6 +290,32 @@ class VirtualPosPrinter:
             json.dump(default_settings, f, indent=4)
 
         return default_settings
+
+    @staticmethod
+    def parse_spawn_position(value):
+        """Parse spawn position from settings and return a valid (x, y) tuple."""
+        default_position = (100, 100)
+
+        if isinstance(value, dict):
+            x = value.get("x")
+            y = value.get("y")
+        elif isinstance(value, (list, tuple)) and len(value) == 2:
+            x, y = value
+        else:
+            print_error(
+                f"Invalid 'spawn_position' value '{value}' in settings. "
+                "Using default (100, 100)."
+            )
+            return default_position
+
+        try:
+            return int(x), int(y)
+        except (TypeError, ValueError):
+            print_error(
+                f"Invalid 'spawn_position' coordinates '{value}' in settings. "
+                "Using default (100, 100)."
+            )
+            return default_position
 
     @staticmethod
     def parse_printer_port(value):
@@ -384,8 +415,9 @@ class VirtualPosPrinter:
     def capture_mouse_position(self):
         """Set spawn position based on current mouse position"""
         x, y = self.root.winfo_pointerx(), self.root.winfo_pointery()
-        self.settings["spawn_position"] = (x, y)
+        self.settings["spawn_position"] = [x, y]
         self.spawn_position = (x, y)
+        print_info(f"capture_mouse_position: pointer=({x}, {y})")
 
         # Reset active windows to ensure cascading starts from new position
         self.active_windows.clear()
@@ -399,12 +431,50 @@ class VirtualPosPrinter:
         """Process messages from print queue"""
         try:
             message = self.printer_queue.get_nowait()
+            self.refresh_runtime_settings()
+            print_info(
+                f"process_print_queue: message_len={len(message)} "
+                f"enable_popups={self.settings.get('enable_popups', True)} "
+                f"spawn_position={self.spawn_position}"
+            )
             if self.settings.get("enable_popups", True):
                 self.create_window(message)
                 self.sound_player.play()
         except queue.Empty:
             pass
         self.root.after(100, self.process_print_queue)
+
+    def refresh_runtime_settings(self):
+        """Refresh runtime settings that affect popup behavior."""
+        try:
+            with open(SETTINGS_FILE, 'r', encoding="utf-8") as f:
+                latest_settings = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return
+
+        self.settings.update(latest_settings)
+        self.spawn_position = self.parse_spawn_position(
+            latest_settings.get("spawn_position", self.spawn_position)
+        )
+        print_info(
+            f"refresh_runtime_settings: settings.spawn_position="
+            f"{latest_settings.get('spawn_position')} parsed={self.spawn_position}"
+        )
+
+    @staticmethod
+    def resolve_popup_position(spawn_position, active_windows):
+        """Resolve next popup position based on spawn point and current cascade state."""
+        if active_windows:
+            last_x, last_y = active_windows[-1]
+            x_offset = min((last_x + 10 - spawn_position[0]), 100)
+            y_offset = min((last_y + 10 - spawn_position[1]), 100)
+            return spawn_position[0] + x_offset, spawn_position[1] + y_offset
+        return spawn_position
+
+    @staticmethod
+    def build_geometry_position(x, y):
+        """Build signed Tk geometry position segment, e.g. +100-50."""
+        return f"{int(x):+d}{int(y):+d}"
 
     def create_window(self, data):
         """Create a dynamically positioned pop-up window for print messages."""
@@ -466,19 +536,34 @@ class VirtualPosPrinter:
         # Cascade windows if needed
         if self.active_windows:
             last_x, last_y = self.active_windows[-1]
-            x_offset = min((last_x + 10 - self.spawn_position[0]), 100)
-            y_offset = min((last_y + 10 - self.spawn_position[1]), 100)
-            new_x, new_y = self.spawn_position[0] + x_offset, self.spawn_position[1] + y_offset
+            new_x, new_y = self.resolve_popup_position(self.spawn_position, self.active_windows)
+            x_offset = new_x - self.spawn_position[0]
+            y_offset = new_y - self.spawn_position[1]
+            print_info(
+                f"create_window: cascade base={self.spawn_position} "
+                f"last=({last_x}, {last_y}) offset=({x_offset}, {y_offset}) "
+                f"new=({new_x}, {new_y})"
+            )
         else:
-            new_x, new_y = self.spawn_position
+            new_x, new_y = self.resolve_popup_position(self.spawn_position, self.active_windows)
+            print_info(f"create_window: first window using spawn_position={self.spawn_position}")
+
+        geometry_position = self.build_geometry_position(new_x, new_y)
+        print_info(f"create_window: geometry_position={geometry_position} needs_scroll={needs_scroll}")
 
         window.update_idletasks()
         if needs_scroll:
             req_width = window.winfo_reqwidth()
             req_height = min(window.winfo_reqheight(), max_height)
-            window.geometry(f"{req_width}x{req_height}+{new_x}+{new_y}")
+            window.geometry(f"{req_width}x{req_height}{geometry_position}")
         else:
-            window.geometry(f"+{new_x}+{new_y}")
+            window.geometry(geometry_position)
+
+        window.update_idletasks()
+        print_info(
+            f"create_window: requested=({new_x}, {new_y}) actual=({window.winfo_x()}, {window.winfo_y()}) "
+            f"size=({window.winfo_width()}x{window.winfo_height()})"
+        )
         self.active_windows.append((new_x, new_y))
 
         def on_close():
