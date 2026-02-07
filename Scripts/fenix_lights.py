@@ -60,7 +60,6 @@ SETTINGS_FILE = os.path.join(SETTINGS_DIR, "fenix_lights.json")
 
 # Default LVAR wait condition (e.g., ground power)
 DEFAULT_WAIT_LVAR = "L:S_OH_ELEC_EXT_PWR"
-DEFAULT_WAIT_VALUE = 1
 
 # --- Settings & Setup Functions ---
 
@@ -174,6 +173,7 @@ def main():
         # Wait until the user is actually in a flight (not menus/loading)
         detector = SimStateDetector(mobiflight)
         detector.wait_for_flight()
+        mobiflight.wait_for_lvar(DEFAULT_WAIT_LVAR)
 
         print_info("Setting interior light values...")
         set_cockpit_lights(mobiflight)
