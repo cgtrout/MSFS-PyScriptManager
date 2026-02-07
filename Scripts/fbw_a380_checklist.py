@@ -55,30 +55,24 @@ def main():
 
         print("Press Shift + Enter, Shift + Up, Shift + Down, or Shift + Delete when MSFS is the active window to trigger respective buttons.")
 
+        key_bindings = [
+            (KEY_CHECKLIST_CONFIRM, LVAR_CHECKLIST_CONFIRM),
+            (KEY_CHECKLIST_UP, LVAR_CHECKLIST_UP),
+            (KEY_CHECKLIST_DOWN, LVAR_CHECKLIST_DOWN),
+            (KEY_CHECKLIST_TOGGLE, LVAR_CHECKLIST_TOGGLE),
+        ]
+        last_states = {lvar: 0 for _, lvar in key_bindings}
+
         # Continuously listen for key events in a loop
         while True:
             # Only proceed if MSFS is the active window
             if is_msfs_active():
-                # Check for specific key combinations and trigger corresponding LVARs
-                if keyboard.is_pressed(KEY_CHECKLIST_CONFIRM):
-                    set_lvar(mf_requests, LVAR_CHECKLIST_CONFIRM, 1)
-                else:
-                    set_lvar(mf_requests, LVAR_CHECKLIST_CONFIRM, 0)
-
-                if keyboard.is_pressed(KEY_CHECKLIST_UP):
-                    set_lvar(mf_requests, LVAR_CHECKLIST_UP, 1)
-                else:
-                    set_lvar(mf_requests, LVAR_CHECKLIST_UP, 0)
-
-                if keyboard.is_pressed(KEY_CHECKLIST_DOWN):
-                    set_lvar(mf_requests, LVAR_CHECKLIST_DOWN, 1)
-                else:
-                    set_lvar(mf_requests, LVAR_CHECKLIST_DOWN, 0)
-
-                if keyboard.is_pressed(KEY_CHECKLIST_TOGGLE):
-                    set_lvar(mf_requests, LVAR_CHECKLIST_TOGGLE, 1)
-                else:
-                    set_lvar(mf_requests, LVAR_CHECKLIST_TOGGLE, 0)
+                # Only write when a key's pressed/released state changes.
+                for hotkey, lvar in key_bindings:
+                    current_state = 1 if keyboard.is_pressed(hotkey) else 0
+                    if current_state != last_states[lvar]:
+                        set_lvar(mf_requests, lvar, current_state)
+                        last_states[lvar] = current_state
 
             # Short sleep to avoid excessive CPU usage
             sleep(0.05)
