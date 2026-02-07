@@ -294,11 +294,8 @@ class JoystickApp:
                 new_rudder = None
         else:
             new_x, new_y = 0, 0
-            if self.show_values:
-                self.coord_label.config(text="No Joy!\nRight-click\nto select")
-                self.coord_label.place(relx=1.0, rely=1.0, x=-2, y=-2, anchor='se')
-            else:
-                self.coord_label.place_forget()
+            self.coord_label.config(text="No Joy!\nRight-click\nto select")
+            self.coord_label.place(relx=1.0, rely=1.0, x=-2, y=-2, anchor='se')
             self.fig.canvas.blit(self.fig.bbox)
             self.root.after(100, self._update_plot)
             return
@@ -535,7 +532,11 @@ class JoystickApp:
                 self.coord_label.config(text="No Joy!\nRight-click\nto select")
             self.coord_label.place(relx=1.0, rely=1.0, x=-2, y=-2, anchor='se')
         else:
-            self.coord_label.place_forget()
+            if self.selected_joystick is None and not self.test_mode:
+                self.coord_label.config(text="No Joy!\nRight-click\nto select")
+                self.coord_label.place(relx=1.0, rely=1.0, x=-2, y=-2, anchor='se')
+            else:
+                self.coord_label.place_forget()
         # Force next update tick to redraw even if input values are unchanged.
         self.last_joystick_pos = (None, None)
         self.last_trim_values = {}
