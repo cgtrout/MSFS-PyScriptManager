@@ -57,7 +57,7 @@ class JoystickApp:
         self.rudder_joystick_name = None
         self.rudder_axis_id = None
         self.show_values = False
-        self.trim_update_interval = 0.5
+        self.trim_update_interval = 0.05
         # Used to cache values from
         self.cached_trim_values = {
             "elevator_trim": 0,
