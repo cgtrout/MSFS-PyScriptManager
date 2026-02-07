@@ -7,7 +7,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/Launcher/LauncherScript/Launcher.py",
             "console": "integratedTerminal",
-            "subProcess": false
+            "subProcess": true
         }
     ]
 }
